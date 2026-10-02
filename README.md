@@ -1,73 +1,73 @@
 <p align="center">
-  <img src="assets/codex-console-icon.png" width="128" height="128" alt="Codex Console 产品图标：连接桌面终端与手机" />
+  <img src="assets/codex-console-icon.png" width="128" height="128" alt="Codex Console icon: a desktop terminal connected to a phone" />
 </p>
 
 <h1 align="center">Codex Console</h1>
 
-<p align="center"><strong>把 Codex 工作台，带到手机浏览器。</strong></p>
+<p align="center"><strong>Your Codex workspace, in your mobile browser.</strong></p>
 
 <p align="center">
-  在 Linux 主机上运行桌面应用，通过浏览器查看任务、输入指令、操作界面。<br />
-  为触控、中文输入和小屏阅读优化的远程工作入口。
+  Run the desktop app on a Linux host. Check tasks, enter instructions, and control the interface from your browser.<br />
+  Built for touch interaction, native mobile input, and small-screen reading.
 </p>
 
 <p align="center">
-  <img alt="主机平台：Linux" src="https://img.shields.io/badge/Host-Linux-24292f?style=flat-square" />
-  <img alt="传输协议：HTTPS 与 WSS" src="https://img.shields.io/badge/Transport-HTTPS%20%2F%20WSS-24292f?style=flat-square" />
-  <img alt="客户端：浏览器" src="https://img.shields.io/badge/Client-Browser-24292f?style=flat-square" />
+  <img alt="Host platform: Linux" src="https://img.shields.io/badge/Host-Linux-24292f?style=flat-square" />
+  <img alt="Transport: HTTPS and WSS" src="https://img.shields.io/badge/Transport-HTTPS%20%2F%20WSS-24292f?style=flat-square" />
+  <img alt="Client: browser" src="https://img.shields.io/badge/Client-Browser-24292f?style=flat-square" />
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#手机操作">手机操作</a> ·
-  <a href="#部署与维护">部署与维护</a> ·
-  <a href="https://github.com/shenmuegit/codex-console/issues">问题反馈</a>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#mobile-controls">Mobile controls</a> ·
+  <a href="#deployment-and-maintenance">Deployment</a> ·
+  <a href="https://github.com/shenmuegit/codex-console/issues">Report an issue</a>
 </p>
 
 ---
 
-## 为移动操作而做
+## Built for mobile control
 
-Codex Console 基于 Xpra，把主机上的 Codex / ChatGPT 桌面应用窗口传送到浏览器。计算、项目文件和应用进程留在主机上；手机负责显示与交互。
+Codex Console uses Xpra to stream the Codex / ChatGPT desktop app window from your host to a browser. Computation, project files, and application processes stay on the host; your phone handles display and interaction.
 
-| 能力 | 使用体验 |
+| Capability | Experience |
 | --- | --- |
-| 屏幕适配 | 根据浏览器可视区域缩放窗口，适应横竖屏与软键盘弹出后的空间 |
-| 触控操作 | 轻触点击、滑动拖拽、双击右键、二次按住滑动滚动 |
-| 手机输入法 | 使用手机的拼音、双拼等输入法组合文字，确认后提交到远程应用 |
-| 三档画质 | 在流畅、均衡、高清之间即时切换，选择会保留在当前页面地址中 |
-| 声音转发 | 将远程应用的声音传送到浏览器，麦克风转发默认关闭 |
-| 独立应用配置 | 使用专属配置目录保存登录状态与应用数据 |
+| Adaptive layout | Fits the browser's visible area, including orientation changes and space above the on-screen keyboard |
+| Touch controls | Tap to click, slide to drag, double-tap for a right-click, and tap-then-hold to scroll |
+| Native mobile input | Compose text with your phone's input method, then send committed text to the remote app |
+| Three quality profiles | Switch instantly between Smooth, Balanced, and Sharp; the selected profile stays in the page URL |
+| Audio forwarding | Play remote application audio in the browser; microphone forwarding is disabled by default |
+| Dedicated app profile | Store application settings and sign-in data in a separate profile directory |
 
-## 工作方式
+## How it works
 
 ```mermaid
 flowchart LR
-    Browser["手机 / 桌面浏览器<br/>Xpra HTML5 + mobile.js"]
-    Xpra["Linux 主机<br/>Xpra 会话 :100"]
-    App["Codex / ChatGPT<br/>桌面应用"]
+    Browser["Mobile / desktop browser<br/>Xpra HTML5 + mobile.js"]
+    Xpra["Linux host<br/>Xpra session :100"]
+    App["Codex / ChatGPT<br/>Desktop app"]
     Browser <-->|"HTTPS / WSS · 15443"| Xpra
-    Xpra <-->|"Xvfb 虚拟显示"| App
+    Xpra <-->|"Xvfb virtual display"| App
 ```
 
-`console.sh` 负责启动会话、准备访问密码与证书，并生成浏览器入口；`mobile.js` 负责触控、画面缩放、画质设置与手机输入法桥接。
+`console.sh` starts the session, prepares the access password and TLS certificate, and generates the browser entry page. `mobile.js` handles touch gestures, viewport scaling, quality settings, and mobile input-method integration.
 
-## 快速开始
+## Quick start
 
-### 1. 准备主机环境
+### 1. Prepare your host
 
-在 Linux 主机上准备以下组件，使用普通桌面用户运行控制台。
+Install the following components on a Linux host. Run the console as a regular desktop user.
 
-| 组件 | 要求 |
+| Component | Requirement |
 | --- | --- |
-| Xpra 与 HTML5 客户端 | 当前脚本面向 Xpra 6.5.x；HTML5 资源位于 `/usr/share/xpra/www` |
-| 虚拟显示与声音 | Xvfb、PulseAudio，以及 Xpra 对应的音频编码依赖 |
-| 脚本运行环境 | Bash、Python 3、OpenSSL、GNU coreutils |
-| 桌面应用 | 已安装可在 Linux / X11 下运行的 Codex / ChatGPT 桌面应用；默认启动路径为 `/usr/bin/chatgpt` |
+| Xpra and HTML5 client | The current script targets Xpra 6.5.x, with HTML5 assets at `/usr/share/xpra/www` |
+| Virtual display and audio | Xvfb, PulseAudio, and the audio codec dependencies required by Xpra |
+| Script runtime | Bash, Python 3, OpenSSL, and GNU coreutils |
+| Desktop app | A Codex / ChatGPT desktop app that runs on Linux / X11; the default executable is `/usr/bin/chatgpt` |
 
-Xpra 的安装方式见 [官方安装文档](https://github.com/Xpra-org/xpra/wiki/Download)，浏览器客户端见 [Xpra HTML5](https://github.com/Xpra-org/xpra-html5)。本机核对的版本为 Xpra `6.5.4` 与 `xpra-html5 19-r1`；其他版本升级后需验证客户端接口与页面结构。
+Follow the [official Xpra installation guide](https://github.com/Xpra-org/xpra/wiki/Download) and see [Xpra HTML5](https://github.com/Xpra-org/xpra-html5) for the browser client. The local environment was checked with Xpra `6.5.4` and `xpra-html5 19-r1`. Verify client interfaces and page structure when upgrading to another version.
 
-桌面应用需自行安装。先确认关键组件就绪：
+Install the desktop app separately, then check the key components:
 
 ```bash
 xpra --version
@@ -75,140 +75,140 @@ test -f /usr/share/xpra/www/index.html
 test -x /usr/bin/chatgpt
 ```
 
-### 2. 获取项目并确认应用配置
+### 2. Get the project and configure the app
 
 ```bash
 git clone https://github.com/shenmuegit/codex-console.git
 cd codex-console
 ```
 
-在 [console.sh](console.sh) 的 `--start-child` 参数中确认以下设置：
+Review these settings in the `--start-child` argument in [console.sh](console.sh):
 
-| 设置 | 默认值 | 调整方式 |
+| Setting | Default | Configuration |
 | --- | --- | --- |
-| 应用路径 | `/usr/bin/chatgpt` | 改为本机桌面应用的可执行路径 |
-| 应用网络代理 | `http://127.0.0.1:7890` | 改为本机代理地址；不使用代理时移除 `--proxy-server` 参数 |
-| 显示后端 | `--ozone-platform=x11` | 应用运行在 Xpra 提供的 X11 会话中 |
+| App executable | `/usr/bin/chatgpt` | Replace with your desktop app's executable path |
+| App network proxy | `http://127.0.0.1:7890` | Set your local proxy address, or remove `--proxy-server` if you do not use a proxy |
+| Display backend | `--ozone-platform=x11` | Runs the app in the X11 session provided by Xpra |
 
-这些值直接写在启动脚本中。代理参数用于主机上的桌面应用，手机连接使用主机的 HTTPS 地址。
+These values are defined directly in the launch script. The proxy setting applies to the desktop app on the host; your phone connects to the host's HTTPS address.
 
-### 3. 启动控制台
+### 3. Start the console
 
 ```bash
 ./console.sh start
 ./console.sh status
 ```
 
-首次启动会自动生成随机访问密码、自签名 TLS 证书和独立应用配置目录。省略参数运行 `./console.sh` 也会启动会话。
+The first launch generates a random access password, a self-signed TLS certificate, and a dedicated application profile. Running `./console.sh` without an argument also starts the session.
 
-在主机终端读取访问密码：
+Read the access password in your host terminal:
 
 ```bash
 cat "${XDG_STATE_HOME:-$HOME/.local/state}/codex-console/password"
 ```
 
-### 4. 从浏览器连接
+### 4. Connect from your browser
 
-手机连接到能够访问主机的网络，打开 `https://主机IP:15443/`，在认证提示中输入访问密码。
+Connect your phone to a network that can reach the host. Open `https://HOST_IP:15443/`, replacing `HOST_IP` with your host's IP address, and enter the access password when prompted.
 
-默认证书为自签名证书，且只包含 `localhost` 与 `127.0.0.1`，通过主机 IP 访问时浏览器会提示证书不受信任或名称不匹配。确认连接目标后处理证书提示；长期使用时换成与访问地址匹配的受信任证书。
+The generated certificate is self-signed and covers only `localhost` and `127.0.0.1`. Access through the host's IP address will trigger an untrusted-certificate or hostname-mismatch warning. Confirm the connection target before handling the warning. For ongoing use, replace the certificate with a trusted certificate matching your access address.
 
-首次进入后，在远程桌面应用中登录账号。控制台使用独立配置目录，已有桌面应用的登录状态未必会自动带入。
+On your first connection, sign in within the remote desktop app. The console uses a separate application profile, so an existing desktop sign-in may not carry over.
 
-## 手机操作
+## Mobile controls
 
-### 手势
+### Gestures
 
-| 操作 | 手势 |
+| Action | Gesture |
 | --- | --- |
-| 左键点击 | 轻触一次 |
-| 拖拽 / 选择 | 按下后直接滑动 |
-| 右键菜单 | 在同一位置快速轻触两次 |
-| 滚动 | 轻触一次，再次按住并滑动 |
-| 唤起输入法 | 先选中远程文本框，再点击左上角工具栏的键盘按钮 |
+| Left-click | Tap once |
+| Drag / select | Touch and slide |
+| Right-click menu | Quickly tap twice in the same place |
+| Scroll | Tap once, then touch again and slide while holding |
+| Open the keyboard | Focus a remote text field, then tap the keyboard button in the top-left toolbar |
 
-双击手势的判定窗口为约 180 ms。滚动时，第二次触碰要保持按住；普通的按下滑动会执行拖拽。
+The double-tap recognition window is approximately 180 ms. To scroll, keep the second touch held while sliding. A single touch-and-slide performs a drag.
 
-### 中文输入
+### Text input and IME
 
-输入法候选与组合过程留在手机端，确认后的文字通过 Xpra 剪贴板与粘贴快捷键提交到远程应用。拼音、双拼等输入方式沿用手机已有设置。
+Text composition and candidate selection stay on your phone. Once confirmed, text is sent to the remote app through the Xpra clipboard and a paste shortcut. Chinese input methods such as Pinyin and Double Pinyin use your phone's existing settings.
 
-连接需启用 Xpra 剪贴板。提交文字会更新远程剪贴板；连接不可用时，尚未提交的文字会保留在输入框中。
+Enable the Xpra clipboard for the connection. Committing text updates the remote clipboard. If the connection is unavailable, text that has not been submitted is retained in the input field.
 
-### 画质与声音
+### Quality and audio
 
-从左上角工具栏打开「画质与流畅度」，切换后立即生效。
+Open the quality control in the top-left toolbar. Profile changes take effect immediately.
 
-| 档位 | 地址参数 | 适用场景 |
+| Profile | URL parameter | Use case |
 | --- | --- | --- |
-| 流畅 | `?performance=smooth` | 优先交互响应，减少画面传输负担 |
-| 均衡（默认） | `?performance=balanced` | 日常操作与阅读 |
-| 高清 | `?performance=sharp` | 优先文字与界面细节，增加渲染密度 |
+| Smooth | `?performance=smooth` | Prioritize interaction speed and reduce display-streaming load |
+| Balanced (default) | `?performance=balanced` | Everyday interaction and reading |
+| Sharp | `?performance=sharp` | Prioritize text and interface detail with higher rendering density |
 
-也可以直接在访问地址后添加对应参数。画质选择会更新当前页面地址，刷新后沿用该地址中的设置。
+You can also add the parameter directly to the connection URL. Changing the profile updates the current page URL, so refreshing that address retains the selection.
 
-声音由主机转发到浏览器，可在 Xpra 工具栏中开启播放；浏览器可能需要一次点击才能允许播放。当前启动配置关闭了麦克风转发。
+The host forwards application audio to the browser. Enable playback in the Xpra toolbar; your browser may require a click before allowing audio. The current launch configuration disables microphone forwarding.
 
-## 部署与维护
+## Deployment and maintenance
 
-### 会话管理
+### Session management
 
 ```bash
-./console.sh status   # 查看窗口与会话状态
-./console.sh stop     # 停止会话及其桌面应用
-./console.sh start    # 再次启动
+./console.sh status   # Inspect the session and its windows
+./console.sh stop     # Stop the session and its desktop app
+./console.sh start    # Start again
 ```
 
-修改启动参数后，先停止再启动会话。应用配置与登录数据保留在状态目录中。
+After changing launch settings, stop and restart the session. Application settings and sign-in data remain in the state directory.
 
-### 数据位置
+### Data storage
 
-默认状态目录为 `~/.local/state/codex-console`；设置 `XDG_STATE_HOME` 后，目录变为 `$XDG_STATE_HOME/codex-console`。
+The default state directory is `~/.local/state/codex-console`. If `XDG_STATE_HOME` is set, the directory becomes `$XDG_STATE_HOME/codex-console`.
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `password` | 浏览器访问密码 |
-| `cert.pem` / `key.pem` | TLS 证书与私钥 |
-| `profile/` | 独立的桌面应用配置与登录数据 |
-| `www/` | 生成的 HTML5 入口与静态资源链接 |
-| `xpra.log` | 会话运行日志 |
+| `password` | Browser access password |
+| `cert.pem` / `key.pem` | TLS certificate and private key |
+| `profile/` | Dedicated application settings and sign-in data |
+| `www/` | Generated HTML5 entry page and static asset links |
+| `xpra.log` | Session log |
 
-状态目录权限为 `700`，密码、证书和私钥文件权限为 `600`。密码与证书在后续启动时复用；备份 `profile/` 可保留应用配置。
+The state directory has permissions `700`; the password, certificate, and private key files have permissions `600`. Subsequent launches reuse the password and certificate. Back up `profile/` to preserve application settings.
 
-### 网络与访问范围
+### Network and access
 
-当前配置监听 `0.0.0.0:15443`，使用固定显示号 `:100`，适合单用户的独立应用会话。限制访问范围时，修改 `console.sh` 中的 `--bind-wss` 地址，或通过防火墙 / VPN 控制可访问的设备。
+The current configuration listens on `0.0.0.0:15443` and uses the fixed display number `:100`. It is intended for a single user's dedicated application session. Restrict access by changing the `--bind-wss` address in `console.sh`, or by controlling reachable devices through a firewall or VPN.
 
-Xpra 的新命令、远程 shell、文件传输、打印、摄像头以及远程打开文件和 URL 的附加服务已关闭。通过认证的用户仍可操作桌面应用及其权限内的资源，因此访问密码应只提供给可信用户。
+Xpra's additional services for new commands, remote shell, file transfer, printing, webcam access, and opening files or URLs are disabled. Authenticated users can still control the desktop app and access resources available to it, so share the access password only with trusted users.
 
-## 常见问题
+## Troubleshooting
 
-| 现象 | 排查方式 |
+| Symptom | What to check |
 | --- | --- |
-| 浏览器无法打开入口 | 确认会话已启动、访问地址正确，并检查主机防火墙与 `15443` 端口 |
-| 能打开页面但认证失败 | 使用状态目录中的 `password`；它与桌面应用账号密码分别用于不同的登录步骤 |
-| 启动后没有应用窗口 | 检查应用路径与代理参数，并查看 `xpra.log` |
-| 中文无法提交 | 确认连接已就绪、Xpra 剪贴板已启用，且远程文本框已获得焦点 |
-| 界面卡顿或流量较高 | 切换到「流畅」档位，并检查主机与手机之间的网络 |
-| 没有声音 | 在工具栏开启声音，并检查浏览器播放权限与主机的 PulseAudio / 音频编码依赖 |
+| Browser cannot open the console | Confirm the session is running, the address is correct, and the host firewall allows access to port `15443` |
+| Page loads, but authentication fails | Use the state directory's `password`; browser access and desktop account sign-in are separate authentication steps |
+| No application window after launch | Check the app executable and proxy settings, then inspect `xpra.log` |
+| Composed text is not submitted | Confirm the connection is ready, the Xpra clipboard is enabled, and the remote text field has focus |
+| Display is slow or uses too much bandwidth | Switch to Smooth and check the network between your phone and the host |
+| No audio | Enable audio in the toolbar and check browser playback permissions, PulseAudio, and the host's audio codec dependencies |
 
-## 开发与验证
+## Development and verification
 
-项目直接复用系统安装的 Xpra HTML5 客户端。移动交互检查额外需要 Node.js 20 或更新版本，以及当前 Python 环境可导入的 Xpra 模块。
+The project reuses the system-installed Xpra HTML5 client. Mobile interaction checks additionally require Node.js 20 or newer and Xpra modules importable from the current Python environment.
 
 ```bash
 bash -n console.sh
 node test_mobile.cjs
 ```
 
-`test_mobile.cjs` 验证触控事件、坐标缩放、画质设置与手机输入法的文字提交，无需打开浏览器。
+`test_mobile.cjs` checks touch events, coordinate scaling, quality settings, and mobile input-method text submission without opening a browser.
 
-启动控制台后，可运行实际端点检查：
+After starting the console, run the live endpoint check:
 
 ```bash
 python3 test_console.py
 ```
 
-该检查验证 HTTPS、正确与错误密码认证、应用窗口，以及通过 WSS 接收并解码的音频。需要 X11 检查工具 `xrdb`、`xdpyinfo`，以及 `gst-launch-1.0` 和对应的 GStreamer 音频插件。
+This check verifies HTTPS, accepted and rejected password authentication, the application window, and audio received and decoded over WSS. It requires the X11 tools `xrdb` and `xdpyinfo`, plus `gst-launch-1.0` and the relevant GStreamer audio plugins.
 
-反馈问题时，请附上主机系统、Xpra / HTML5 客户端版本、浏览器版本及相关日志，并移除密码、账号信息和私有内容：[提交 Issue](https://github.com/shenmuegit/codex-console/issues)。
+When reporting a problem, include your host OS, Xpra / HTML5 client versions, browser version, and relevant logs. Remove passwords, account details, and private content before [opening an issue](https://github.com/shenmuegit/codex-console/issues).
