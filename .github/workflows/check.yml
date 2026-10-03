@@ -1,0 +1,26 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Prepare runtime without starting an app or user service
+        run: ./deploy.sh --no-service --no-start --app /usr/bin/true
+      - name: Install X11 integration fixture
+        run: sudo apt-get install -y xterm
+      - name: Run isolated checks
+        run: ./scripts/check.sh
+      - name: Check temporary HTTPS and WSS session
+        run: python3 test_integration.py

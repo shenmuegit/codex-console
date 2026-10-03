@@ -1,5 +1,70 @@
 (() => {
   const doubleTapDelay = 180;
+  const processKey = XpraClient.prototype._keyb_process;
+  XpraClient.prototype._keyb_process = function (pressed, event) {
+    // A reconnect can retain keyboard capture while authentication is pending.
+    if (!this.connected) return true;
+    return processKey.call(this, pressed, event);
+  };
+  const connect = XpraClient.prototype.connect;
+  XpraClient.prototype.connect = function (...args) {
+    const start = () => {
+      this._connection_closed = false;
+      this.capture_keyboard = false;
+      document.getElementById('progress-bar').hidden = false;
+      document.getElementById('connection-retry').hidden = true;
+      return connect.apply(this, args);
+    };
+    // Keep credentials only in this page's client, including during reconnects.
+    if (this._access_password) this.passwords = [this._access_password];
+    if (this.passwords.length || !this.password_prompt_fn) return start();
+    this.password_prompt_fn('访问密码', password => {
+      if (!password) return this.disconnect('password prompt cancelled');
+      this._access_password = password;
+      this.passwords = [password];
+      start();
+    });
+  };
+  const processChallenge = XpraClient.prototype.do_process_challenge;
+  XpraClient.prototype.do_process_challenge = function (digest, serverSalt, saltDigest, password) {
+    this._access_password = password;
+    return processChallenge.call(this, digest, serverSalt, saltDigest, password);
+  };
+  const close = XpraClient.prototype.close;
+  XpraClient.prototype.close = function (...args) {
+    if (!this.reconnect_in_progress) {
+      this._connection_closed = true;
+      this.connected = false;
+      this.capture_keyboard = false;
+      const reason = String(this.disconnect_reason || '').toLowerCase();
+      if (reason.includes('authentication failed') || reason.includes('password prompt cancelled')) {
+        this._access_password = null;
+        this.passwords = [];
+      }
+    }
+    return close.apply(this, args);
+  };
+  const processClose = XpraClient.prototype._process_close;
+  XpraClient.prototype._process_close = function (packet) {
+    // Only transport failures retry; explicit closes and rejected passwords stop.
+    if (!this.reconnect_in_progress && (this._connection_closed || (!this.connected && !this._access_password))) {
+      this.packet_disconnect_reason(packet);
+      return this.close();
+    }
+    return processClose.call(this, packet);
+  };
+  const getMouse = XpraClient.prototype.getMouse;
+  XpraClient.prototype.getMouse = function (event) {
+    const mouse = getMouse.call(this, event);
+    if (document.pointerLockElement || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return mouse;
+    const rect = this.container.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      // Use the displayed rectangle for clicks, dragging, scrolling and button release.
+      mouse.x = this.last_mouse_x = Math.round((event.clientX - rect.left) * this.container.clientWidth / rect.width);
+      mouse.y = this.last_mouse_y = Math.round((event.clientY - rect.top) * this.container.clientHeight / rect.height);
+    }
+    return mouse;
+  };
   // Use Xpra mouse callbacks, including its right-button and wheel protocol.
   XpraWindow.prototype.register_canvas_pointer_events = function (canvas) {
     this._release_touch?.();
@@ -125,7 +190,7 @@
   // ponytail: fit one Codex window; use desktop mode for a layout with multiple apps.
   const mainWindow = client => Object.values(client.id_to_window).find(win =>
     !win.override_redirect && !win.tray && win.has_windowtype(['NORMAL']) &&
-    (win.metadata['class-instance'] || []).some(value => /chatgpt|codex/i.test(Utilities.s(value))));
+    (win.metadata['class-instance'] || []).some(value => Utilities.s(value) === client.container.dataset.codexInstance));
   const profiles = {
     smooth: [1, 45, 90], balanced: [1.5, 70, 80], sharp: [2, 95, 70],
   };
@@ -134,6 +199,9 @@
     client._render_density = density;
     const options = { 'min-quality': quality, 'min-speed': speed };
     for (const [key, value] of Object.entries(options)) client.set_encoding_option(key, value);
+    for (const button of document.querySelectorAll('#performance_menu_entry [data-performance]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.performance === name));
+    }
     if (client.connected) {
       client.send(['encoding-options', options]);
       client._screen_resized();
@@ -141,23 +209,37 @@
   };
   const getDPI = XpraClient.prototype._get_DPI;
   XpraClient.prototype._get_DPI = function () {
-    return Math.round(getDPI.call(this) * (this._render_density || 1));
+    return Math.round(getDPI.call(this) * (this._effective_density || this._render_density || 1));
   };
   const hello = XpraClient.prototype._make_hello;
   XpraClient.prototype._make_hello = function () {
     hello.call(this);
     // Xpra 6.5 applies Xsettings only when DPI changes: set it after connection.
     this.capabilities.dpi = 0;
+    this.capabilities.system_tray = false;
+    this.capabilities.wants.push('display');
+  };
+  const processHello = XpraClient.prototype._process_hello;
+  XpraClient.prototype._process_hello = function (packet) {
+    this._server_size = packet[1].actual_desktop_size;
+    return processHello.call(this, packet);
   };
   const fit = client => {
     const viewport = window.visualViewport;
     const width = Math.max(1, viewport?.width || window.innerWidth);
     const height = Math.max(1, viewport?.height || window.innerHeight);
     const minimum = mainWindow(client)?.metadata['size-constraints']?.['minimum-size'] || [480, 600];
-    client.scale = (client._render_density || 1) * Math.max(1, minimum[0] / width, minimum[1] / height);
+    const desiredScale = (client._render_density || 1) * Math.max(1, minimum[0] / width, minimum[1] / height);
+    // A fixed Xvfb display clips pointer coordinates beyond this advertised size.
+    const [maxWidth, maxHeight] = client._server_size || [Infinity, Infinity];
+    const renderScale = Math.min(desiredScale, maxWidth / width, maxHeight / height);
+    const renderWidth = Math.min(maxWidth, Math.max(minimum[0], Math.ceil(width * renderScale)));
+    const renderHeight = Math.min(maxHeight, Math.max(minimum[1], Math.ceil(height * renderScale)));
+    client.scale = renderWidth / width;
+    client._effective_density = (client._render_density || 1) * client.scale / desiredScale;
     Object.assign(client.container.style, {
-      width: `${Math.ceil(width * client.scale)}px`, height: `${Math.ceil(height * client.scale)}px`,
-      transform: `scale(${1 / client.scale})`, transformOrigin: 'top left',
+      width: `${renderWidth}px`, height: `${renderHeight}px`,
+      transform: `scale(${width / renderWidth}, ${height / renderHeight})`, transformOrigin: 'top left',
     });
     for (const win of Object.values(client.id_to_window)) win.scale = client.scale;
   };
@@ -166,12 +248,12 @@
     let profile = new URLSearchParams(window.location.search).get('performance') || 'balanced';
     if (!Object.hasOwn(profiles, profile)) profile = 'balanced';
     setProfile(this, profile);
-    const selector = document.getElementById('performance_profile');
-    if (selector) {
-      selector.value = profile;
-      selector.onchange = () => {
-        const name = Object.hasOwn(profiles, selector.value) ? selector.value : 'balanced';
-        selector.value = name;
+    const menu = document.getElementById('float_menu');
+    if (menu) menu.onkeydown = menu.onkeyup = event => event.stopPropagation();
+    for (const button of document.querySelectorAll('#performance_menu_entry [data-performance]')) {
+      button.onclick = event => {
+        event.stopPropagation();
+        const name = Object.hasOwn(profiles, button.dataset.performance) ? button.dataset.performance : 'balanced';
         setProfile(this, name);
         const url = new URL(window.location.href);
         url.searchParams.set('performance', name);
@@ -179,6 +261,19 @@
       };
     }
     const result = init.apply(this, args);
+    // Keep disconnects here instead of opening Xpra's connection settings.
+    this.callback_close = reason => {
+      const rejected = String(reason || '').includes('authentication failed');
+      document.getElementById('progress-label').textContent = rejected ? '密码验证失败' : '连接已断开';
+      document.getElementById('progress-details').textContent = rejected ? '请检查服务器访问密码后重新连接。' : reason || '';
+      document.getElementById('progress-bar').hidden = true;
+      document.getElementById('connection-retry').hidden = false;
+      document.getElementById('progress').style.display = 'block';
+    };
+    document.getElementById('connection-retry').onclick = () => {
+      this.reconnect_attempt = 0;
+      this.do_reconnect();
+    };
     fit(this);
     this.desktop_width = this.container.clientWidth;
     this.desktop_height = this.container.clientHeight;

@@ -1,214 +1,137 @@
 <p align="center">
-  <img src="assets/codex-console-icon.png" width="128" height="128" alt="Codex Console icon: a desktop terminal connected to a phone" />
+  <img src="assets/codex-console-icon.png" width="128" height="128" alt="Codex Console" />
 </p>
 
 <h1 align="center">Codex Console</h1>
-
 <p align="center"><strong>Your Codex workspace, in your mobile browser.</strong></p>
-
 <p align="center">
-  Run the desktop app on a Linux host. Check tasks, enter instructions, and control the interface from your browser.<br />
-  Built for touch interaction, native mobile input, and small-screen reading.
-</p>
-
-<p align="center">
-  <img alt="Host platform: Linux" src="https://img.shields.io/badge/Host-Linux-24292f?style=flat-square" />
-  <img alt="Transport: HTTPS and WSS" src="https://img.shields.io/badge/Transport-HTTPS%20%2F%20WSS-24292f?style=flat-square" />
-  <img alt="Client: browser" src="https://img.shields.io/badge/Client-Browser-24292f?style=flat-square" />
-</p>
-
-<p align="center">
+  <a href="README.zh-CN.md">简体中文</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#mobile-controls">Mobile controls</a> ·
-  <a href="#deployment-and-maintenance">Deployment</a> ·
-  <a href="https://github.com/shenmuegit/codex-console/issues">Report an issue</a>
+  <a href="#documentation">Documentation</a> ·
+  <a href="https://github.com/shenmuegit/codex-console/issues">Issues</a>
+</p>
+<p align="center">
+  <img alt="Host: Linux" src="https://img.shields.io/badge/Host-Linux-24292f?style=flat-square" />
+  <img alt="HTTPS and WSS" src="https://img.shields.io/badge/Transport-HTTPS%20%2F%20WSS-24292f?style=flat-square" />
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-24292f?style=flat-square" /></a>
 </p>
 
----
+Codex Console streams a dedicated Codex / ChatGPT desktop app window from a Linux host through [Xpra](https://github.com/Xpra-org/xpra). Read tasks, enter instructions with your phone's input method, and control the app from a browser. Projects, computation, account sessions, and application processes stay on the host.
 
-## Built for mobile control
+This repository provides the remote access layer. You must install a compatible Linux desktop app separately; the installer does not download the app or sign in to an account. The browser interface currently uses Simplified Chinese.
 
-Codex Console uses Xpra to stream the Codex / ChatGPT desktop app window from your host to a browser. Computation, project files, and application processes stay on the host; your phone handles display and interaction.
+## Features
 
-| Capability | Experience |
+| Capability | Behavior |
 | --- | --- |
-| Adaptive layout | Fits the browser's visible area, including orientation changes and space above the on-screen keyboard |
-| Touch controls | Tap to click, slide to drag, double-tap for a right-click, and tap-then-hold to scroll |
-| Native mobile input | Compose text with your phone's input method, then send committed text to the remote app |
-| Three quality profiles | Switch instantly between Smooth, Balanced, and Sharp; the selected profile stays in the page URL |
-| Audio forwarding | Play remote application audio in the browser; microphone forwarding is disabled by default |
-| Dedicated app profile | Store application settings and sign-in data in a separate profile directory |
+| Mobile layout | Adapts to the visible browser area, orientation, and on-screen keyboard |
+| Touch gestures | Tap, drag, double-tap for right-click, and tap-then-hold to scroll |
+| Native text input | Compose locally with your phone's IME and paste committed text into the app |
+| Quality profiles | Smooth, Balanced, and Sharp; the selected profile is retained in the page URL |
+| Audio | Host application audio plays in the browser; microphone forwarding is disabled |
+| Dedicated profile | Separate application settings and sign-in data; unrelated windows are filtered out |
+| App recovery | Reopens the main window after it is closed and restarts an exited app |
+| One-command deployment | Checks dependencies, prepares credentials, and installs a user service |
 
-## How it works
+## Requirements
 
-```mermaid
-flowchart LR
-    Browser["Mobile / desktop browser<br/>Xpra HTML5 + mobile.js"]
-    Xpra["Linux host<br/>Xpra session :100"]
-    App["Codex / ChatGPT<br/>Desktop app"]
-    Browser <-->|"HTTPS / WSS · 15443"| Xpra
-    Xpra <-->|"Xvfb virtual display"| App
-```
+| Item | Requirement |
+| --- | --- |
+| Host | Linux; automatic dependencies support Debian 12/13 and Ubuntu 22.04/24.04 |
+| User | Regular user with `sudo` for missing system packages; systemd user session for automatic startup |
+| Desktop app | Compatible Linux / X11 Codex / ChatGPT build, default `/usr/bin/chatgpt` |
+| Runtime | Bash, Python 3.10+, OpenSSL, Xpra 6.5+ within the 6.x series, Xvfb, PulseAudio |
+| HTML5 client | Tested baseline: `xpra-html5 19-r1` at `/usr/share/xpra/www` |
+| Browser | Modern mobile or desktop browser with JavaScript and WebSocket support |
+| Access | Browser can reach the host on TCP `15443` by default |
 
-`console.sh` starts the session, prepares the access password and TLS certificate, and generates the browser entry page. `mobile.js` handles touch gestures, viewport scaling, quality settings, and mobile input-method integration.
+The development host runs Debian 13, Xpra `6.5.4`, and `xpra-html5 19-r1`. Other listed systems have installer support; they are not all covered by local live testing. Windows and macOS can be browser clients. Native hosting on those systems is outside the current installer.
+
+The app integration currently expects the window class `Chatgpt` and the instance `chatgpt (<profile path>)`. Changing the executable path supports alternate installations of that compatible app. See [compatibility details](docs/deployment.md#desktop-app-compatibility) before using a different build.
 
 ## Quick start
 
-### 1. Prepare your host
-
-Install the following components on a Linux host. Run the console as a regular desktop user.
-
-| Component | Requirement |
-| --- | --- |
-| Xpra and HTML5 client | The current script targets Xpra 6.5.x, with HTML5 assets at `/usr/share/xpra/www` |
-| Virtual display and audio | Xvfb, PulseAudio, and the audio codec dependencies required by Xpra |
-| Script runtime | Bash, Python 3, OpenSSL, and GNU coreutils |
-| Desktop app | A Codex / ChatGPT desktop app that runs on Linux / X11; the default executable is `/usr/bin/chatgpt` |
-
-Follow the [official Xpra installation guide](https://github.com/Xpra-org/xpra/wiki/Download) and see [Xpra HTML5](https://github.com/Xpra-org/xpra-html5) for the browser client. The local environment was checked with Xpra `6.5.4` and `xpra-html5 19-r1`. Verify client interfaces and page structure when upgrading to another version.
-
-Install the desktop app separately, then check the key components:
-
-```bash
-xpra --version
-test -f /usr/share/xpra/www/index.html
-test -x /usr/bin/chatgpt
-```
-
-### 2. Get the project and configure the app
+Install your desktop app and Git first, then run as your regular user:
 
 ```bash
 git clone https://github.com/shenmuegit/codex-console.git
 cd codex-console
+./deploy.sh
 ```
 
-Review these settings in the `--start-child` argument in [console.sh](console.sh):
-
-| Setting | Default | Configuration |
-| --- | --- | --- |
-| App executable | `/usr/bin/chatgpt` | Replace with your desktop app's executable path |
-| App network proxy | `http://127.0.0.1:7890` | Set your local proxy address, or remove `--proxy-server` if you do not use a proxy |
-| Display backend | `--ozone-platform=x11` | Runs the app in the X11 session provided by Xpra |
-
-These values are defined directly in the launch script. The proxy setting applies to the desktop app on the host; your phone connects to the host's HTTPS address.
-
-### 3. Start the console
+If your app is installed elsewhere:
 
 ```bash
-./console.sh start
-./console.sh status
+./deploy.sh --app /absolute/path/to/chatgpt
 ```
 
-The first launch generates a random access password, a self-signed TLS certificate, and a dedicated application profile. Running `./console.sh` without an argument also starts the session.
+The installer reuses an existing compatible runtime or installs the missing packages through the official Xpra APT repository. It creates a private configuration file, generates a random browser access password and self-signed TLS certificate, installs a service with your actual checkout path, enables it, and waits for the HTTPS page to respond. Review [what installation changes](docs/deployment.md#what-the-installer-changes).
 
-Read the access password in your host terminal:
+Read the password on the host:
 
 ```bash
-cat "${XDG_STATE_HOME:-$HOME/.local/state}/codex-console/password"
+./console.sh password
 ```
 
-### 4. Connect from your browser
+Open `https://HOST_IP:15443/` in your browser and replace `HOST_IP` with the Linux host's address. Enter the access password, then sign in to the remote desktop app on first use. These are separate authentication steps. The dedicated profile may require a new app sign-in.
 
-Connect your phone to a network that can reach the host. Open `https://HOST_IP:15443/`, replacing `HOST_IP` with your host's IP address, and enter the access password when prompted.
+The generated certificate is self-signed, so the browser displays a trust warning. See [TLS setup](docs/configuration.md#tls-certificates) to add your access address to the certificate or install a trusted certificate. Keep access limited to a trusted network or VPN: anyone with the password can control the app with your host account's permissions.
 
-The generated certificate is self-signed and covers only `localhost` and `127.0.0.1`. Access through the host's IP address will trigger an untrusted-certificate or hostname-mismatch warning. Confirm the connection target before handling the warning. For ongoing use, replace the certificate with a trusted certificate matching your access address.
+## Everyday commands
 
-On your first connection, sign in within the remote desktop app. The console uses a separate application profile, so an existing desktop sign-in may not carry over.
+```bash
+./console.sh doctor                                # Check runtime and configuration
+./console.sh status                                # Inspect the Xpra session
+systemctl --user status codex-console.service      # Inspect the user service
+systemctl --user restart codex-console.service     # Apply configuration changes
+systemctl --user stop codex-console.service        # Stop the managed console
+journalctl --user -u codex-console.service -n 100   # Read service logs
+```
+
+For manual operation, use `./deploy.sh --no-service --no-start`, then `./console.sh start` and `./console.sh stop`. Repeated installation retains existing configuration, credentials, certificates, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
 
 ## Mobile controls
-
-### Gestures
 
 | Action | Gesture |
 | --- | --- |
 | Left-click | Tap once |
 | Drag / select | Touch and slide |
-| Right-click menu | Quickly tap twice in the same place |
-| Scroll | Tap once, then touch again and slide while holding |
-| Open the keyboard | Focus a remote text field, then tap the keyboard button in the top-left toolbar |
+| Right-click | Quickly tap twice in the same place |
+| Scroll | Tap, then touch again and slide while keeping the second touch held |
+| Keyboard | Focus a remote text field, then open the keyboard button in the top-right drawer |
+| Fullscreen / audio | Open the right-edge drawer and use the matching control |
 
-The double-tap recognition window is approximately 180 ms. To scroll, keep the second touch held while sliding. A single touch-and-slide performs a drag.
+Double-tap recognition uses a roughly 180 ms interval. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents.
 
-### Text input and IME
+Choose **流畅** (Smooth), **均衡** (Balanced), or **高清** (Sharp) in the quality menu, or use `?performance=smooth`, `?performance=balanced`, or `?performance=sharp` in the URL. Balanced is the default. Audio playback may require a user gesture to satisfy browser permissions.
 
-Text composition and candidate selection stay on your phone. Once confirmed, text is sent to the remote app through the Xpra clipboard and a paste shortcut. Chinese input methods such as Pinyin and Double Pinyin use your phone's existing settings.
+## Documentation
 
-Enable the Xpra clipboard for the connection. Committing text updates the remote clipboard. If the connection is unavailable, text that has not been submitted is retained in the input field.
-
-### Quality and audio
-
-Open the quality control in the top-left toolbar. Profile changes take effect immediately.
-
-| Profile | URL parameter | Use case |
-| --- | --- | --- |
-| Smooth | `?performance=smooth` | Prioritize interaction speed and reduce display-streaming load |
-| Balanced (default) | `?performance=balanced` | Everyday interaction and reading |
-| Sharp | `?performance=sharp` | Prioritize text and interface detail with higher rendering density |
-
-You can also add the parameter directly to the connection URL. Changing the profile updates the current page URL, so refreshing that address retains the selection.
-
-The host forwards application audio to the browser. Enable playback in the Xpra toolbar; your browser may require a click before allowing audio. The current launch configuration disables microphone forwarding.
-
-## Deployment and maintenance
-
-### Session management
-
-```bash
-./console.sh status   # Inspect the session and its windows
-./console.sh stop     # Stop the session and its desktop app
-./console.sh start    # Start again
-```
-
-After changing launch settings, stop and restart the session. Application settings and sign-in data remain in the state directory.
-
-### Data storage
-
-The default state directory is `~/.local/state/codex-console`. If `XDG_STATE_HOME` is set, the directory becomes `$XDG_STATE_HOME/codex-console`.
-
-| Path | Contents |
+| Guide | Contents |
 | --- | --- |
-| `password` | Browser access password |
-| `cert.pem` / `key.pem` | TLS certificate and private key |
-| `profile/` | Dedicated application settings and sign-in data |
-| `www/` | Generated HTML5 entry page and static asset links |
-| `xpra.log` | Session log |
+| [Deployment](docs/deployment.md) | Supported hosts, installer options, manual setup, boot startup, updates, backups, uninstall |
+| [Configuration](docs/configuration.md) | Configuration file, every supported setting, paths, TLS, passwords, network binding |
+| [Troubleshooting](docs/troubleshooting.md) | Dependency, startup, authentication, window, input, audio, and performance problems |
+| [Development](docs/development.md) | Components, tests, live checks, Xpra upgrade checks, release steps |
+| [Contributing](CONTRIBUTING.md) | Local workflow, bug reports, pull requests |
+| [Security](SECURITY.md) | Access boundaries, sensitive data, private vulnerability reporting |
+| [Changelog](CHANGELOG.md) | Changes awaiting release |
 
-The state directory has permissions `700`; the password, certificate, and private key files have permissions `600`. Subsequent launches reuse the password and certificate. Back up `profile/` to preserve application settings.
+Local configuration is stored at `~/.config/codex-console/config.sh`; application data defaults to `~/.local/state/codex-console`. Both follow the corresponding XDG environment variables. Keep passwords, private keys, profile data, and personal configuration outside the repository.
 
-### Network and access
+## Development
 
-The current configuration listens on `0.0.0.0:15443` and uses the fixed display number `:100`. It is intended for a single user's dedicated application session. Restrict access by changing the `--bind-wss` address in `console.sh`, or by controlling reachable devices through a firewall or VPN.
-
-Xpra's additional services for new commands, remote shell, file transfer, printing, webcam access, and opening files or URLs are disabled. Authenticated users can still control the desktop app and access resources available to it, so share the access password only with trusted users.
-
-## Troubleshooting
-
-| Symptom | What to check |
-| --- | --- |
-| Browser cannot open the console | Confirm the session is running, the address is correct, and the host firewall allows access to port `15443` |
-| Page loads, but authentication fails | Use the state directory's `password`; browser access and desktop account sign-in are separate authentication steps |
-| No application window after launch | Check the app executable and proxy settings, then inspect `xpra.log` |
-| Composed text is not submitted | Confirm the connection is ready, the Xpra clipboard is enabled, and the remote text field has focus |
-| Display is slow or uses too much bandwidth | Switch to Smooth and check the network between your phone and the host |
-| No audio | Enable audio in the toolbar and check browser playback permissions, PulseAudio, and the host's audio codec dependencies |
-
-## Development and verification
-
-The project reuses the system-installed Xpra HTML5 client. Mobile interaction checks additionally require Node.js 20 or newer and Xpra modules importable from the current Python environment.
+With the runtime installed and Node.js 20+ available:
 
 ```bash
-bash -n console.sh
-node test_mobile.cjs
+./scripts/check.sh           # Isolated checks; does not start your desktop app
+./scripts/check.sh --live    # Also checks an already-running console and plays a test tone
 ```
 
-`test_mobile.cjs` checks touch events, coordinate scaling, quality settings, and mobile input-method text submission without opening a browser.
+The live check requires a running session and GStreamer audio plugins. Read [the development guide](docs/development.md) before running it against a session in use.
 
-After starting the console, run the live endpoint check:
+## License and acknowledgements
 
-```bash
-python3 test_console.py
-```
+Project code and included artwork are provided under the [MIT License](LICENSE). Xpra, its HTML5 client, and the desktop app are separate projects with their own licenses. Xpra HTML5 assets are linked from your system installation and adapted in the private runtime directory; they are not vendored into this repository.
 
-This check verifies HTTPS, accepted and rejected password authentication, the application window, and audio received and decoded over WSS. It requires the X11 tools `xrdb` and `xdpyinfo`, plus `gst-launch-1.0` and the relevant GStreamer audio plugins.
-
-When reporting a problem, include your host OS, Xpra / HTML5 client versions, browser version, and relevant logs. Remove passwords, account details, and private content before [opening an issue](https://github.com/shenmuegit/codex-console/issues).
+This is an independent project and is not an official OpenAI product.

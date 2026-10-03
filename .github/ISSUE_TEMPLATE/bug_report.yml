@@ -1,0 +1,32 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem with deployment or browser interaction.
+body:
+  - type: markdown
+    attributes:
+      value: "Remove passwords, keys, account content, and private paths before sharing. 请先删除密码、私钥和私人内容。Security reports: see SECURITY.md."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: OS and architecture, app build, Xpra and xpra-html5 versions, browser/device.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Include the installation/start command and relevant configuration without secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior / 预期与实际表现
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted diagnostics / 脱敏后的错误日志
+      description: Relevant doctor output, service errors, or browser console errors.
+      render: text

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 
 function serverClipboardText(packet, index) {
@@ -40,6 +41,7 @@ class Surface extends EventTarget {
     this.dispatchEvent(new Event('blur'));
   }
   setAttribute(name, value) { this[name] = value; }
+  getAttribute(name) { return this[name] ?? null; }
   setCustomValidity(value) { this.validityMessage = value; }
   reportValidity() {}
   setPointerCapture(id) { this.captured.add(id); }
@@ -47,10 +49,17 @@ class Surface extends EventTarget {
   releasePointerCapture(id) { this.captured.delete(id); }
   get clientWidth() { return Number.parseFloat(this.style.width) || 360; }
   get clientHeight() { return Number.parseFloat(this.style.height) || 680; }
+  getBoundingClientRect() {
+    const scales = this.style.transform?.match(/scale\(([^)]+)\)/)?.[1].split(',').map(Number) || [1];
+    return { left: this.left || 0, top: this.top || 0,
+      width: this.clientWidth * scales[0], height: this.clientHeight * (scales[1] ?? scales[0]) };
+  }
 }
 const screen = new Surface();
+screen.dataset = { codexInstance: 'chatgpt (/console/profile)' };
 const browser = new Surface();
 browser.PointerEvent = Event;
+browser.navigator = { languages: ['zh-CN'], language: 'zh-CN', appVersion: 'Linux', platform: 'Linux x86_64' };
 browser.innerWidth = 360;
 browser.innerHeight = 680;
 browser.visualViewport = new Surface();
@@ -61,7 +70,10 @@ browser.history = { replaceState: (_state, _title, url) => {
   browser.location.href = String(url);
   browser.location.search = new URL(url).search;
 } };
-const profileSelector = new Surface();
+const toolbar = new Surface();
+const profileButtons = new Map();
+const connectionStatus = Object.fromEntries(
+  ['progress', 'progress-label', 'progress-details', 'progress-bar', 'connection-retry'].map(id => [id, new Surface()]));
 const packets = [];
 let now = 0;
 let timerId = 0;
@@ -82,26 +94,213 @@ function advance(ms) {
   now = target;
 }
 const jquery = () => ({ attr: () => '', parents: () => ({ length: 0 }),
-  scrollLeft: () => 0, scrollTop: () => 0 });
+  scrollLeft: () => 0, scrollTop: () => 0, mousedown: () => {}, mouseup: () => {}, text: () => {}, hide: () => {} });
 const document = new Surface();
 document.createElement = () => new Surface();
 document.body = new Surface();
-document.getElementById = id => id === 'performance_profile' ? profileSelector : null;
-document.querySelector = () => null;
+document.getElementById = id => id === 'screen' ? screen :
+  id === 'float_menu' ? toolbar : connectionStatus[id] || null;
+document.querySelector = selector => selector === '#screen' ? screen : null;
+document.querySelectorAll = selector => selector === '#performance_menu_entry [data-performance]' ? [...profileButtons.values()] : [];
 const context = vm.createContext({ window: browser, document,
   console, performance: { now: () => now }, setTimeout: schedule,
-  clearTimeout: id => timers.delete(id), AbortController, jQuery: jquery, $: jquery,
-  default_settings: {}, navigator: {}, screen: {}, URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array });
+  clearTimeout: id => timers.delete(id), setInterval: () => 0, AbortController, jQuery: jquery, $: jquery,
+  default_settings: {}, navigator: browser.navigator, screen: {}, URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
+  MediaSourceUtil: { getMediaSourceClass: () => null }, AudioContext: class {} });
 vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/rencode.js', 'utf8'), context);
-for (const file of ['Utilities', 'Constants', 'Keycodes', 'Window', 'Client']) {
+for (const file of ['Utilities', 'Constants', 'Keycodes', 'Window']) {
   vm.runInContext(fs.readFileSync(`/usr/share/xpra/www/js/${file}.js`, 'utf8'), context);
 }
 const mobile = path.join(__dirname, 'mobile.js');
+// Load the same adapted client that console.sh serves, without starting a session.
+const web = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-console-test-'));
+try {
+  const builder = fs.readFileSync(path.join(__dirname, 'console.sh'), 'utf8')
+    .split(" <<'PY'\n")[1].split('\nPY\n')[0];
+  const built = spawnSync('python3', ['-', web, mobile], { input: builder, encoding: 'utf8' });
+  assert.equal(built.status, 0, built.stderr);
+  const html = fs.readFileSync(path.join(web, 'index.html'), 'utf8');
+  for (const match of html.matchAll(/<button\b[^>]*data-performance="([^"]+)"/g)) {
+    const button = new Surface();
+    button.dataset = { performance: match[1] };
+    profileButtons.set(match[1], button);
+  }
+  assert.equal(profileButtons.size, 3, 'The submenu must expose all three profiles as buttons');
+  assert.ok(!html.includes('<select id="performance_profile"'), 'The browser dropdown must be removed');
+  // Keyboard submission and the form must share password validation.
+  const authResponses = [];
+  const passwordField = {
+    value: '', reportValidity() { return this.value.length > 0; }, removeEventListener() {},
+  };
+  const authContext = vm.createContext({
+    document: { getElementById: () => passwordField }, $: () => ({ fadeOut() {} }),
+  });
+  vm.runInContext(html.slice(html.indexOf('var password_input ='),
+    html.indexOf('      function keycloak_prompt_fn(')), authContext);
+  authContext.window = authContext;
+  authContext.event = { preventDefault() {} };
+  authContext.login_callback = password => authResponses.push(password);
+  // Native forms expose button IDs as names in their inline callback scope.
+  const submit = html.match(/<form id="login_form" onsubmit="([^"]+)"/)[1];
+  vm.runInContext(`with ({login_connect: {}}) { ${submit} }`, authContext);
+  assert.equal(authResponses.length, 0, 'An empty password must not submit an authentication response');
+  passwordField.value = 'test-only-password';
+  vm.runInContext('password_special_keys({keyCode:13,preventDefault(){}})', authContext);
+  assert.deepEqual(authResponses, ['test-only-password'], 'Enter must submit the password once');
+  assert.equal(passwordField.value, '', 'Submitting must clear the password field');
+  const cancel = html.match(/id="login_cancel" onclick="([^"]+)"/)[1];
+  vm.runInContext(`with ({login_cancel: {}}) { ${cancel} }`, authContext);
+  assert.deepEqual(authResponses, ['test-only-password', null], 'Cancel must keep the authentication callback contract');
+  for (const type of ['keydown', 'keyup']) {
+    const event = new Event(type, { cancelable: true });
+    authContext.event = event;
+    const handler = html.match(/<form id="login_form"[^>]*>/)[0].match(new RegExp(`on${type}="([^"]+)"`));
+    if (handler) vm.runInContext(handler[1], authContext);
+    assert.equal(event.cancelBubble, true, 'Password form keys must not reach the remote desktop');
+    assert.equal(event.defaultPrevented, false, 'Password typing must retain native browser behavior');
+  }
+  // Each successful reconnect initializes the real toolbar again.
+  let menuClicks = [];
+  const menuElement = { style: {} };
+  const menuQuery = {
+    on(type, handler) { if (type === 'click') menuClicks.push(handler); return this; },
+    off(type, handler) { if (type === 'click') menuClicks = menuClicks.filter(fn => fn !== handler); return this; },
+  };
+  for (const method of ['children', 'removeClass', 'addClass', 'css', 'hide', 'show', 'fadeIn', 'attr']) {
+    menuQuery[method] = () => menuQuery;
+  }
+  const menuContext = vm.createContext({
+    $: () => menuQuery, document: { getElementById: () => menuElement },
+    client: { reconfigure_all_trays() {} },
+    float_menu_item_size: 30, float_menu_item_count: 7, float_menu_padding: 0,
+    getstrparam: () => 'novnc', getboolparam: (name, fallback) => name === 'autohide' || fallback,
+  });
+  vm.runInContext(html.slice(html.indexOf('var float_menu_expanded ='),
+    html.indexOf('      function init_auth_autosubmit()')), menuContext);
+  for (let connection = 0; connection < 6; connection++) {
+    vm.runInContext('init_float_menu()', menuContext);
+    menuClicks.forEach(handler => handler());
+    assert.equal(menuElement.style.width, '90px', 'A click after reconnect must open the three-control drawer exactly once');
+    menuClicks.forEach(handler => handler());
+    assert.equal(menuElement.style.width, '0px', 'The next click must close the drawer');
+  }
+  const clientScript = html.match(/src="([^"]*Client\.js[^"]*)"/)[1].split('?')[0];
+  vm.runInContext(fs.readFileSync(path.join(web, clientScript), 'utf8'), context);
+} finally {
+  fs.rmSync(web, { recursive: true, force: true });
+}
 if (fs.existsSync(mobile)) vm.runInContext(fs.readFileSync(mobile, 'utf8'), context);
 const Client = vm.runInContext('XpraClient', context);
 const Window = vm.runInContext('XpraWindow', context);
 const types = vm.runInContext('PACKET_TYPES', context);
+vm.runInContext('Utilities.clog=()=>{}; Utilities.cdebug=()=>{};', context);
 const noop = () => {};
+let promptCallback;
+const passwordPrompt = (_heading, callback) => { promptCallback = callback; };
+const retry = Object.assign(Object.create(Client.prototype), {
+  container: screen, password_prompt_fn: passwordPrompt, clog: noop,
+  host: 'localhost', port: 15443, ssl: true, passwords: [], protocol: {},
+});
+retry.init_state(); // The real reconnect path resets state before connecting again.
+assert.equal(retry.password_prompt_fn, passwordPrompt, 'Reconnecting must retain the in-page password dialog');
+retry._process_challenge([types.challenge, new Uint8Array(32), {}, 'hmac+sha256', 'sha256', 'password']);
+assert.equal(typeof promptCallback, 'function', 'A challenge after reconnect must ask for a password');
+function connectionLifecycle(connected) {
+  return Object.assign(Object.create(Client.prototype), {
+    connected, reconnect: true, reconnect_count: 20, reconnect_attempt: 0, reconnect_in_progress: false,
+    disconnect_reason: null, retries: 0, closed: [], clog: noop, debug: noop,
+    cancel_open_timer: noop, cancel_hello_timer: noop, cancel_all_files: noop,
+    emit_connection_lost: noop, remove_windows: noop, close_audio: noop, clear_timers: noop, close_protocol: noop,
+    do_reconnect() { this.retries++; }, callback_close(reason) { this.closed.push(reason); },
+  });
+}
+const rejected = connectionLifecycle(false);
+rejected._process_disconnect([types.disconnect, 'authentication failed']);
+rejected._process_close([types.close, 'Normal Closure', 1000]);
+assert.equal(rejected.retries, 0, 'Rejected authentication must not reconnect and prompt for the password again');
+assert.equal(rejected.closed.at(-1), 'authentication failed', 'The authentication error must remain visible');
+const cancelled = connectionLifecycle(false);
+cancelled.disconnect('password prompt cancelled');
+cancelled._process_close([types.close, 'Normal Closure', 1000]);
+assert.equal(cancelled.retries, 0, 'Cancelling authentication must not reopen the password form');
+const disconnected = connectionLifecycle(true);
+disconnected.close();
+assert.equal(disconnected.connected, false, 'Closing must clear the established connection state');
+disconnected._process_close([types.close, 'Normal Closure', 1000]);
+assert.equal(disconnected.retries, 0, 'An intentional disconnect must remain disconnected');
+const interrupted = connectionLifecycle(true);
+interrupted._process_close([types.close, 'Abnormal Closure', 1006]);
+assert.equal(interrupted.retries, 1, 'An established connection must still recover from a network interruption');
+const passwordKeys = Object.assign(connectionLifecycle(false), {
+  capture_keyboard: true, keyboard_map: {}, key_packets: [], clipboard_enabled: false,
+  _check_browser_language: noop, _keyb_get_modifiers: () => [], send: packet => packets.push(packet),
+});
+packets.length = 0;
+for (const pressed of [true, false]) {
+  passwordKeys._keyb_process(pressed, {
+    code: 'Enter', key: 'Enter', which: 13, keyCode: 13, getModifierState: () => false,
+  });
+}
+advance(0);
+assert.equal(packets.length, 0, 'Submitting a password must not send key-action packets before authentication completes');
+passwordKeys.connected = true;
+passwordKeys._keyb_process(true, { code: 'Enter', key: 'Enter', which: 13, keyCode: 13, getModifierState: () => false });
+advance(0);
+assert.equal(packets[0][0], types.key_action, 'Keyboard input must still work after authentication');
+let loginPrompts = 0;
+let submitPassword;
+const challengePasswords = [];
+const login = Object.assign(connectionLifecycle(false), {
+  container: screen, host: 'localhost', port: 15443, ssl: true, passwords: [], opens: 0,
+  reconnect_delay: 1000, schedule_open_timer: noop, on_connection_progress: noop,
+  password_prompt_fn(_heading, callback) { loginPrompts++; submitPassword = callback; },
+  initialize_workers() { this.opens++; this.protocol = {}; },
+  close_protocol() { this.connected = false; this.protocol = null; },
+  do_reconnect: Client.prototype.do_reconnect,
+  do_process_challenge(_digest, _salt, _saltDigest, password) { challengePasswords.push(password); },
+});
+login.connect();
+assert.equal(login.opens, 0, 'Waiting for a password must not start a connection that can time out');
+advance(60000);
+assert.equal(login.opens, 0, 'Taking time to enter the password must not expire an authentication handshake');
+assert.equal(loginPrompts, 1, 'The initial connection must prompt for a password once');
+submitPassword('test-only-password');
+assert.equal(login.opens, 1, 'Submitting the password must start the connection');
+login._process_challenge([types.challenge, new Uint8Array(32), {}, 'hmac+sha256', 'sha256', 'password']);
+assert.deepEqual(challengePasswords, ['test-only-password']);
+// A drop before the server hello must also reuse the submitted password.
+login._process_close([types.close, 'Abnormal Closure', 1006]);
+advance(1000);
+assert.equal(login.opens, 2, 'A network drop during authentication must reconnect automatically');
+login._process_challenge([types.challenge, new Uint8Array(32), {}, 'hmac+sha256', 'sha256', 'password']);
+assert.deepEqual(challengePasswords, ['test-only-password', 'test-only-password']);
+assert.equal(loginPrompts, 1, 'Automatic reconnection must reuse the password without another prompt');
+login.connected = true;
+login._process_close([types.close, 'Abnormal Closure', 1006]);
+advance(1000);
+assert.equal(login.opens, 3, 'An established connection must recover using the same password');
+login._process_challenge([types.challenge, new Uint8Array(32), {}, 'hmac+sha256', 'sha256', 'password']);
+assert.equal(loginPrompts, 1, 'Established-session reconnection must not ask for the password again');
+login.connected = true;
+login.close();
+login._process_close([types.close, 'Normal Closure', 1000]);
+advance(1000);
+assert.equal(login.opens, 3, 'An intentional disconnect must stop retrying even with a remembered password');
+login.do_reconnect();
+advance(1000);
+assert.equal(login.opens, 4, 'An explicit reconnect must keep the password in the current page');
+login._process_challenge([types.challenge, new Uint8Array(32), {}, 'hmac+sha256', 'sha256', 'password']);
+assert.equal(loginPrompts, 1, 'An explicit reconnect must not ask for the password again');
+login._process_disconnect([types.disconnect, 'authentication failed']);
+login._process_close([types.close, 'Normal Closure', 1000]);
+advance(1000);
+assert.equal(login.opens, 4, 'A rejected password must stop automatic retry');
+login.init_state();
+login.connect();
+assert.equal(login.opens, 4, 'A rejected password must not be reused on the next attempt');
+assert.equal(loginPrompts, 2, 'An explicit retry after rejection must ask for a corrected password');
+submitPassword(null);
+assert.equal(login.opens, 4, 'Cancelling the password prompt must not open a connection');
 const client = Object.assign(Object.create(Client.prototype), {
   container: screen, connected: false, scale: 1, id_to_window: {}, buttons_pressed: new Set(),
   desktop_width: 360, desktop_height: 680, focused_wid: 7, last_button_event: [-1, false, -1, -1],
@@ -110,16 +309,33 @@ const client = Object.assign(Object.create(Client.prototype), {
   audio_codecs: {}, keyboard_layout: 'us', capabilities: {},
   send: packet => packets.push(structuredClone(packet)), debug: noop,
   on_connection_progress: noop, init_audio: noop, init_packet_handlers: noop, init_keyboard: noop,
+  callback_close: () => { browser.location = 'connect.html'; }, // Xpra's page default.
   _keyb_get_modifiers: () => [], _get_monitors: () => [], position_float_menu: noop,
 });
 client.init();
-assert.equal(profileSelector.value, 'balanced', 'The page should start in balanced mode');
+for (const type of ['keydown', 'keyup']) {
+  const event = new Event(type, { cancelable: true });
+  toolbar.dispatchEvent(event);
+  assert.equal(event.cancelBubble, true, 'Toolbar keys must not reach the remote desktop');
+  assert.equal(event.defaultPrevented, false, 'Native menu controls must retain keyboard activation');
+}
+const initialLocation = browser.location;
+client.callback_close('No password specified for authentication challenge');
+assert.equal(browser.location, initialLocation, 'Disconnecting must stay on the console page');
+assert.equal(connectionStatus.progress.style.display, 'block', 'The reason must remain visible');
+assert.equal(connectionStatus['progress-details'].textContent, 'No password specified for authentication challenge');
+assert.equal(connectionStatus['progress-bar'].hidden, true, 'A closed connection must not look like ongoing loading');
+assert.equal(connectionStatus['connection-retry'].hidden, false, 'A closed connection must expose a reconnect action');
+client.callback_close('authentication failed');
+assert.equal(connectionStatus['progress-label'].textContent, '密码验证失败', 'Rejected authentication must show a clear error');
+assert.equal(connectionStatus['progress-details'].textContent, '请检查服务器访问密码后重新连接。');
+assert.equal(profileButtons.get('balanced').getAttribute('aria-pressed'), 'true', 'The page should start in balanced mode');
 assert.equal(client._get_DPI(), 144, 'Rendering and font DPI must increase together');
 client.connected = true;
 const canvas = new Surface();
 const win = Object.assign(Object.create(Window.prototype), {
   client, wid: 7, canvas, x: 0, y: 31, w: 1280, h: 820, scale: client.scale,
-  metadata: { 'class-instance': ['chatgpt', 'Chatgpt'], 'size-constraints': { 'minimum-size': [480, 600] } },
+  metadata: { 'class-instance': [screen.dataset.codexInstance, 'Chatgpt'], 'size-constraints': { 'minimum-size': [480, 600] } },
   windowtype: ['NORMAL'], override_redirect: false, tray: false, fullscreen: false,
   resizable: false, leftoffset: 0, rightoffset: 0, topoffset: 0, bottomoffset: 0,
   updateCSSGeometry: noop, ensure_visible: () => false, focus: noop,
@@ -130,19 +346,31 @@ const win = Object.assign(Object.create(Window.prototype), {
   mouse_scroll_cb: (event, window) => client.on_mousescroll(event, window),
 });
 client.id_to_window[7] = win;
+const foreignWindow = Object.assign(Object.create(Window.prototype), {
+  ...win, wid: 6,
+  metadata: { 'class-instance': ['chatgpt (/automation/profile)', 'Chatgpt'],
+    'size-constraints': { 'minimum-size': [1500, 1100] } },
+});
+client.id_to_window[6] = foreignWindow;
 for (const [profile, density, quality, speed] of [
   ['smooth', 1, 45, 90], ['sharp', 2, 95, 70], ['balanced', 1.5, 70, 80],
 ]) {
   packets.length = 0;
-  profileSelector.value = profile;
-  profileSelector.dispatchEvent(new Event('change'));
+  const clickEvent = new Event('click', { cancelable: true });
+  profileButtons.get(profile).dispatchEvent(clickEvent);
+  assert.equal(clickEvent.defaultPrevented, false, 'Buttons must retain their native click behavior');
+  for (const [name, button] of profileButtons) {
+    assert.equal(button.getAttribute('aria-pressed'), String(name === profile), 'Exactly one profile must be marked selected');
+  }
   assert.equal(client._get_DPI(), 96 * density, 'Higher resolution must keep the same logical font size');
   assert.equal(win.w, Math.ceil(480 * density));
   assert.ok(Math.abs(win.h / client.scale - 680) < 1);
+  assert.equal(foreignWindow.fullscreen, false, 'Shared Chatgpt class names must not select an automation browser');
   assert.equal(client.encoding_options['min-quality'], quality);
   assert.equal(client.encoding_options['min-speed'], speed);
   client._make_hello();
   assert.equal(client.capabilities.dpi, 0, 'Connect must leave DPI unset so the configured value is applied to fonts');
+  assert.ok(client.capabilities.wants.includes('display'), 'The browser must request the actual X11 display bounds');
   assert.ok(packets.some(packet => packet[0] === 'encoding-options' &&
     packet[1]['min-quality'] === quality && packet[1]['min-speed'] === speed),
     'Changing a profile must update the connected server, without reloading');
@@ -150,9 +378,12 @@ for (const [profile, density, quality, speed] of [
   assert.equal(query.get('performance'), profile, 'Refreshing must retain the selected profile');
   assert.equal(query.get('sound'), 'true', 'Changing quality must preserve other URL settings');
 }
-profileSelector.value = '__proto__';
-profileSelector.dispatchEvent(new Event('change'));
-assert.equal(profileSelector.value, 'balanced', 'Unknown profiles must use a valid preset');
+profileButtons.get('sharp').dataset.performance = '__proto__';
+profileButtons.get('sharp').dispatchEvent(new Event('click'));
+profileButtons.get('sharp').dataset.performance = 'sharp';
+assert.equal(client.encoding_options['min-quality'], 70, 'Unknown profiles must use a valid preset');
+assert.equal(new URL(browser.location.href).searchParams.get('performance'), 'balanced');
+assert.equal(profileButtons.get('balanced').getAttribute('aria-pressed'), 'true');
 packets.length = 0;
 client._screen_resized();
 assert.ok(packets.some(packet => packet[0] === types.configure_display && packet[1].dpi.x === 144),
@@ -254,6 +485,44 @@ for (const [width, height] of [[360, 680], [752, 248], [1280, 900]]) {
   assert.ok(Math.abs(clicks()[0][4][0] - win.w / 2) <= 1);
   assert.ok(Math.abs(clicks()[0][4][1] - win.h / 2) <= 1);
 }
+// X11 clamps coordinates outside its physical display, even if the window is taller.
+Object.assign(client, { cancel_open_timer: noop, cancel_hello_timer: noop,
+  _process_modifier_keycodes: noop, _process_audio_caps: noop, _send_ping: noop, on_connect: noop, send_keymap: noop });
+client._process_hello(['hello', { rencodeplus: true, version: '6.5.4',
+  actual_desktop_size: [1280, 900], clipboard: true, 'client-shutdown': true }]);
+assert.deepEqual(client._server_size, [1280, 900], 'The actual display bounds must survive the real hello handler');
+for (const [width, height] of [[360, 696], [320, 860], [752, 248], [1280, 900]]) {
+  browser.innerWidth = browser.visualViewport.width = width;
+  browser.innerHeight = browser.visualViewport.height = height;
+  for (const profile of ['smooth', 'balanced', 'sharp']) {
+    profileButtons.get(profile).dispatchEvent(new Event('click'));
+    assert.ok(win.x + win.w <= 1280 && win.y + win.h <= 900,
+      'The complete window must fit the X11 pointer range, including portrait mode');
+    screen.left = 13;
+    screen.top = -37;
+    packets.length = 0;
+    const x = screen.left + width * .7;
+    const y = screen.top + height - 8;
+    touch('pointerdown', x, y);
+    touch('pointerup', x, y);
+    advance(300);
+    assert.ok(Math.abs(clicks()[0][4][0] - win.w * .7) <= 1,
+      'Horizontal clicks must follow the displayed canvas, including viewport offsets');
+    assert.ok(Math.abs(clicks()[0][4][1] - win.h * (height - 8) / height) <= 1,
+      'Bottom clicks must follow the displayed canvas without X11 clipping');
+    client.on_mousemove({ clientX: x, clientY: y, preventDefault: noop }, win);
+    assert.deepEqual(packets.find(packet => packet[0] === types.pointer_position)[2], clicks()[0][4],
+      'Mouse motion must use the same transformed coordinates as touch clicks');
+    client.wheel_delta_x = client.wheel_delta_y = 0;
+    client.on_mousescroll({ clientX: x, clientY: y, deltaX: 0, deltaY: 120, deltaMode: 0, preventDefault: noop }, win);
+    assert.ok(clicks().filter(packet => packet[2] >= 4).every(packet =>
+      packet[4][0] === clicks()[0][4][0] && packet[4][1] === clicks()[0][4][1]),
+      'Wheel events must point at the displayed location too');
+  }
+}
+screen.left = screen.top = 0;
+delete client._server_size;
+profileButtons.get('balanced').dispatchEvent(new Event('click'));
 assert.equal(typeof browser.init_mobile_keyboard, 'function', 'The phone input-method bridge must exist');
 browser.init_mobile_keyboard(client);
 const bar = document.body.children.find(element => element.id === 'mobile-inputbar');
@@ -310,4 +579,67 @@ browser.toggle_mobile_keyboard();
 assert.equal(input.focused, false);
 browser.toggle_mobile_keyboard();
 assert.equal(input.focused, true, 'The keyboard button must reopen the hidden input receiver');
-console.log('PASS: Xpra gestures, sizing, and phone IME composition with UTF-8 paste');
+async function checkClipboard() {
+  const text = '2. Open Design：中文，双拼\n3. UI/UX Pro Max Skill（仪表盘）😀\n4. café — Taste';
+  context.client = client; // The installed readText implementation references this global.
+  for (const modern of [false, true]) {
+    packets.length = 0;
+    client.clipboard_buffer = '';
+    if (modern) context.navigator.clipboard = { readText: async () => text };
+    else delete context.navigator.clipboard;
+    const event = { clipboardData: { getData: format => {
+      assert.equal(format, 'text/plain');
+      return text;
+    } } };
+    client.read_clipboard(event);
+    await Promise.resolve();
+    const token = packets.find(packet => packet[0] === types.clipboard_token);
+    assert.ok(token, 'Reading the phone clipboard must send its contents');
+    assert.equal(serverClipboardText(token, 7), text, 'Clipboard reads must not double-encode UTF-8');
+    assert.equal(client.clipboard_buffer, text, 'The clipboard buffer must remain Unicode');
+    delete context.navigator.clipboard;
+    client._process_clipboard_request([types.clipboard_request, 43, 'CLIPBOARD', 'UTF8_STRING']);
+    const contents = packets.find(packet => packet[0] === types.clipboard_contents);
+    assert.equal(serverClipboardText(contents, 6), text, 'Later clipboard requests must preserve the same text');
+    packets.length = 0;
+    if (modern) context.navigator.clipboard = { readText: async () => text };
+    client.read_clipboard(event);
+    await Promise.resolve();
+    assert.equal(packets.length, 0, 'Reading unchanged clipboard contents must not send another token');
+  }
+  delete context.navigator.clipboard;
+}
+async function checkPasswordHandshake() {
+  context.crypto = require('node:crypto').webcrypto;
+  vm.runInContext('Utilities.clog=()=>{}; Utilities.cdebug=()=>{};', context);
+  for (const algorithm of ['hmac+sha256', 'hmac+sha512']) {
+    const salt = Uint8Array.from({ length: 64 }, (_, i) => (37 * i) % 256);
+    const reply = await new Promise((resolve, reject) => {
+      const auth = Object.assign(Object.create(Client.prototype), {
+        ssl: true, host: 'localhost', passwords: ['test-only-password'], protocol: {}, clog: noop,
+        do_send_hello: (response, clientSalt) => resolve(['hello', {
+          challenge_response: response, challenge_client_salt: clientSalt,
+        }]),
+        disconnect: reason => reject(new Error(reason)), cerror: reason => reject(new Error(reason)),
+      });
+      auth._process_challenge([types.challenge, salt, {}, algorithm, algorithm, 'password']);
+    });
+    const result = spawnSync('python3', ['-c', `
+import sys, tempfile
+from xpra.auth.file import Authenticator
+from xpra.net.rencodeplus import rencodeplus
+from xpra.util.objects import typedict
+caps = typedict(rencodeplus.loads(sys.stdin.buffer.read())[1])
+with tempfile.NamedTemporaryFile(mode="w") as password:
+    password.write("test-only-password")
+    password.flush()
+    auth = Authenticator(username="desktop", filename=password.name)
+    auth.salt = bytes((37 * i) % 256 for i in range(64))
+    auth.digest = auth.salt_digest = sys.argv[1]
+    assert auth.authenticate_hmac(caps), "Browser authentication rejected by Xpra"
+`, algorithm], { input: Buffer.from(context.rencode(reply)), encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+}
+checkClipboard().then(checkPasswordHandshake).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, and UTF-8 paste'))
+  .catch(error => { console.error(error); process.exitCode = 1; });

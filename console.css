@@ -1,0 +1,74 @@
+:root {
+  color-scheme: light;
+  --console-bg: #f4f5f7;
+  --console-text: #202124;
+  --console-muted: #686b72;
+  --console-line: #e3e5e8;
+}
+
+html, body {background: var(--console-bg); color: var(--console-text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif}
+body {overscroll-behavior: none}
+[hidden] {display: none !important}
+#screen {touch-action: none}
+
+/* The authentication and status surfaces sit above the remote desktop. */
+#login-overlay, #progress {box-sizing: border-box; padding: 16px; overflow: auto; background: var(--console-bg); cursor: default; opacity: 1}
+#login-overlay {z-index: 200000}
+#login-box, .connection-panel {box-sizing: border-box; width: min(100%, 420px); height: auto; margin: 8vh auto; padding: 28px; background: #fff; border: 1px solid var(--console-line); border-radius: 20px; box-shadow: 0 16px 48px rgb(32 33 36 / 6%)}
+#login-innerbox {height: auto; margin: 0; background: none; border-radius: 0; text-align: left}
+.console-brand {display: flex; align-items: center; gap: 10px; margin-bottom: 28px; font-size: 14px; font-weight: 650; letter-spacing: -.2px}
+.console-mark {display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--console-text); color: #fff; font: 20px/1 ui-monospace, monospace}
+#login-title {margin: 0 0 8px; font-size: 26px; line-height: 1.25; letter-spacing: -.6px}
+.login-hint {margin: 0; color: var(--console-muted); font-size: 14px}
+#login-header {display: block; height: auto; margin: 12px 0 24px; font-size: 12px; line-height: 1.6; color: var(--console-muted); overflow-wrap: anywhere}
+#login-innerbox label {display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600}
+#password-box {margin: 0; background: none}
+#login-innerbox #password {box-sizing: border-box; width: 100%; min-width: 0; height: 48px; margin: 0; padding: 12px 14px; border: 1px solid #cdd0d5; border-radius: 10px; background: #fff; color: var(--console-text); font: inherit; font-size: 16px}
+#login-buttons {display: flex; gap: 10px; margin: 20px 0 0}
+#login-buttons .login-button, #connection-retry {box-sizing: border-box; flex: 1; min-width: 0; min-height: 48px; margin: 0; padding: 12px 16px; border: 1px solid transparent; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; touch-action: manipulation; transition: background .15s}
+#login_cancel {background: #f1f2f4; color: var(--console-text)}
+#login_connect, #connection-retry {background: var(--console-text); color: #fff}
+#login_cancel:hover {background: #e7e9ec}
+#login_connect:hover, #connection-retry:hover {background: #3b3d42}
+#login-overlay :focus-visible, #progress :focus-visible, #float_menu :focus-visible {outline: 2px solid #416f8c; outline-offset: 3px}
+
+#progress {z-index: 150000; text-align: left}
+#progress-label {height: auto; margin: 0 0 12px; color: var(--console-text); font-size: 23px; line-height: 1.35; overflow-wrap: anywhere}
+#progress-details {height: auto; margin: 0 0 20px; color: var(--console-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere}
+#progress-bar {display: block; width: 100%; height: 6px; accent-color: var(--console-text)}
+#connection-retry {width: 100%}
+
+/* Reuse the Xpra toolbar and its actions, with a consistent touch target. */
+#float_menu {top: max(12px, env(safe-area-inset-top)) !important; left: auto !important; right: 0 !important; pointer-events: none}
+#float_menu .Menu, #float_menu_button, #float_tray {pointer-events: auto}
+#float_menu .Menu {box-sizing: border-box; width: 52px; padding: 4px; border: 1px solid var(--console-line); border-radius: 14px; background: #fff; color: var(--console-text); box-shadow: 0 4px 16px rgb(32 33 36 / 9%); font: 14px/44px system-ui, sans-serif}
+#float_menu > .Menu {position: absolute; top: 0; right: 52px; max-height: calc(100dvh - 24px); overflow-y: auto; scrollbar-width: none}
+#float_menu .Menu li, #float_menu .Menu li > :first-child {height: auto}
+#float_menu .Menu > li > a {box-sizing: border-box; width: 44px; height: 44px; padding: 0; border-radius: 9px}
+#float_menu .Menu > li > a[data-icon]::before {width: 44px; height: 44px; line-height: 44px; font-size: 22px}
+#float_menu .Menu > li {margin: 2px 0}
+#float_menu .Menu li > a {min-height: 44px; line-height: 44px; border-radius: 8px}
+#float_menu .Menu li:hover > a:first-child, #float_menu .Menu li.-active > a:first-child {background: #f0f2f5}
+#float_menu .Menu > li > ul {box-sizing: border-box; position: fixed; top: max(12px, env(safe-area-inset-top)); left: auto; right: 116px; width: min(264px, calc(100vw - 132px)); min-width: 0; max-height: calc(100dvh - 24px); overflow: auto; padding: 8px; border: 1px solid var(--console-line); border-radius: 14px; background: #fff; box-shadow: 0 8px 32px rgb(32 33 36 / 12%); transform-origin: right top}
+#menu_list {display: block !important}
+#float_menu .Menu details {height: auto; padding: 0}
+#float_menu .Menu summary {min-height: 44px; padding: 0 10px; border-radius: 8px; line-height: 44px; font-weight: 600; cursor: pointer}
+#float_menu .Menu summary:hover {background: #f0f2f5}
+#float_menu .Menu details ul {margin: 0; padding: 0; box-shadow: none}
+#float_menu .Menu details li {height: auto}
+#performance_menu_entry button {box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px 0 28px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer}
+#performance_menu_entry button:hover {background: #f0f2f5}
+#performance_menu_entry button[aria-pressed="true"] {background: #edf2f5; font-weight: 650}
+#performance_menu_entry button[aria-pressed="true"]::after {content: '✓'; float: right}
+#float_menu_button {position: absolute; left: auto !important; right: 0; top: 0 !important; width: 44px; height: 44px; border: 1px solid var(--console-line); border-radius: 12px 0 0 12px; background: #fff; box-shadow: 0 4px 16px rgb(32 33 36 / 9%)}
+#float_menu_arrow {display: flex; align-items: center; justify-content: center; height: 100%; right: 0; top: 0; color: var(--console-text); text-decoration: none}
+
+#mobile-ime {position: fixed; top: 0; left: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px}
+@media (max-height: 520px) {
+  #login-box, .connection-panel {margin: 0 auto; padding: 20px}
+  .console-brand {margin-bottom: 16px}
+  #login-header {margin-bottom: 16px}
+}
+@media (prefers-reduced-motion: reduce) {
+  #float_menu *, .login-button {transition: none !important}
+}

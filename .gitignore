@@ -1,2 +1,10 @@
 .gitnexus/
 __pycache__/
+.DS_Store
+*.pyc
+*.log
+.env
+.env.*
+/config.sh
+*.pem
+/dist/

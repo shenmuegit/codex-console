@@ -1,0 +1,15 @@
+[Unit]
+Description=Codex Console browser access
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_DIR@
+ExecStart="@EXEC_DIR@/console.sh" run
+Environment="CONSOLE_CONFIG=@CONFIG_FILE@"
+Environment="XDG_STATE_HOME=@STATE_HOME@"
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
