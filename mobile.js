@@ -10,6 +10,7 @@
   XpraClient.prototype.connect = function (...args) {
     const start = () => {
       this._connection_closed = false;
+      this._upload_ready = false;
       this.capture_keyboard = false;
       document.getElementById('progress-bar').hidden = false;
       document.getElementById('connection-retry').hidden = true;
@@ -213,15 +214,25 @@
   };
   const hello = XpraClient.prototype._make_hello;
   XpraClient.prototype._make_hello = function () {
+    // A short, stable client ID also routes upload completions after reconnects.
+    this.uuid = this._upload_uuid ||= crypto.randomUUID().replaceAll('-', '');
     hello.call(this);
+    this.capabilities.uuid = this.uuid;
     // Xpra 6.5 applies Xsettings only when DPI changes: set it after connection.
     this.capabilities.dpi = 0;
     this.capabilities.system_tray = false;
-    this.capabilities.wants.push('display');
+    this.capabilities.wants.push('display', 'features');
+    this.capabilities['metadata.supported'] = [...this.capabilities['metadata.supported'], 'pid', 'role'];
   };
   const processHello = XpraClient.prototype._process_hello;
   XpraClient.prototype._process_hello = function (packet) {
-    this._server_size = packet[1].actual_desktop_size;
+    const caps = packet[1];
+    this._server_size = caps.actual_desktop_size;
+    // Xpra 6.5 moved these features into a namespace; HTML5 19 reads legacy keys.
+    if (caps.file) Object.assign(caps, {
+      'file-transfer': caps.file.enabled, 'open-files': caps.file.open,
+      'max-file-size': caps.file['size-limit'], 'file-chunks': caps.file.chunks,
+    });
     return processHello.call(this, packet);
   };
   const fit = client => {
@@ -299,7 +310,178 @@
   XpraClient.prototype._new_window = function (...args) {
     const result = newWindow.apply(this, args);
     this._screen_resized();
+    this._refresh_upload?.();
     return result;
+  };
+
+  const notify = XpraClient.prototype._process_notify_show;
+  XpraClient.prototype._process_notify_show = function (packet) {
+    if (Utilities.s(packet[6]) === 'codex-console-upload') {
+      this._upload_notify?.(Utilities.s(packet[7]));
+      return;
+    }
+    return notify.call(this, packet);
+  };
+  const startup = XpraClient.prototype._process_startup_complete;
+  XpraClient.prototype._process_startup_complete = function (packet) {
+    const result = startup.call(this, packet);
+    this._start_upload?.();
+    return result;
+  };
+  window.init_mobile_upload = client => {
+    if (client._upload_notify) return;
+    const panel = document.getElementById('mobile-upload');
+    const input = document.getElementById('upload');
+    const label = document.getElementById('upload-local');
+    const caption = document.getElementById('upload-local-caption');
+    const files = document.getElementById('upload-file');
+    const fileLabel = document.getElementById('upload-files');
+    const inputs = [input, files];
+    const labels = [label, fileLabel];
+    const cancel = document.getElementById('upload-cancel');
+    const status = document.getElementById('upload-status');
+    input.hidden = false;
+    input.style.display = 'block';
+    label.append(input);
+    input.accept = 'image/*';
+    files.hidden = false;
+    // Chromium treats octet-stream as generic files without camera/video intents.
+    caption.textContent = '选择图片';
+    input.setAttribute('aria-label', caption.textContent);
+    let pending = null;
+    let chooser = null;
+    const initialChoosers = new Set();
+    const getChoosers = () => {
+      const main = mainWindow(client);
+      return main ? Object.values(client.id_to_window).filter(win =>
+        !win.override_redirect && !win.tray && win.has_windowtype(['DIALOG']) &&
+        Utilities.s(win.metadata.role || '') === 'GtkFileChooserDialog' &&
+        (win.metadata['transient-for'] === main.wid ||
+         (win.metadata['class-instance'] || []).some(value => Utilities.s(value) === client.container.dataset.codexInstance) ||
+         (main.metadata.pid > 0 && win.metadata.pid === main.metadata.pid))) : [];
+    };
+    const findChooser = () => getChoosers().find(win => !initialChoosers.has(win));
+    const finish = message => {
+      if (pending) clearTimeout(pending.timer);
+      pending = null;
+      for (const element of inputs) element.disabled = false;
+      for (const element of labels) element.setAttribute('aria-disabled', 'false');
+      status.textContent = message;
+    };
+    const valid = request => request === pending && client.connected && client._upload_ready && !client.server_readonly &&
+      client.clipboard_enabled && ['both', 'to-server'].includes(client.clipboard_direction) &&
+      client.id_to_window[request.wid] === request.window && findChooser() === request.window &&
+      (!client.focused_wid || client.focused_wid === request.wid);
+    const refresh = () => {
+      const next = client.connected && client._upload_ready && findChooser();
+      if (next && next !== chooser && !pending) {
+        status.textContent = '请选择当前手机或电脑上的文件，上传后由 Codex 添加附件。';
+      }
+      chooser = next;
+      panel.hidden = !chooser;
+      if (chooser && !panel.open) panel.showModal();
+      else if (!chooser && panel.open) panel.close();
+      if (pending && !valid(pending)) finish('选择框已关闭、切换或连接已断开，请重新选择文件。');
+    };
+    client._start_upload = () => {
+      if (client._upload_ready) return;
+      // Xpra replays existing windows on login; these are unfinished old uploads.
+      initialChoosers.clear();
+      for (const win of getChoosers()) {
+        initialChoosers.add(win);
+        if (!client.server_readonly) client.send_close_window(win);
+      }
+      client._upload_ready = true;
+      refresh();
+    };
+    client._refresh_upload = refresh;
+    setInterval(refresh, 250);
+    refresh();
+    input.onclick = files.onclick = event => {
+      event.stopPropagation();
+      refresh();
+      if (!chooser || pending?.timer) { event.preventDefault(); return; }
+      if (!client.file_transfer || !client.remote_file_transfer || !client.remote_open_files ||
+          !client.clipboard_enabled || !['both', 'to-server'].includes(client.clipboard_direction) || client.server_readonly) {
+        status.textContent = '当前连接不支持上传或粘贴，请重新连接。';
+        event.preventDefault();
+        return;
+      }
+      pending = { id: crypto.randomUUID().replaceAll('-', ''), wid: chooser.wid, window: chooser };
+      event.target.value = '';
+    };
+    input.oncancel = files.oncancel = () => finish('已取消选择文件。');
+    panel.oncancel = cancel.onclick = event => {
+      event.stopPropagation();
+      event.preventDefault();
+      refresh();
+      finish('已取消添加附件。');
+      if (chooser && !client.server_readonly) client.send_close_window(chooser);
+    };
+    input.onchange = files.onchange = async event => {
+      event.stopPropagation();
+      const request = pending;
+      const file = event.target.files?.[0];
+      if (!request || !valid(request)) return finish('请选择 Codex 上传按钮后重试。');
+      if (!file) return finish('已取消选择文件。');
+      // ponytail: request metadata fits in one basename; use a manifest if longer names are needed.
+      const filename = `cc-${client.uuid}-${request.id}--${file.name}`;
+      if (!file.size || file.size > Math.min(client.remote_file_size_limit, 32 * 1024 * 1024) ||
+          /[\/\x00-\x1f]/.test(file.name) || new TextEncoder().encode(filename).length > 255) {
+        return finish('文件为空、超过 32 MB/服务器限制，或文件名过长，请换一个文件。');
+      }
+      for (const element of inputs) element.disabled = true;
+      for (const element of labels) element.setAttribute('aria-disabled', 'true');
+      status.textContent = `正在上传 ${file.name}…`;
+      request.timer = setTimeout(() => finish('上传未完成，请检查连接后重试。'), 120000);
+      try {
+        const data = new Uint8Array(await file.arrayBuffer());
+        // An empty MIME type prevents Xpra from changing extensionless filenames.
+        if (valid(request)) client.do_send_file(filename, '', file.size, data);
+        else if (request === pending) finish('已停止添加附件，请重新选择文件。');
+      } catch {
+        if (request === pending) finish('无法读取或上传文件，请重试。');
+      }
+    };
+    client._upload_notify = body => {
+      let result;
+      try { result = JSON.parse(body); } catch { return; }
+      if (!result || typeof result !== 'object') return;
+      const request = pending;
+      if (!request || result.request !== request.id || !valid(request) || request.confirming) return;
+      const prefix = `${client.container.dataset.codexUploadDir}/${request.id}/`;
+      if (typeof result.path !== 'string' || !result.path.startsWith(prefix) ||
+          /[\x00-\x1f]/.test(result.path) || result.path.slice(prefix.length).includes('/')) return;
+      request.confirming = true;
+      status.textContent = '已上传，正在交给 Codex 添加附件…';
+      const key = (name, pressed, modifiers, value, text, code) => client.send([
+        PACKET_TYPES.key_action, request.wid, name, pressed, modifiers, value, text, code, 0,
+      ]);
+      const control = (name, value, code) => {
+        key('Control_L', true, [], 0xffe3, '', 17);
+        key(name, true, ['control'], value, name, code);
+        key(name, false, ['control'], value, name, code);
+        key('Control_L', false, [], 0xffe3, '', 17);
+      };
+      client.send([PACKET_TYPES.focus, request.wid, []]);
+      control('l', 108, 76);
+      client.clipboard_buffer = result.path;
+      client.send_clipboard_token(Utilities.StringToUint8(result.path));
+      setTimeout(() => {
+        if (!valid(request)) return;
+        control('v', 118, 86);
+        // GTK validates the pasted path asynchronously before opening the file.
+        setTimeout(() => {
+          if (!valid(request)) return;
+          // Electron's chooser may default to Cancel; activate its Open mnemonic.
+          key('Alt_L', true, [], 0xffe9, '', 18);
+          key('o', true, ['mod1'], 111, 'o', 79);
+          key('o', false, ['mod1'], 111, 'o', 79);
+          key('Alt_L', false, [], 0xffe9, '', 18);
+          finish('文件已交给 Codex；请确认聊天框中出现附件。');
+        }, 500);
+      }, 100);
+    };
   };
 
   window.init_mobile_keyboard = client => {

@@ -13,9 +13,9 @@ flock -n 9 || exit 0
 trap 'jobs -pr | xargs -r kill 2>/dev/null || true; wait || true' EXIT
 trap 'exit 0' INT TERM
 
-# Chromium automation can share Chatgpt's class name; match the dedicated profile.
-window_class=$(python3 -c 'import sys; print(str((f"chatgpt ({sys.argv[1]})", "Chatgpt")))' "$state/profile")
-xpra control "${DISPLAY:-:100}" add-window-filter window class-instance '!=' "$window_class" 9>&- >/dev/null
+# Native Electron choosers have no profile class or transient parent. XRes gives
+# their owning process: forward only windows from this supervisor's app children.
+xpra control "${DISPLAY:-:100}" add-window-filter window ppid '!=' "$$" 9>&- >/dev/null
 
 while windows=$(xprop -root _NET_CLIENT_LIST 2>/dev/null); do
   visible=false

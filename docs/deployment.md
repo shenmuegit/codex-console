@@ -12,8 +12,9 @@ The default executable is `/usr/bin/chatgpt`. The integration relies on these pr
 - It accepts a dedicated `--user-data-dir` and/or `CODEX_ELECTRON_USER_DATA_PATH`.
 - Its `WM_CLASS` is `"chatgpt (<absolute profile path>)", "Chatgpt"`.
 - Re-running the executable with the same profile reopens its main window.
+- Launch wrappers preserve process ownership with `exec`. Upload uses the app's GTK file picker; the launcher adds `--xdg-portal-required-version=999` to make Electron fall back to its native picker.
 
-The executable path is configurable, but the current window filter and mobile layout are designed for this application identity. A different app class requires corresponding changes to `app-watch.sh` and the HTML instance metadata; changing only the path does not provide arbitrary-app compatibility. If the app package is only available for a particular CPU architecture, use a host that architecture supports.
+The executable path is configurable, but mobile layout and app recovery rely on the main-window identity above. Window filtering uses XRes to match the supervisor's app children. A different app class requires changes to main-window detection and HTML instance metadata; changing only the path does not provide arbitrary-app compatibility. If the app package is only available for a particular CPU architecture, use a host that architecture supports.
 
 The desktop app must already be installed from a source you trust. This repository does not bundle it, license it, or automate its account login.
 

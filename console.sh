@@ -66,6 +66,9 @@ SAN
 fi
 chmod 600 "$state/password" "$state/key.pem" "$state/cert.pem"
 export CODEX_ELECTRON_USER_DATA_PATH="$state/profile"
+export XPRA_DOWNLOAD_DIR="$state/uploads"
+mkdir -p "$XPRA_DOWNLOAD_DIR"
+chmod 700 "$XPRA_DOWNLOAD_DIR"
 
 web="$state/www"
 python3 - "$web" "$script_dir/mobile.js" "$XPRA_HTML_DIR" <<'PY'
@@ -78,8 +81,12 @@ import sys
 web, mobile = map(Path, sys.argv[1:3])
 web.mkdir(exist_ok=True)
 assets = Path(sys.argv[3] if len(sys.argv) > 3 else '/usr/share/xpra/www')
+# Keep only our page, also removing upstream pages from previous deployments.
+for target in web.glob('*.html*'):
+    if target.name != 'index.html':
+        target.unlink()
 for asset in assets.iterdir():
-    if asset.name.startswith('index.html'):
+    if '.html' in asset.suffixes:
         continue
     target = web / asset.name
     if target.is_symlink():
@@ -100,17 +107,19 @@ target.write_text((assets / 'default-settings.txt').read_text() +
 client_js = (assets / 'js/Client.js').read_text()
 client_js = client_js.replace('unescape(encodeURIComponent(e))', 'e')
 client_js = client_js.replace('unescape(encodeURIComponent(text))', 'text')
+# Empty typed arrays are truthy: stop after the last acknowledged upload chunk.
+client_js = client_js.replace('if(packet=packet[1]){', 'if((packet=packet[1]).length){')
 client_js = client_js.replace('SHOW_START_MENU=!0', 'SHOW_START_MENU=!1')
 # Reconnection must keep the page's password dialog for file authentication.
 client_js = client_js.replace('this.password_prompt_fn=null', 'this.password_prompt_fn??=null')
 (web / 'Client.js').write_text(client_js)
 version = hashlib.sha256(mobile.read_bytes() + mobile.with_name('console.css').read_bytes() + client_js.encode()).hexdigest()[:12]
 html = (assets / 'index.html').read_text()
-# File transfer is disabled; mobile input uses the browser's native keyboard.
+# Upload uses Xpra; downloads and the synthetic mobile keyboard are omitted.
 html = re.sub(r'^\s*<(?:script|link|div)\b[^>]*(?:simple-keyboard|FileSaver|StreamSaver|web-streams-ponyfill)[^>]*>.*$',
               '', html, flags=re.M)
 instance = f"chatgpt ({web.parent / 'profile'})"
-html = html.replace('id="screen"', f'id="screen" data-codex-instance="{escape(instance)}"')
+html = html.replace('id="screen"', f'id="screen" data-codex-instance="{escape(instance)}" data-codex-upload-dir="{escape(str(web.parent / "uploads"))}"')
 html = html.replace('<html lang="en">', '<html lang="zh-CN">')
 html = html.replace('<title>xpra websockets client</title>', '<title>Codex Console</title>')
 html = html.replace('href="favicon.png" id="favicon"', 'href="codex-console-icon.png" id="favicon"')
@@ -138,6 +147,17 @@ html = html.replace('id="float_menu_arrow" title="Expand Menu" data-icon="chevro
 html = html.replace('$("#float_menu_arrow").attr("data-icon", "chevron_right");',
                     '$("#float_menu_arrow").attr("data-icon", "chevron_left");')
 html = html.replace('init_keyboard(client);', 'window.init_mobile_keyboard(client);')
+html = html.replace('init_file_transfer(client);', 'window.init_mobile_upload(client);')
+for item in ('upload_menu_entry', 'download_menu_entry'):
+    html = html.replace(f'id="{item}"', f'id="{item}" hidden')
+html = html.replace('    <div id="screen"', '''    <dialog id="mobile-upload" class="noDrag" hidden aria-labelledby="upload-title" aria-describedby="upload-status" onkeydown="event.stopPropagation()" onkeyup="event.stopPropagation()">
+      <h2 id="upload-title">上传文件</h2>
+      <p id="upload-status" role="status" aria-live="polite">请选择当前手机或电脑上的文件，上传后由 Codex 添加附件。</p>
+      <label id="upload-local" for="upload"><span id="upload-local-caption">选择图片</span></label>
+      <label id="upload-files" for="upload-file">选择文件<input id="upload-file" type="file" accept="application/octet-stream" aria-label="选择文件" /></label>
+      <button id="upload-cancel" type="button">取消添加</button>
+    </dialog>
+    <div id="screen"''')
 # Install the password dialog before connect() can request credentials.
 html = html.replace('client.password_prompt_fn = password_prompt_fn;', '')
 html = html.replace('client.reconnect = reconnect;', '''client.reconnect = reconnect;
@@ -216,11 +236,18 @@ export PULSE_RUNTIME_PATH="$state/pulse-runtime"
 export XPRA_PRIVATE_PULSEAUDIO=1
 
 # Xpra parses this command into argv; quote each argument without evaluating it.
-child=$(python3 - "$script_dir/app-watch.sh" "$CONSOLE_APP_BIN" "--user-data-dir=$state/profile" "${CONSOLE_APP_ARGS[@]}" <<'CHILD'
+# Keep the native picker in the app process instead of an external XDG portal.
+child=$(python3 - "$script_dir/app-watch.sh" "$CONSOLE_APP_BIN" "--user-data-dir=$state/profile" "${CONSOLE_APP_ARGS[@]}" --xdg-portal-required-version=999 <<'CHILD'
 import shlex
 import sys
 print(shlex.join(sys.argv[1:]))
 CHILD
+)
+upload_command=$(python3 - "$script_dir/upload.py" "$XPRA_DOWNLOAD_DIR" <<'UPLOAD'
+import shlex
+import sys
+print(shlex.join(['python3', *sys.argv[1:]]))
+UPLOAD
 )
 # ponytail: fixed 4096px Xvfb; use a resizable Xorg display for larger render sizes.
 exec xpra seamless "$CONSOLE_DISPLAY" \
@@ -234,6 +261,6 @@ exec xpra seamless "$CONSOLE_DISPLAY" \
   --exit-with-children=yes --terminate-children=yes \
   --start-new-commands=no --shell=no \
   --audio=yes --pulseaudio=yes --speaker=on --microphone=disabled \
-  --webcam=no --printing=no --file-transfer=no \
-  --open-files=no --open-url=no --session-name='Codex Console' \
+  --webcam=no --printing=no --file-transfer=yes \
+  --open-files=yes --open-command="$upload_command" --open-url=no --session-name='Codex Console' \
   --log-dir="$state" --log-file=xpra.log

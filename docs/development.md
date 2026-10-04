@@ -23,11 +23,12 @@ flowchart LR
 | `console.sh` | Credentials, HTML5 adaptation, Xpra launch and session commands |
 | `app-watch.sh` | Single supervisor lock, dedicated-window filter, app recovery and cleanup |
 | `mobile.js` | Touch, native IME, scaling, quality, authentication/reconnect behavior |
+| `upload.py` | Completed-upload validation, original filename and targeted browser callback |
 | `console.css` | Login, connection, and toolbar layout |
 | `codex-console.service` | User-service template rendered by deployment |
 | `scripts/check.sh` | Standard isolated checks and optional live endpoint verification |
 
-There is no Node build or package installation for the frontend. The browser runs `mobile.js` directly against the system Xpra HTML5 client. The adapted HTML/Client.js are generated in the private state directory. Host-installed upstream assets remain untouched. The launcher includes a content-derived cache version in the page.
+There is no Node build or package installation for the frontend. The browser runs `mobile.js` directly against the system Xpra HTML5 client. The adapted HTML/Client.js are generated in the private state directory. Only the adapted index page is published; upstream HTML pages and their compressed copies are excluded and cleaned up on upgrades. Host-installed upstream assets remain untouched. The launcher includes a content-derived cache version in the page.
 
 ## Local checks
 
@@ -44,18 +45,19 @@ Install the normal runtime and Node.js 20+; Python must be able to import the in
 | `test_deploy.py` | Config validation, argument quoting, alternate state/port/display, TLS identity, service rendering, repeat install, dependency installation boundary, relocation, uninstall |
 | `test_app_watch.py` | Reopening closed/exited app, avoiding duplicates, excluding foreign profiles, cleaning up children |
 | `test_mobile.cjs` | Browser authentication, retry/reconnect, gestures, scaling, quality, IME and UTF-8 clipboard behavior |
+| `test_upload.py` | Real Xpra save completion, private original filenames, request and client isolation |
 
 Isolated tests use temporary directories and controlled command boundaries. They do not install packages or modify your user service, and they do not start your desktop app. They still load the real installed Xpra client code and selected server modules. The watcher test takes roughly 20 seconds because it exercises the actual recovery intervals.
 
 ## Temporary integration session
 
-Install `xterm` as an additional test dependency, then run:
+Use the runtime's GTK 3 Python bindings, then run:
 
 ```bash
 python3 test_integration.py
 ```
 
-This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. An Xterm window supplies the expected app identity. It verifies HTTPS, correct and rejected passwords, window isolation, and decoded WSS audio, then stops the temporary session. It uses no desktop-app account and does not change your service. It verifies transport and launch plumbing; compatibility with a particular app build still needs that app.
+This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity and a native file picker without a profile class or transient parent. It verifies HTTPS, correct and rejected passwords, window isolation, decoded WSS audio, and upload completion followed by Unicode clipboard/key packets that make the original picker accept the file. It then stops the session. It uses no desktop-app account and does not change your service; compatibility with a particular app build still needs that app.
 
 ## Existing-app live check
 

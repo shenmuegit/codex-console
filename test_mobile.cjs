@@ -44,6 +44,9 @@ class Surface extends EventTarget {
   getAttribute(name) { return this[name] ?? null; }
   setCustomValidity(value) { this.validityMessage = value; }
   reportValidity() {}
+  click() { this.clicks = (this.clicks || 0) + 1; this.dispatchEvent(new Event('click')); }
+  showModal() { this.open = true; this.modal = true; }
+  close() { this.open = false; this.modal = false; }
   setPointerCapture(id) { this.captured.add(id); }
   hasPointerCapture(id) { return this.captured.has(id); }
   releasePointerCapture(id) { this.captured.delete(id); }
@@ -56,10 +59,11 @@ class Surface extends EventTarget {
   }
 }
 const screen = new Surface();
-screen.dataset = { codexInstance: 'chatgpt (/console/profile)' };
+screen.dataset = { codexInstance: 'chatgpt (/console/profile)', codexUploadDir: '/console/uploads' };
 const browser = new Surface();
 browser.PointerEvent = Event;
-browser.navigator = { languages: ['zh-CN'], language: 'zh-CN', appVersion: 'Linux', platform: 'Linux x86_64' };
+browser.navigator = { languages: ['zh-CN'], language: 'zh-CN', appVersion: 'Linux', platform: 'Linux x86_64',
+  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0.0.0' };
 browser.innerWidth = 360;
 browser.innerHeight = 680;
 browser.visualViewport = new Surface();
@@ -74,6 +78,8 @@ const toolbar = new Surface();
 const profileButtons = new Map();
 const connectionStatus = Object.fromEntries(
   ['progress', 'progress-label', 'progress-details', 'progress-bar', 'connection-retry'].map(id => [id, new Surface()]));
+const uploadUI = Object.fromEntries(['mobile-upload', 'upload', 'upload-local', 'upload-local-caption', 'upload-file', 'upload-files', 'upload-cancel', 'upload-status']
+  .map(id => [id, new Surface()]));
 const packets = [];
 let now = 0;
 let timerId = 0;
@@ -88,7 +94,8 @@ function advance(ms) {
     const next = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0];
     if (!next || next[1].at > target) break;
     now = next[1].at;
-    timers.delete(next[0]);
+    if (next[1].interval) next[1].at += next[1].interval;
+    else timers.delete(next[0]);
     next[1].callback();
   }
   now = target;
@@ -99,15 +106,21 @@ const document = new Surface();
 document.createElement = () => new Surface();
 document.body = new Surface();
 document.getElementById = id => id === 'screen' ? screen :
-  id === 'float_menu' ? toolbar : connectionStatus[id] || null;
+  id === 'float_menu' ? toolbar : connectionStatus[id] || uploadUI[id] || null;
 document.querySelector = selector => selector === '#screen' ? screen : null;
 document.querySelectorAll = selector => selector === '#performance_menu_entry [data-performance]' ? [...profileButtons.values()] : [];
 const context = vm.createContext({ window: browser, document,
   console, performance: { now: () => now }, setTimeout: schedule,
-  clearTimeout: id => timers.delete(id), setInterval: () => 0, AbortController, jQuery: jquery, $: jquery,
+  clearTimeout: id => timers.delete(id), setInterval: (callback, delay) => {
+    const id = schedule(callback, delay);
+    timers.get(id).interval = delay;
+    return id;
+  }, clearInterval: id => timers.delete(id), AbortController, jQuery: jquery, $: jquery,
   default_settings: {}, navigator: browser.navigator, screen: {}, URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
+  crypto: require('node:crypto').webcrypto,
   MediaSourceUtil: { getMediaSourceClass: () => null }, AudioContext: class {} });
 vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/rencode.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/lz4.js', 'utf8'), context);
 for (const file of ['Utilities', 'Constants', 'Keycodes', 'Window']) {
   vm.runInContext(fs.readFileSync(`/usr/share/xpra/www/js/${file}.js`, 'utf8'), context);
 }
@@ -368,15 +381,22 @@ for (const [profile, density, quality, speed] of [
   assert.equal(foreignWindow.fullscreen, false, 'Shared Chatgpt class names must not select an automation browser');
   assert.equal(client.encoding_options['min-quality'], quality);
   assert.equal(client.encoding_options['min-speed'], speed);
+  client._make_hello_base();
   client._make_hello();
+  assert.equal(client.capabilities.uuid, client.uuid, 'The serialized hello must route completion to the same client ID used in upload names');
   assert.equal(client.capabilities.dpi, 0, 'Connect must leave DPI unset so the configured value is applied to fonts');
   assert.ok(client.capabilities.wants.includes('display'), 'The browser must request the actual X11 display bounds');
+  assert.ok(client.capabilities.wants.includes('features'),
+    'The browser must request server features or Xpra omits its upload capabilities');
   assert.ok(packets.some(packet => packet[0] === 'encoding-options' &&
     packet[1]['min-quality'] === quality && packet[1]['min-speed'] === speed),
     'Changing a profile must update the connected server, without reloading');
   const query = new URL(browser.location.href).searchParams;
   assert.equal(query.get('performance'), profile, 'Refreshing must retain the selected profile');
   assert.equal(query.get('sound'), 'true', 'Changing quality must preserve other URL settings');
+}
+if (process.env.CONSOLE_TEST_CLIENT_HELLO) {
+  fs.writeFileSync(process.env.CONSOLE_TEST_CLIENT_HELLO, JSON.stringify(client.capabilities));
 }
 profileButtons.get('sharp').dataset.performance = '__proto__';
 profileButtons.get('sharp').dispatchEvent(new Event('click'));
@@ -641,5 +661,168 @@ with tempfile.NamedTemporaryFile(mode="w") as password:
     assert.equal(result.status, 0, result.stderr);
   }
 }
-checkClipboard().then(checkPasswordHandshake).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, and UTF-8 paste'))
+function checkUploadChunks() {
+  const sent = [];
+  const sender = Object.assign(Object.create(Client.prototype), {
+    file_transfer: true, remote_file_transfer: true, remote_open_files: true,
+    remote_file_chunks: 4, send_chunks_in_progress: new Map(),
+    send: packet => sent.push(packet), debug: noop, log: noop, warn: noop, error: noop,
+  });
+  const bytes = Uint8Array.from({ length: 9 }, (_, i) => i);
+  sender.do_send_file('image.png', '', bytes.length, bytes);
+  const id = sent[0][7]['file-chunk-id'];
+  for (let chunk = 0; chunk <= 3; chunk++) {
+    sender._process_ack_file_chunk([types.ack_file_chunk, id, true, '', chunk]);
+  }
+  const chunks = sent.filter(packet => packet[0] === types.send_file_chunk);
+  assert.equal(chunks.length, 3, 'The final acknowledgement must not send an extra empty image chunk');
+  assert.deepEqual(Buffer.concat(chunks.map(packet => Buffer.from(packet[3]))), Buffer.from(bytes));
+  assert.deepEqual(chunks.map(packet => packet[4]), [true, true, false]);
+  assert.equal(sender.send_chunks_in_progress.size, 0, 'A completed image must release its transfer state');
+}
+async function checkUpload() {
+  const negotiated = Object.assign(Object.create(Client.prototype), {
+    file_transfer: true, encoding_options: {}, audio_codecs: {}, id_to_window: {},
+    clog: noop, log: noop, warn: noop, debug: noop, send: noop, send_keymap: noop,
+    cancel_open_timer: noop, cancel_hello_timer: noop, _process_modifier_keycodes: noop,
+    _process_audio_caps: noop, _send_ping: noop, on_connect: noop, on_connection_progress: noop,
+  });
+  const serverHello = process.env.CONSOLE_TEST_SERVER_HELLO ?
+    JSON.parse(fs.readFileSync(process.env.CONSOLE_TEST_SERVER_HELLO, 'utf8')) :
+    { version: '6.5.4', rencodeplus: true, clipboard: true,
+      actual_desktop_size: [4096, 4096], file: { enabled: true, open: true, 'size-limit': 32768, chunks: 1024 } };
+  negotiated._process_hello([types.hello, serverHello]);
+  assert.equal(negotiated.remote_file_transfer, true, 'Xpra 6.5 file capabilities must enable the upload transport');
+  assert.equal(negotiated.remote_open_files, true, 'Xpra 6.5 must enable the completion callback');
+  assert.equal(negotiated.remote_file_size_limit, serverHello.file['size-limit']);
+  assert.equal(negotiated.remote_file_chunks, serverHello.file.chunks);
+  const uploadClient = Object.assign(negotiated, {
+    container: screen, connected: false, id_to_window: {}, focused_wid: 8,
+    uuid: 'a'.repeat(32), send_chunks_in_progress: new Map(),
+    clipboard_direction: 'to-server',
+    send: packet => packets.push(structuredClone(packet)), debug: noop, log: noop, warn: noop,
+    emit_connection_established: noop,
+  });
+  const dialog = Object.assign(Object.create(Window.prototype), {
+    wid: 8, windowtype: ['DIALOG'], metadata: { 'class-instance': ['ChatGPT', 'ChatGPT'], pid: 24 },
+    override_redirect: false, tray: false,
+  });
+  browser.navigator.userAgent = 'Mozilla/5.0 (Linux; Android 15)';
+  browser.init_mobile_upload?.(uploadClient);
+  assert.equal(uploadUI['upload-local-caption'].textContent, '选择图片');
+  assert.equal(uploadUI.upload.accept, 'image/*', 'Photo selection must not request videos');
+  assert.ok(uploadUI['upload-file'].onclick, 'A separate native file input must use the same upload bridge');
+  assert.equal(uploadUI.upload.hidden, false, 'The phone must tap a rendered native file input');
+  assert.ok(uploadUI['upload-local'].children.includes(uploadUI.upload),
+    'The file input must be inside the modal so the browser does not make it inert');
+  assert.equal(uploadUI['mobile-upload'].hidden, true, 'Initializing before connection must not show a picker');
+  uploadClient.connected = true;
+  uploadClient.id_to_window = { 7: win, 8: dialog };
+  win.metadata.pid = 24;
+  dialog.metadata.role = 'GtkFileChooserDialog';
+  advance(250);
+  assert.equal(uploadUI['mobile-upload'].hidden, true,
+    'A chooser left open before login must not start a new upload during the initial window replay');
+  uploadClient._process_startup_complete([types.startup_complete]);
+  advance(250);
+  assert.equal(uploadUI['mobile-upload'].hidden, true, 'Logging in must not reopen a leftover upload');
+  assert.ok(packets.some(packet => packet[0] === types.close_window && packet[1] === 8),
+    'Cancel the leftover picker so the user can open a fresh Codex upload');
+  uploadClient.id_to_window[8] = Object.assign(Object.create(Window.prototype), {
+    ...dialog, metadata: { ...dialog.metadata, role: '' },
+  });
+  const freshDialog = uploadClient.id_to_window[8];
+  const selectLocal = () => {
+    const event = new Event('click', { cancelable: true });
+    uploadUI.upload.dispatchEvent(event);
+    return event;
+  };
+  advance(250);
+  assert.equal(selectLocal().defaultPrevented, true, 'An ordinary Codex dialog must not accept file uploads');
+  freshDialog.metadata.role = 'GtkFileChooserDialog';
+  advance(250);
+  assert.equal(uploadUI['mobile-upload'].hidden, false, 'The real Electron picker has a generic class and no transient parent');
+  assert.equal(uploadUI['mobile-upload'].modal, true, 'A modal local-file surface must cover the Linux directory picker');
+  assert.equal(uploadUI.upload.clicks, undefined, 'Opening the remote picker must wait for a user gesture before opening the phone picker');
+  assert.equal(selectLocal().defaultPrevented, false, 'An open Codex chooser must allow the native file-picker action');
+  assert.equal(selectLocal().defaultPrevented, false,
+    'If the phone emits no change or cancel event, the next tap must still open its picker');
+  const bytes = new TextEncoder().encode('上传正文');
+  uploadUI.upload.files = [{ name: '测试 空格.txt', type: 'text/plain', size: bytes.length,
+    arrayBuffer: async () => bytes.buffer }];
+  packets.length = 0;
+  uploadUI.upload.dispatchEvent(new Event('change'));
+  await new Promise(setImmediate);
+  const sent = packets.find(packet => packet[0] === types.send_file);
+  assert.ok(sent, 'The browser file must enter Xpra’s real upload transport');
+  assert.equal(sent[4], true, 'Completion must invoke the host upload helper');
+  assert.deepEqual(Buffer.from(sent[6]), Buffer.from(bytes));
+  const request = sent[1].match(/^cc-[a-f0-9]{32}-([a-f0-9]{32})--测试 空格.txt$/)?.[1];
+  assert.ok(request, 'The upload must bind the completed file to this browser request');
+  const saved = `/console/uploads/${request}/测试 空格.txt`;
+  const notification = (id, path = saved) => [types.notify_show, 0, 1, '', 0, '',
+    'codex-console-upload', JSON.stringify({ request: id, path }), 10, null, [], {}];
+  const malformed = notification(request);
+  malformed[7] = 'null';
+  assert.doesNotThrow(() => uploadClient._process_notify_show(malformed), 'Malformed completion must be ignored safely');
+  uploadClient._process_notify_show(notification('b'.repeat(32)));
+  assert.ok(!packets.some(packet => packet[0] === types.key_action), 'Unmatched completion must never type into the app');
+  uploadClient._process_notify_show(notification(request, '/etc/passwd'));
+  assert.ok(!packets.some(packet => packet[0] === types.key_action), 'Only the private upload inbox can be selected');
+  uploadClient._process_notify_show(notification(request));
+  advance(700);
+  const token = packets.find(packet => packet[0] === types.clipboard_token);
+  assert.equal(serverClipboardText(token, 7), saved, 'Paste the actual completed path with Unicode intact');
+  const keys = packets.filter(packet => packet[0] === types.key_action);
+  assert.ok(keys.some(packet => packet[2] === 'l' && packet[3]), 'Open the native chooser location field');
+  assert.ok(keys.some(packet => packet[2] === 'o' && packet[3] && packet[4].includes('mod1')),
+    'Activate the native Open button explicitly; Electron may leave Cancel as the default response');
+  assert.ok(!keys.some(packet => packet[2] === 'Return'), 'Return must not activate the native Cancel response');
+  assert.ok(keys.every(packet => packet[1] === 8), 'Every upload keystroke must target the captured chooser');
+  uploadUI['upload-cancel'].click();
+  assert.ok(packets.some(packet => packet[0] === types.close_window && packet[1] === 8),
+    'Cancel must close the original Codex picker rather than leave the Linux browser open');
+  packets.length = 0;
+  uploadClient._process_notify_show(notification(request));
+  advance(350);
+  assert.equal(packets.length, 0, 'Cancelling must discard a late completion');
+  const genericFile = uploadUI['upload-file'];
+  genericFile.dispatchEvent(new Event('click', { cancelable: true }));
+  const documentBytes = new TextEncoder().encode('general file contents');
+  genericFile.files = [{ name: 'document.pdf', type: 'application/pdf', size: documentBytes.length,
+    arrayBuffer: async () => documentBytes.buffer }];
+  genericFile.dispatchEvent(new Event('change'));
+  await new Promise(setImmediate);
+  const documentUpload = packets.find(packet => packet[0] === types.send_file);
+  assert.ok(documentUpload[1].endsWith('--document.pdf'), 'The file entry must read its own selection rather than the previous photo');
+  assert.deepEqual(Buffer.from(documentUpload[6]), Buffer.from(documentBytes));
+  uploadUI['upload-cancel'].click();
+  packets.length = 0;
+  for (const stop of ['closed', 'disconnected', 'focus', 'clipboard']) {
+    uploadClient.connected = true;
+    uploadClient.clipboard_enabled = true;
+    uploadClient.focused_wid = 8;
+    uploadClient.id_to_window[8] = freshDialog;
+    selectLocal();
+    uploadUI.upload.dispatchEvent(new Event('change'));
+    await new Promise(setImmediate);
+    const send = packets.find(packet => packet[0] === types.send_file);
+    const id = send[1].match(/^cc-[a-f0-9]{32}-([a-f0-9]{32})--/)[1];
+    packets.length = 0;
+    uploadClient._process_notify_show(notification(id, `/console/uploads/${id}/测试 空格.txt`));
+    if (stop === 'closed') delete uploadClient.id_to_window[8];
+    if (stop === 'disconnected') uploadClient.connected = false;
+    if (stop === 'focus') uploadClient.focused_wid = 7;
+    if (stop === 'clipboard') uploadClient.clipboard_enabled = false;
+    advance(700);
+    assert.ok(!packets.some(packet => packet[0] === types.key_action && ['v', 'o'].includes(packet[2])),
+      `Do not paste or confirm when the chooser is ${stop}`);
+    uploadUI['upload-cancel'].click();
+    packets.length = 0;
+  }
+  delete uploadClient.id_to_window[8];
+  advance(250);
+  assert.equal(uploadUI['mobile-upload'].open, false, 'Closing the native picker must release the modal surface');
+}
+checkClipboard().then(checkPasswordHandshake).then(checkUploadChunks).then(checkUpload).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, UTF-8 paste, and native chooser upload'))
   .catch(error => { console.error(error); process.exitCode = 1; });

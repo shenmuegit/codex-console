@@ -27,6 +27,7 @@ This repository provides the remote access layer. You must install a compatible 
 | Mobile layout | Adapts to the visible browser area, orientation, and on-screen keyboard |
 | Touch gestures | Tap, drag, double-tap for right-click, and tap-then-hold to scroll |
 | Native text input | Compose locally with your phone's IME and paste committed text into the app |
+| File upload | Open Codex's native attachment picker, then select a file from your phone or computer |
 | Quality profiles | Smooth, Balanced, and Sharp; the selected profile is retained in the page URL |
 | Audio | Host application audio plays in the browser; microphone forwarding is disabled |
 | Dedicated profile | Separate application settings and sign-in data; unrelated windows are filtered out |
@@ -90,6 +91,8 @@ journalctl --user -u codex-console.service -n 100   # Read service logs
 
 For manual operation, use `./deploy.sh --no-service --no-start`, then `./console.sh start` and `./console.sh stop`. Repeated installation retains existing configuration, credentials, certificates, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
 
+Only the custom Codex Console page is published. Upstream connection and diagnostic pages such as `connect.html`, including their compressed copies, return 404. Preparing assets also removes copies left by earlier deployments.
+
 ## Mobile controls
 
 | Action | Gesture |
@@ -106,6 +109,10 @@ Double-tap recognition uses a roughly 180 ms interval. A single touch-and-slide 
 Choose **流畅** (Smooth), **均衡** (Balanced), or **高清** (Sharp) in the quality menu, or use `?performance=smooth`, `?performance=balanced`, or `?performance=sharp` in the URL. Balanced is the default. Audio playback may require a user gesture to satisfy browser permissions.
 
 ## Documentation
+
+To upload, first click the attachment/upload action in the remote Codex composer. A browser upload dialog covers the Linux directory picker. Choose **选择图片** for photos, or **选择文件** for the device's general file picker. The file entry requests generic files without adding camera or video capture options in Chromium. The completed upload is passed to the original picker so Codex can add the attachment. Confirm it appears in the composer before sending. **取消添加** closes Codex's picker; disconnection or changing picker focus stops automatic attachment. Login and reconnect cancel leftover pickers; only a new upload action opens the browser dialog. If the phone reports neither a selection nor cancellation, tap the file control again to retry.
+
+Uploads accept one file at a time, up to 32 MiB or the server limit, whichever is smaller. Unicode and spaces are supported; empty files, control characters, and filenames longer than 185 UTF-8 bytes are rejected. Files remain under the private state directory's `uploads/` so Codex can read them later; remove them when no longer needed. Restart the service and reload the browser after updating.
 
 | Guide | Contents |
 | --- | --- |

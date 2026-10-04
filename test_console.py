@@ -28,6 +28,18 @@ assert response.status == 200 and b"Xpra" in content, "HTML5 client is unavailab
 assert b"mobile.js?v=" in content, "The touch and browser-size fix is not loaded"
 assert b"console.css?v=" in content, "The responsive client theme is not loaded"
 assert all(f'data-performance="{name}"'.encode() in content for name in ("smooth", "balanced", "sharp")), "A quality submenu option is missing"
+for page in ('connect', 'clipboard', 'crypto', 'digest', 'mitm'):
+    for suffix in ('', '.gz', '.br'):
+        path = f'/{page}.html{suffix}'
+        connection.request('GET', path)
+        response = connection.getresponse()
+        response.read()
+        assert response.status == 404, f'Upstream page is still available: {path}'
+for path in ('/connect.html?ssl=true', '/%63onnect.html', '/index.html.gz', '/index.html.br'):
+    connection.request('GET', path)
+    response = connection.getresponse()
+    response.read()
+    assert response.status == 404, f'An alternate upstream page URL is still available: {path}'
 connection.request("GET", "/mobile.js")
 response = connection.getresponse()
 assert response.status == 200, "The touch and browser-size script is unavailable"
@@ -131,7 +143,7 @@ client = AudioCheck(options)
 client.hello_extra.update({"audio": {"receive": True, "send": False, "decoders": ["opus+mka"]},
                           "ui_client": True, "windows": True, "system_tray": False,
                           "encodings": {"": ["png"], "core": ["png"], "rgb_formats": ["RGB", "RGBX", "RGBA"]},
-                          "metadata.supported": ["class-instance", "transient-for"],
+                          "metadata.supported": ["class-instance", "transient-for", "pid", "role"],
                           "wants": ["audio", "windows", "display"], "sharing": True})
 def connection_error(message):
     raise RuntimeError(message)
@@ -143,10 +155,14 @@ for process in playback:
     assert process.returncode == 0, errors.decode()
 assert exit_code == 0 and chunks, "No audio received over the authenticated connection"
 assert forwarded_windows, "The browser must receive the Codex window"
+app_pids = {metadata.get('pid') for metadata in forwarded_windows.values()
+            if tuple(value.decode() if isinstance(value, bytes) else value
+                     for value in metadata.get('class-instance', ())) == expected_class}
+assert app_pids and 0 not in app_pids and None not in app_pids, "The dedicated app owner is missing"
 for metadata in forwarded_windows.values():
     instance = tuple(value.decode() if isinstance(value, bytes) else value
                      for value in metadata.get("class-instance", ()))
-    assert instance == expected_class, "An unrelated window was forwarded to the browser"
+    assert metadata.get('pid') in app_pids, "An unrelated window was forwarded to the browser"
 decoded = subprocess.run([
     "gst-launch-1.0", "-q", "fdsrc", "!", "decodebin", "!", "audioconvert", "!", "audioresample",
     "!", "audio/x-raw,format=S16LE,channels=1,rate=48000", "!", "fdsink", "fd=1",

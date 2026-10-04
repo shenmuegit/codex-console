@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import shlex
 
 root = Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory() as directory:
@@ -22,6 +23,11 @@ with tempfile.TemporaryDirectory() as directory:
                  if not name.startswith("CONSOLE_")}
     env = dict(inherited, PATH=f"{work}:{os.environ['PATH']}",
                XDG_STATE_HOME=str(work / "state"), XDG_CONFIG_HOME=str(work / "config"))
+    web = state / 'www'
+    web.mkdir()
+    for name in ('connect.html', 'connect.html.gz', 'connect.html.br', 'clipboard.html',
+                 'crypto.html', 'digest.html', 'mitm.html', 'index.html.gz', 'legacy.html'):
+        (web / name).write_text('old upstream page')
     for mode, daemon in (("run", "no"), ("start", "yes")):
         result = subprocess.run([str(root / "console.sh"), mode], env=env,
                                 capture_output=True, text=True, timeout=10)
@@ -29,5 +35,9 @@ with tempfile.TemporaryDirectory() as directory:
         arguments = json.loads(result.stdout)
         assert f"--daemon={daemon}" in arguments, "Systemd must supervise the foreground server"
         assert arguments[:2] == ["seamless", ":100"]
+        child = shlex.split(next(argument.split('=', 1)[1] for argument in arguments if argument.startswith('--start-child=')))
+        assert '--xdg-portal-required-version=999' in child, "Native upload must use the app-owned GTK picker"
+        assert sorted(path.name for path in web.glob('*.html*')) == ['index.html'], \
+            'Only the custom page may be served, including after upgrading existing assets'
 
 print("PASS: systemd launch stays in the foreground; manual start still daemonizes")

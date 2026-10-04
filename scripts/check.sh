@@ -12,6 +12,7 @@ bash -n console.sh app-watch.sh deploy.sh lib/config.sh config.example.sh script
 python3 test_startup.py
 python3 test_deploy.py
 python3 test_app_watch.py
+python3 test_upload.py
 node test_mobile.cjs
 if [[ ${1:-} == --live ]]; then
   source "$root/lib/config.sh"

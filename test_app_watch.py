@@ -65,11 +65,17 @@ while True: time.sleep(0.1)
         wait_for_launch(1)
         calls = [json.loads(line) for line in (work / "filters").read_text().splitlines()]
         assert len(calls) == 1, "The window filter must be installed before launching the app"
-        assert calls[0][2:6] == ["add-window-filter", "window", "class-instance", "!="]
         from xpra.server.window.filters import get_window_filter
         window_filter = get_window_filter(*calls[0][3:])
-        assert not window_filter.evaluate((f"chatgpt ({work / 'custom state/profile'})", "Chatgpt"))
-        assert window_filter.evaluate((f"chatgpt ({work / 'foreign-profile'})", "Chatgpt")), "Unrelated profiles must be excluded"
+        class Window:
+            def __init__(self, instance, parent):
+                self.properties = {'class-instance': instance, 'ppid': parent}
+            def get_property(self, name):
+                return self.properties[name]
+        assert not window_filter.matches(Window(('ChatGPT', 'ChatGPT'), watcher.pid)), "The app's native chooser must pass even without its profile in WM_CLASS"
+        assert not window_filter.matches(Window((f"chatgpt ({work / 'custom state/profile'})", "Chatgpt"), watcher.pid))
+        assert window_filter.matches(Window((f"chatgpt ({work / 'foreign-profile'})", "Chatgpt"), os.getpid())), "Unrelated profiles must be excluded"
+        assert window_filter.matches(Window(('ChatGPT', 'ChatGPT'), os.getpid())), "Other apps' native choosers must stay excluded"
         duplicate = subprocess.run(command, env=env, capture_output=True, timeout=3)
         assert duplicate.returncode == 0, duplicate.stderr.decode()
         time.sleep(6)

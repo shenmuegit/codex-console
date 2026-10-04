@@ -109,7 +109,7 @@ import sys
 html = Path(sys.argv[1]).read_text()
 required = ('id="screen"', '<div id="progress"', '<div id="float_menu"',
             'client.reconnect = reconnect;', 'function login_connect() {',
-            'init_keyboard(client);', 'src="js/Client.js"')
+            'init_keyboard(client);', 'src="js/Client.js"', 'init_file_transfer(client);', 'id="upload"')
 sys.exit(0 if all(token in html for token in required) else 1)
 CLIENT
   then
