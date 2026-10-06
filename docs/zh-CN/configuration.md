@@ -91,27 +91,49 @@ CONSOLE_TLS_KEY=/absolute/path/to/privkey.pem
 
 支持的 HTML5 客户端中，[Chrome 的离屏视频解码路径](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js)需要 HTTPS。最终解码器仍取决于浏览器的编码支持；HTTPS 本身不保证 H.264 或硬件加速，Safari 仍可能使用回退路径。
 
-### 公网 IP 证书
+### 仅使用 15443 端口的 HTTPS
 
-Let’s Encrypt 支持使用 `shortlived` 配置签发[公网 IP 证书](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)，需使用 Certbot 5.4 或更新版本。即使控制台运行在 15443 端口，HTTP-01 验证仍必须通过公网 TCP **80** 端口访问这台服务器；改变 Certbot 的本地验证端口不会改变 CA 访问的端口。
+Xpra 直接通过 `CONSOLE_PORT=15443` 提供 HTTPS 和 WSS，不需要反向代理或特权监听端口。针对公网 IP，Let's Encrypt 的 [HTTP-01 与 TLS-ALPN-01 验证](https://letsencrypt.org/docs/challenge-types/)分别需要入站 80 或 443 端口，DNS-01 无法验证 IP 地址。把本地验证端口改为 15443，不会改变 CA 的验证端口。
 
-独立签发命令，账号和证书文件保存在仓库外的私有目录：
+两个验证端口均不能使用时，可用本地 CA 签发证书，并在每台客户端设备上安装其公开证书。连接会加密，但浏览器需要完成安装后才会信任它。如果有可管理 DNS 的域名，也可以用 DNS-01 获得公开可信证书，无需开放两个验证端口，再通过该域名的 15443 端口访问。
+
+本地 CA 只创建一次，文件保存在 Git 仓库外。将示例 IP 替换为实际访问的地址。以下命令用于新的证书目录；后续续期服务器证书时应保留原 CA 及其私钥。
 
 ```bash
-certbot certonly --standalone --ip-address YOUR_PUBLIC_IP \
-  --cert-name codex-console --required-profile shortlived \
-  --non-interactive --agree-tos --register-unsafely-without-email \
-  --keep-until-expiring \
-  --config-dir "$HOME/.local/state/codex-console/tls/acme" \
-  --work-dir "$HOME/.local/state/codex-console/tls/work" \
-  --logs-dir "$HOME/.local/state/codex-console/tls/logs"
+umask 077
+tls="${CONSOLE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/codex-console}/tls/local"
+public_ip=192.0.2.10
+mkdir -p "$tls"
+chmod 700 "$tls"
+openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
+  -subj '/CN=Codex Console Local CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout "$tls/ca-key.pem" -out "$tls/ca.crt"
+openssl req -new -newkey rsa:2048 -nodes -sha256 \
+  -subj "/CN=$public_ip" -keyout "$tls/server-key.pem" -out "$tls/server.csr"
+cat > "$tls/server.ext" <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=IP:$public_ip
+EOF
+openssl x509 -req -sha256 -days 365 -in "$tls/server.csr" \
+  -CA "$tls/ca.crt" -CAkey "$tls/ca-key.pem" -CAcreateserial \
+  -extfile "$tls/server.ext" -out "$tls/server.crt"
+cat "$tls/server.crt" "$tls/ca.crt" > "$tls/fullchain.pem"
+openssl x509 -in "$tls/ca.crt" -outform DER -out "$tls/console-ca.cer"
+openssl verify -CAfile "$tls/ca.crt" -verify_ip "$public_ip" "$tls/server.crt"
+openssl x509 -in "$tls/ca.crt" -noout -sha256 -fingerprint
 ```
 
-监听 80 端口需要管理员协助。可通过 systemd **系统服务**以控制台用户运行 Certbot，并设置 `AmbientCapabilities=CAP_NET_BIND_SERVICE`、`CapabilityBoundingSet=CAP_NET_BIND_SERVICE` 和 `UMask=0077`。这样控制台用户可读取证书，应用仍由普通用户运行。证书目录权限设为 `700`，私钥设为 `600`。
+在私有配置中设置 `CONSOLE_PORT=15443`，将 `CONSOLE_TLS_CERT` 设为该目录的 `fullchain.pem`，`CONSOLE_TLS_KEY` 设为 `server-key.pem`，再执行 `./console.sh doctor` 并重启用户服务。使用 `curl --noproxy '*' --cacert "$tls/ca.crt"` 检查 `https://YOUR_PUBLIC_IP:15443/`，不要关闭证书验证。证书目录保持 `700`，私钥保持 `600`。
 
-签发成功后，将两个 TLS 路径分别设为私有状态目录下的 `tls/acme/live/codex-console/fullchain.pem` 和 `privkey.pem`，然后重启用户服务。执行 `openssl verify -verify_ip YOUR_PUBLIC_IP -untrusted fullchain.pem fullchain.pem` 验证信任链与 IP SAN，并在不关闭证书验证的情况下检查 `https://YOUR_PUBLIC_IP:15443/`。
+仅将 `console-ca.cer` 或 `ca.crt` 传到手机，并与服务器输出核对 SHA-256 指纹。iPhone/iPad 安装证书描述文件后，按 [Apple 的说明](https://support.apple.com/en-us/102390)，在“设置 → 通用 → 关于本机 → 证书信任设置”中开启完全信任。Android 在设备的证书/凭据设置中按 **CA 证书**导入，菜单名称因厂商而异。完成信任后重新打开 HTTPS 地址。仅绕过浏览器证书警告，不能证明视频解码器所需的安全上下文已启用。不要公开或传输任何私钥。
 
-IP 证书有效期约六天。通过持久化系统定时器每八小时执行一次上述 `--keep-until-expiring` 命令（`OnCalendar=*-*-* 00,08,16:00:00`）。使用签发成功后的 deploy hook 重启 `codex-console.service`，并为该用户的服务管理器设置 `XDG_RUNTIME_DIR=/run/user/UID` 和 `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/UID/bus`。绑定或验证失败时保留原控制台配置，查看证书服务日志，再启用 HTTPS。证书续期和启用均验证成功后才能报告部署完成。
+如需通过同一端口下载，仅将 `console-ca.cer` 复制到生成的状态目录下的 `www/`，即可通过 `https://YOUR_PUBLIC_IP:15443/console-ca.cer` 获取；现有资源准备过程会保留该文件。安装前应核对证书指纹。
+
+服务器证书有效期为 365 天，CA 为十年。使用原 CSR、扩展配置与 CA 续期服务器证书，验证新证书的信任链和 IP SAN，再替换 `server.crt` 与 `fullchain.pem`，重启用户服务。无人值守安装可配置持久化的每日**用户定时器**，在有效期不足 30 天时续期（`openssl x509 -checkend 2592000 -noout -in server.crt`）。本地签名无需联网验证或额外监听端口。更换 CA 后，每台客户端均需重新安装公开证书。80 和 443 端口必须保持未使用时，不要运行旧的 Certbot 独立签发安装脚本。
 
 ## 访问密码
 

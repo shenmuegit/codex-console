@@ -91,27 +91,49 @@ Use a certificate trusted by the browser for the hostname you visit, keep the ke
 
 The supported HTML5 client's [Chrome offscreen/video decoder](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js) requires HTTPS. Browser codec support still determines the decoder; HTTPS alone does not guarantee H.264 or hardware acceleration, and Safari may use the fallback path.
 
-### Public IP certificates
+### HTTPS using only port 15443
 
-Let’s Encrypt supports [public IP certificates with the `shortlived` profile](https://letsencrypt.org/2026/03/11/shorter-certs-certbot). Use Certbot 5.4 or newer. HTTP-01 validation must reach this server on public TCP port **80**, even when the console listens on 15443; changing Certbot's local challenge port does not change the CA's port.
+Xpra serves HTTPS and WSS directly on `CONSOLE_PORT=15443`; it needs no reverse proxy or privileged listener. For a public IP, Let's Encrypt's [HTTP-01 and TLS-ALPN-01 challenges](https://letsencrypt.org/docs/challenge-types/) require inbound port 80 or 443 respectively. DNS-01 cannot validate an IP address. Changing a local challenge port to 15443 does not change the CA's validation port.
 
-A standalone issuance command, with private account/certificate files outside the repository:
+When both validation ports must remain unused, use a local CA and install its public certificate on each client device. This encrypts the connection, but browsers trust it only after that installation. A domain you control can instead use DNS-01 for a publicly trusted certificate without opening either validation port; visit that domain on port 15443.
+
+Create the local CA once, outside Git. Replace the example IP with the address you visit. These commands are for a new certificate directory; retain the CA and its key for subsequent server-certificate renewals.
 
 ```bash
-certbot certonly --standalone --ip-address YOUR_PUBLIC_IP \
-  --cert-name codex-console --required-profile shortlived \
-  --non-interactive --agree-tos --register-unsafely-without-email \
-  --keep-until-expiring \
-  --config-dir "$HOME/.local/state/codex-console/tls/acme" \
-  --work-dir "$HOME/.local/state/codex-console/tls/work" \
-  --logs-dir "$HOME/.local/state/codex-console/tls/logs"
+umask 077
+tls="${CONSOLE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/codex-console}/tls/local"
+public_ip=192.0.2.10
+mkdir -p "$tls"
+chmod 700 "$tls"
+openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
+  -subj '/CN=Codex Console Local CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout "$tls/ca-key.pem" -out "$tls/ca.crt"
+openssl req -new -newkey rsa:2048 -nodes -sha256 \
+  -subj "/CN=$public_ip" -keyout "$tls/server-key.pem" -out "$tls/server.csr"
+cat > "$tls/server.ext" <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=IP:$public_ip
+EOF
+openssl x509 -req -sha256 -days 365 -in "$tls/server.csr" \
+  -CA "$tls/ca.crt" -CAkey "$tls/ca-key.pem" -CAcreateserial \
+  -extfile "$tls/server.ext" -out "$tls/server.crt"
+cat "$tls/server.crt" "$tls/ca.crt" > "$tls/fullchain.pem"
+openssl x509 -in "$tls/ca.crt" -outform DER -out "$tls/console-ca.cer"
+openssl verify -CAfile "$tls/ca.crt" -verify_ip "$public_ip" "$tls/server.crt"
+openssl x509 -in "$tls/ca.crt" -noout -sha256 -fingerprint
 ```
 
-Port 80 requires administrator assistance. A systemd **system** service can run Certbot as the console user with `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`, and `UMask=0077`; this keeps certificates readable by the console without running the app as root. Keep the certificate directories private (`700`) and the key private (`600`).
+Set `CONSOLE_PORT=15443`, `CONSOLE_TLS_CERT` to this directory's `fullchain.pem` and `CONSOLE_TLS_KEY` to `server-key.pem` in the private configuration, then run `./console.sh doctor` and restart the user service. Verify `https://YOUR_PUBLIC_IP:15443/` with `curl --noproxy '*' --cacert "$tls/ca.crt"`; do not disable certificate verification. Certificate directories remain `700` and private keys `600`.
 
-After issuance, set the two TLS paths to `tls/acme/live/codex-console/fullchain.pem` and `privkey.pem` under the private state directory, then restart the user service. Validate trust and the IP SAN with `openssl verify -verify_ip YOUR_PUBLIC_IP -untrusted fullchain.pem fullchain.pem`, and check `https://YOUR_PUBLIC_IP:15443/` without disabling certificate verification.
+Transfer only `console-ca.cer` or `ca.crt` to the phone and check its SHA-256 fingerprint against the server's output. On iPhone/iPad, install the certificate profile, then enable it under Settings → General → About → Certificate Trust Settings, as described by [Apple](https://support.apple.com/en-us/102390). On Android, import it as a **CA certificate** under the device's certificate/credential settings; menu names vary by manufacturer. Reopen the HTTPS address after trusting the CA. A browser certificate-warning bypass alone is insufficient to confirm the secure context required by the video decoder. Never publish or transfer either private key.
 
-IP certificates last about six days. Run the same `--keep-until-expiring` command from a persistent system timer every eight hours (`OnCalendar=*-*-* 00,08,16:00:00`). Use a successful-issuance deploy hook to restart `codex-console.service`; set `XDG_RUNTIME_DIR=/run/user/UID` and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/UID/bus` for that user's manager. If binding or validation fails, keep the existing console configuration and inspect the certificate service log before enabling HTTPS. Certificate renewal and activation must both succeed before reporting the deployment complete.
+To offer a download from the same port, copy only `console-ca.cer` into the generated state directory's `www/` directory. It is then available at `https://YOUR_PUBLIC_IP:15443/console-ca.cer`; the existing asset preparation preserves this file. Verify its fingerprint before installing it.
+
+The server certificate lasts 365 days; the CA lasts ten years. Renew the server certificate with the existing CSR, extension file and CA, verify the candidate's chain and IP SAN, replace `server.crt` and `fullchain.pem`, then restart the user service. An unattended installation can use a persistent daily **user** timer that renews when less than 30 days remain (`openssl x509 -checkend 2592000 -noout -in server.crt`). Local signing requires no network validation or extra listener. Replacing the CA requires reinstalling its public certificate on every client. Do not run an earlier standalone Certbot installer when ports 80 and 443 must remain unused.
 
 ## Access password
 
