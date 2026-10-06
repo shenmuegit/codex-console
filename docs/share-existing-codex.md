@@ -47,6 +47,29 @@ without stretching. Use the keyboard button for phone input. The native
 picker upload overlay belongs to the separate-session mode and is not
 available in shadow mode.
 
+## Capture only Codex pixels
+
+On the tested Xpra 6.5.4 build, selecting a window still crops pixels from the
+desktop at that window's position. Another application or KDE's screen locker
+can therefore replace the Codex picture even when the window metadata is correct.
+The screenshot request also captures the full desktop in that build.
+
+After the compatibility patch above, back up the installed modules and apply
+`scripts/xpra-6.5-window-pixels.patch`. This reads the selected window's own
+XComposite pixmap and constructs screenshots only from selected windows. It
+does not fall back to desktop pixels when the window disappears. Restart the
+sharing service to load the correction. Package upgrades can overwrite it.
+
+`python3 test_shadow_capture.py` verifies real pixels on a private Xvfb display:
+a blue window covering the green selected window must not appear in its capture
+or screenshot. It also checks moving, resizing, and closing the selected window.
+All fixture windows and the temporary display close automatically.
+
+The KDE lock screen is excluded from the picture after this correction. KDE
+still needs to be unlocked to accept mouse and keyboard input. Decide whether
+to disable automatic locking for the remote desktop account or unlock it when
+needed; the pixel correction does not change the account's lock settings.
+
 ## Verify and recover
 
 Verify `server.type=Python/bindings/x11-shadow`, `features.shadow=True`, and
