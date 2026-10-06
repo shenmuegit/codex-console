@@ -91,8 +91,6 @@ Use a certificate trusted by the browser for the hostname you visit, keep the ke
 
 The supported HTML5 client's [Chrome offscreen/video decoder](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js) requires HTTPS. Browser codec support still determines the decoder; HTTPS alone does not guarantee H.264 or hardware acceleration, and Safari may use the fallback path.
 
-The last quality preset is saved in this browser for this server address and restored when reopening the page. An explicit `performance` URL parameter takes priority. Without either choice, phones default to Smooth and desktops to Balanced.
-
 ### Public IP certificates
 
 Let’s Encrypt supports [public IP certificates with the `shortlived` profile](https://letsencrypt.org/2026/03/11/shorter-certs-certbot). Use Certbot 5.4 or newer. HTTP-01 validation must reach this server on public TCP port **80**, even when the console listens on 15443; changing Certbot's local challenge port does not change the CA's port.
