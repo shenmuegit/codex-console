@@ -13,6 +13,10 @@ flock -n 9 || exit 0
 trap 'jobs -pr | xargs -r kill 2>/dev/null || true; wait || true' EXIT
 trap 'exit 0' INT TERM
 
+# Login opens Firefox through xdg-open, outside the app's direct child processes.
+# Xpra uses the first matching rule; allow it before excluding other parents.
+xpra control "${DISPLAY:-:100}" add-window-filter window class-instance '=' "('Navigator', 'firefox-esr')" '*' 9>&- >/dev/null
+
 # Native Electron choosers have no profile class or transient parent. XRes gives
 # their owning process: forward only windows from this supervisor's app children.
 xpra control "${DISPLAY:-:100}" add-window-filter window ppid '!=' "$$" 9>&- >/dev/null

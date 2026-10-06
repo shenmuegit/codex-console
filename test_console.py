@@ -162,7 +162,7 @@ assert app_pids and 0 not in app_pids and None not in app_pids, "The dedicated a
 for metadata in forwarded_windows.values():
     instance = tuple(value.decode() if isinstance(value, bytes) else value
                      for value in metadata.get("class-instance", ()))
-    assert metadata.get('pid') in app_pids, "An unrelated window was forwarded to the browser"
+    assert metadata.get('pid') in app_pids or instance == ('Navigator', 'firefox-esr'), "An unrelated window was forwarded to the browser"
 decoded = subprocess.run([
     "gst-launch-1.0", "-q", "fdsrc", "!", "decodebin", "!", "audioconvert", "!", "audioresample",
     "!", "audio/x-raw,format=S16LE,channels=1,rate=48000", "!", "fdsink", "fd=1",
@@ -174,4 +174,4 @@ assert samples, "The received stream could not be decoded"
 amplitude = 2 * abs(sum(value * cmath.exp(-2j * cmath.pi * 440 * i / 48000)
                         for i, value in enumerate(samples))) / len(samples)
 assert amplitude > 100, "The session's 440 Hz test tone was not transmitted"
-print("PASS: HTTPS, authentication, only Codex windows, and decoded session audio over WSS")
+print("PASS: HTTPS, authentication, Codex and login-browser windows, and decoded session audio over WSS")

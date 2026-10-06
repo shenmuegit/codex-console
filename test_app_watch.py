@@ -64,18 +64,28 @@ while True: time.sleep(0.1)
     try:
         wait_for_launch(1)
         calls = [json.loads(line) for line in (work / "filters").read_text().splitlines()]
-        assert len(calls) == 1, "The window filter must be installed before launching the app"
         from xpra.server.window.filters import get_window_filter
-        window_filter = get_window_filter(*calls[0][3:])
+        from xpra.server.source.window import WindowsConnection
+        from types import SimpleNamespace
+        connection = SimpleNamespace(
+            hello_sent=True, window_enabled=True, system_tray=False, uuid='test-phone',
+            window_filters=[(call[7] if len(call) > 7 else '', get_window_filter(*call[3:7]))
+                            for call in calls],
+        )
         class Window:
             def __init__(self, instance, parent):
                 self.properties = {'class-instance': instance, 'ppid': parent}
             def get_property(self, name):
                 return self.properties[name]
-        assert not window_filter.matches(Window(('ChatGPT', 'ChatGPT'), watcher.pid)), "The app's native chooser must pass even without its profile in WM_CLASS"
-        assert not window_filter.matches(Window((f"chatgpt ({work / 'custom state/profile'})", "Chatgpt"), watcher.pid))
-        assert window_filter.matches(Window((f"chatgpt ({work / 'foreign-profile'})", "Chatgpt"), os.getpid())), "Unrelated profiles must be excluded"
-        assert window_filter.matches(Window(('ChatGPT', 'ChatGPT'), os.getpid())), "Other apps' native choosers must stay excluded"
+            def is_tray(self):
+                return False
+        def forwarded(instance, parent):
+            return WindowsConnection.can_send_window(connection, Window(instance, parent))
+        assert forwarded(('Navigator', 'firefox-esr'), os.getpid()), "The login browser launched by xdg-open must reach the phone even with a different parent"
+        assert forwarded(('ChatGPT', 'ChatGPT'), watcher.pid), "The app's native chooser must pass even without its profile in WM_CLASS"
+        assert forwarded((f"chatgpt ({work / 'custom state/profile'})", "Chatgpt"), watcher.pid)
+        assert not forwarded((f"chatgpt ({work / 'foreign-profile'})", "Chatgpt"), os.getpid()), "Unrelated profiles must be excluded"
+        assert not forwarded(('ChatGPT', 'ChatGPT'), os.getpid()), "Other apps' native choosers must stay excluded"
         duplicate = subprocess.run(command, env=env, capture_output=True, timeout=3)
         assert duplicate.returncode == 0, duplicate.stderr.decode()
         time.sleep(6)

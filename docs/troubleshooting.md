@@ -64,6 +64,19 @@ Check that the app is executable and matches the [window-class integration](depl
 
 Closing the app window normally triggers reopening. To stop the application for maintenance, stop the service or the manual Xpra session. The dedicated profile stores login state separately; account login may be needed again after moving data or changing the profile directory.
 
+## Sign-in waits for a browser that never appears
+
+The desktop app opens its login page in the host's default browser. On this
+console, Firefox ESR windows are forwarded even when `xdg-open` launches them
+outside the app supervisor. The browser allowance must precede the parent
+process filter; other desktop app profiles remain excluded.
+
+Use Firefox ESR as the default HTTP/HTTPS handler on the host. If the service
+was already running when this fix was installed, restart it during a suitable
+maintenance window and reconnect the console. Complete the account login in
+the displayed Firefox window. The console access password and account login
+are separate.
+
 ## Input, gestures, or display problems
 
 | Symptom | Resolution |
