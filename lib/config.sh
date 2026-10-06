@@ -53,7 +53,7 @@ console_validate_config() {
   done
   CONSOLE_STATE_DIR=$(readlink -m "$CONSOLE_STATE_DIR")
   # Existing sessions remain manageable when their TLS files are moved or removed.
-  if [[ -n $CONSOLE_TLS_CERT || -n $CONSOLE_TLS_KEY ]] && [[ ! ${1:-} =~ ^(stop|status|password)$ ]]; then
+  if [[ -n $CONSOLE_TLS_CERT || -n $CONSOLE_TLS_KEY ]] && [[ ! ${1:-} =~ ^(stop|status|network|password)$ ]]; then
     for path in "$CONSOLE_TLS_CERT" "$CONSOLE_TLS_KEY"; do
       if [[ $path != /* || $path == *$'\n'* || $path == *$'\r'* || $path == *,* || ! -f $path || ! -s $path || ! -r $path ]]; then
         console_error 'CONSOLE_TLS_CERT and CONSOLE_TLS_KEY must both name readable, nonempty absolute files without commas or line breaks.'

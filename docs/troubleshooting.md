@@ -90,6 +90,32 @@ are separate.
 | UI slow over the network | Choose Smooth; check host CPU load and link quality |
 | Old UI after updating | Rerun deployment to rebuild assets, restart, and refresh the browser |
 
+## Client network diagnostics
+
+Refresh the browser after running `./console.sh prepare`. Once password authentication succeeds, the client sends a small network report every five seconds over the existing WS/WSS connection. HTTPS/WSS continues to use the configured port (15443 by default). No separate listener or public HTTP collector is required.
+
+Read the most recent report for each client on the host:
+
+```bash
+./console.sh network | python3 -m json.tool
+# For another instance, use its original configuration:
+CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
+```
+
+The command reads the matching service's journal (last ten minutes, up to 1,000 reports), or the last 1 MiB of a manual session's `xpra.log`. It prints only allowed diagnostic fields. `clients: []` means no valid report was found. `age_seconds` is measured from server receipt; `stale: true` means the last report is over 30 seconds old and does not establish that a client is still connected. In the browser console, `window.codexConsoleNetwork.snapshot()` returns the current local measurements.
+
+| Fields | Interpretation |
+| --- | --- |
+| `rtt_ms`, `rtt_p95_ms`, `jitter_ms`, `rtt_sample_age_ms` | Existing Xpra ping round trips, 95th percentile, mean change between samples, and sample age, in milliseconds; at most 60 recent pings are retained |
+| `image_kbps`, `draw_updates_per_sec` | Encoded image payload rate and successful draw acknowledgments in the last five-second interval; these are not total link bandwidth or display FPS |
+| `decode_ms`, `decode_p95_ms`, `decode_errors`, `queued_paints` | Recent client draw processing times in milliseconds (at most 60 samples per interval), failed draws, and queued/pending paints; processing time does not measure input-to-display latency |
+| `event_loop_lag_ms`, `visible`, `online`, `reconnects` | Largest foreground timer delay in the interval, page visibility, browser online hint, and reconnections since this page loaded |
+| `encoding`, `render_width`, `render_height`, `render_density`, `scale` | Last draw encoding and current render settings |
+| `secure_context`, `decode_worker`, `offscreen`, `webcodecs` | Secure-context and decoder API/worker availability; these do not prove hardware acceleration is active |
+| `network` | Optional browser hints: effective connection type, estimated RTT/downlink, and data-saving mode. Unsupported values are `null`; these hints cannot establish whether a phone is using a VPN or proxy |
+
+Reports contain a random client identifier and numeric/boolean diagnostics, without passwords, document text, URLs, window titles, or image contents. They stop when the connection closes and resume after authenticated reconnection. An idle interval has zero image traffic and no decode samples. Existing logs retain reports under the host's normal log-retention policy.
+
 ## Audio problems
 
 Enable audio in the toolbar and tap the page to allow browser playback. Check device volume, PulseAudio, and GStreamer codecs on the host. `./console.sh status` should include session/window information; detailed `xpra info <display>` can show audio initialization but may also contain private metadata.

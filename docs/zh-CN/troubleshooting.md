@@ -87,6 +87,32 @@ xpra list
 | 操作或画面卡顿 | 切换到流畅，检查主机 CPU 与网络质量 |
 | 更新后仍显示旧界面 | 重新部署以刷新资源，重启并刷新浏览器 |
 
+## 客户端网络监控
+
+运行 `./console.sh prepare` 后刷新浏览器。密码验证成功后，客户端每五秒通过现有 WS/WSS 连接上报一次网络数据。HTTPS/WSS 继续使用配置的端口（默认 15443），无需单独监听端口或开放 HTTP 收集接口。
+
+在服务器读取每个客户端最近的一份报告：
+
+```bash
+./console.sh network | python3 -m json.tool
+# 其他实例使用其原来的配置：
+CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
+```
+
+命令读取与该实例匹配的服务日志（最近十分钟，最多 1,000 条报告），或手动会话 `xpra.log` 的最后 1 MiB，只输出允许的诊断字段。`clients: []` 表示没有找到有效报告。`age_seconds` 从服务器收到报告时计算；`stale: true` 表示已超过 30 秒，不能据此认定客户端仍在线。在浏览器控制台运行 `window.codexConsoleNetwork.snapshot()` 可读取当前本地指标。
+
+| 字段 | 含义 |
+| --- | --- |
+| `rtt_ms`、`rtt_p95_ms`、`jitter_ms`、`rtt_sample_age_ms` | 复用 Xpra 心跳测得的往返延迟、95 分位数、相邻样本差值的平均值和样本年龄，单位毫秒；最多保留最近 60 个心跳样本 |
+| `image_kbps`、`draw_updates_per_sec` | 最近五秒的编码画面载荷速率和成功画面确认次数；不代表链路总带宽或屏幕 FPS |
+| `decode_ms`、`decode_p95_ms`、`decode_errors`、`queued_paints` | 客户端最近的画面处理耗时（毫秒，每个上报周期最多保留 60 个样本）、处理失败次数和等待/正在绘制的画面数；处理耗时不是输入到显示的总延迟 |
+| `event_loop_lag_ms`、`visible`、`online`、`reconnects` | 本周期前台定时器的最大延误、页面可见状态、浏览器在线提示和本次页面打开后的重连次数 |
+| `encoding`、`render_width`、`render_height`、`render_density`、`scale` | 最近一次画面编码及当前渲染设置 |
+| `secure_context`、`decode_worker`、`offscreen`、`webcodecs` | 安全上下文和解码 API/线程可用情况；不能据此确认硬件加速已经启用 |
+| `network` | 可选的浏览器网络提示：有效网络类型、估计 RTT/下行速率和省流模式。不支持的值为 `null`，不能用这些提示判断手机是否经过 VPN 或代理 |
+
+报告仅含随机客户端标识及数值、布尔值诊断信息，不含密码、文档正文、URL、窗口标题或图像内容。断线时停止上报，通过验证重新连接后恢复。空闲周期的画面流量为零，解码样本为空。报告沿用主机现有的日志保留策略。
+
 ## 音频问题
 
 在工具栏开启音频，并点击页面以满足浏览器播放权限。检查设备音量，以及主机 PulseAudio、GStreamer 编解码器。`./console.sh status` 应能显示会话信息；完整的 `xpra info <显示号>` 可以辅助检查音频，但可能包含私人窗口元数据。

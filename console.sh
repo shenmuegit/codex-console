@@ -3,12 +3,12 @@ set -euo pipefail
 
 case "${1:-start}" in
   help|-h|--help)
-    printf 'Usage: %s [start|run|stop|status|doctor|prepare|password]\n' "$0"
+    printf 'Usage: %s [start|run|stop|status|network|doctor|prepare|password]\n' "$0"
     exit 0 ;;
-  stop|status|doctor|prepare|password) daemon=no ;;
+  stop|status|network|doctor|prepare|password) daemon=no ;;
   start) daemon=yes ;;
   run) daemon=no ;;
-  *) printf 'Usage: %s [start|run|stop|status|doctor|prepare|password]\n' "$0" >&2; exit 2 ;;
+  *) printf 'Usage: %s [start|run|stop|status|network|doctor|prepare|password]\n' "$0" >&2; exit 2 ;;
 esac
 (( $# <= 1 )) || { printf 'Too many arguments. Use --help.\n' >&2; exit 2; }
 
@@ -25,6 +25,7 @@ state=$CONSOLE_STATE_DIR
 case "${1:-start}" in
   stop) exec xpra stop "$CONSOLE_DISPLAY" ;;
   status) exec xpra info "$CONSOLE_DISPLAY" windows ;;
+  network) exec python3 "$script_dir/network.py" "$state" ;;
   password)
     [[ -s "$state/password" ]] || { console_error 'No access password yet. Run ./deploy.sh or ./console.sh prepare.'; exit 1; }
     cat "$state/password"
@@ -75,7 +76,7 @@ for asset in assets.iterdir():
         target.unlink()
     if not target.exists():
         target.symlink_to(asset, target_is_directory=asset.is_dir())
-for source in (mobile, mobile.with_name('console.css'), mobile.parent / 'assets/codex-console-icon.png'):
+for source in (mobile, mobile.with_name('network.js'), mobile.with_name('console.css'), mobile.parent / 'assets/codex-console-icon.png'):
     target = web / source.name
     if target.is_symlink():
         target.unlink()
@@ -95,7 +96,7 @@ client_js = client_js.replace('SHOW_START_MENU=!0', 'SHOW_START_MENU=!1')
 # Reconnection must keep the page's password dialog for file authentication.
 client_js = client_js.replace('this.password_prompt_fn=null', 'this.password_prompt_fn??=null')
 (web / 'Client.js').write_text(client_js)
-version = hashlib.sha256(mobile.read_bytes() + mobile.with_name('console.css').read_bytes() + client_js.encode()).hexdigest()[:12]
+version = hashlib.sha256(mobile.read_bytes() + mobile.with_name('network.js').read_bytes() + mobile.with_name('console.css').read_bytes() + client_js.encode()).hexdigest()[:12]
 html = (assets / 'index.html').read_text()
 # Upload uses Xpra; downloads and the synthetic mobile keyboard are omitted.
 html = re.sub(r'^\s*<(?:script|link|div)\b[^>]*(?:simple-keyboard|FileSaver|StreamSaver|web-streams-ponyfill)[^>]*>.*$',
@@ -203,6 +204,7 @@ html = html.replace('function login_connect() {', 'function login_connect() {\n 
 html = html.replace('$("#login-header").text(heading);', '$("#login-header").text(window.location.host);')
 extra = f'<link rel="stylesheet" href="console.css?v={version}">\n'
 extra += f'<script src="mobile.js?v={version}"></script>\n'
+extra += f'<script src="network.js?v={version}"></script>\n'
 (web / 'index.html').write_text(html.replace('</head>', extra + '</head>'))
 PY
 

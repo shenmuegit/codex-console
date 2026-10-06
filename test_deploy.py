@@ -20,7 +20,7 @@ class DeploymentTests(unittest.TestCase):
         self.repo = self.work / "checkout with spaces"
         self.repo.mkdir()
         for name in ("console.sh", "deploy.sh", "config.example.sh", "app-watch.sh",
-                     "mobile.js", "console.css", "codex-console.service", "lib", "assets"):
+                     "mobile.js", "network.js", "network.py", "console.css", "codex-console.service", "lib", "assets"):
             source = ROOT / name
             if source.is_dir():
                 shutil.copytree(source, self.repo / name)
@@ -182,6 +182,10 @@ with open(os.environ['DEPLOY_TEST_EVENTS'], 'a') as out:
         link = self.work / "state/codex-console/www/mobile.js"
         self.assertEqual(link.resolve(), self.repo / "mobile.js")
         self.assertEqual(link.read_bytes(), (self.repo / "mobile.js").read_bytes())
+        network = link.with_name('network.js')
+        self.assertEqual(network.resolve(), self.repo / 'network.js')
+        self.assertEqual(network.read_bytes(), (self.repo / 'network.js').read_bytes())
+        self.assertIn('network.js?v=', link.with_name('index.html').read_text())
 
     def test_installing_dependencies_never_runs_console_as_root(self):
         self.stub("xpra", """import json, os, sys
