@@ -59,6 +59,12 @@ Replace the documentation address `192.0.2.10` with an address assigned to your 
 
 If you need a proxy, configure it in `CONSOLE_APP_ARGS` in the user configuration file, or in the desktop app's own network settings.
 
+## Automatic congestion feedback
+
+The launcher enables Xpra's bandwidth detection, and the browser requests the bandwidth management module during authentication. Slow draw acknowledgments can then reduce the window's bandwidth budget; the budget can recover when congestion clears. This is separate from the Smooth/Balanced/Sharp quality choice and does not impose a fixed global bitrate.
+
+`XPRA_MIN_BANDWIDTH` defaults to `524288` bits per second (about 0.52 Mbps), so Xpra's automatic detection can operate below its upstream 5 Mi bit/s floor. To override that floor, set `XPRA_MIN_BANDWIDTH=1048576` in your private Bash configuration; the launcher exports it to Xpra. Restart the service after updating the launcher, and refresh the browser to use the new handshake. Use the [client network diagnostics](troubleshooting.md#client-network-diagnostics) to verify RTT and actual image traffic; automatic feedback cannot remove propagation delay or repair packet loss.
+
 ## Data layout
 
 | Path under the state directory | Purpose |

@@ -213,6 +213,8 @@ if [[ ${1:-start} == prepare ]]; then
   exit 0
 fi
 
+# Let congestion feedback work below Xpra's upstream 5 Mi bit/s floor.
+export XPRA_MIN_BANDWIDTH=${XPRA_MIN_BANDWIDTH:-524288}
 # Isolate PulseAudio's PID/runtime files from the user's desktop and other sessions.
 mkdir -p "$state/pulse-runtime"
 chmod 700 "$state/pulse-runtime"
@@ -246,6 +248,7 @@ exec xpra seamless "$CONSOLE_DISPLAY" \
   --use-display=no --resize-display=no --dpi=96 \
   --xvfb='Xvfb -screen 0 4096x4096x24 -dpi 96 -nolisten tcp -noreset +extension Composite +extension RANDR +extension RENDER -auth $XAUTHORITY' \
   --daemon="$daemon" --attach=no --systemd-run=no --start-via-proxy=no \
+  --bandwidth-detection=yes \
   --exit-with-children=yes --terminate-children=yes \
   --start-new-commands=no --shell=no \
   --audio=yes --pulseaudio=yes --speaker=on --microphone=disabled \

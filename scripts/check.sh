@@ -14,6 +14,7 @@ python3 test_deploy.py
 python3 test_app_watch.py
 python3 test_upload.py
 node test_mobile.cjs
+python3 test_bandwidth.py
 node test_network.cjs
 python3 test_network.py
 if [[ ${1:-} == --live ]]; then
