@@ -29,6 +29,7 @@ with tempfile.TemporaryDirectory(prefix="console integration ") as directory, \
     app = work / "test app"
     fixture = work / "app.py"
     selection = work / "selection.json"
+    submitted = work / "submitted.json"
     ready = work / 'fixture.ready'
     fixture.write_text('''import gi, json, os, warnings
 from pathlib import Path
@@ -38,6 +39,9 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 main = Gtk.Window(title='Codex test fixture')
 main.set_wmclass(f"chatgpt ({os.environ['CONSOLE_STATE_DIR']}/profile)", 'Chatgpt')
 main.set_default_size(800, 600)
+entry = Gtk.Entry()
+main.add(entry)
+entry.connect('activate', lambda field: Path(os.environ['INPUT_TEST_SUBMITTED']).write_text(json.dumps(field.get_text())))
 main.show_all()
 chooser = Gtk.FileChooserDialog(title='Upload fixture', action=Gtk.FileChooserAction.OPEN)
 chooser.set_wmclass('ChatGPT', 'Chatgpt')
@@ -51,6 +55,8 @@ def selected(dialog, response):
         'response': int(response), 'path': dialog.get_filename()}))
     temporary.replace(result)
     dialog.destroy()
+    main.present()
+    entry.grab_focus()
 chooser.connect('response', selected)
 chooser.show_all()
 Path(os.environ['TEST_APP_READY']).touch()
@@ -76,7 +82,7 @@ Gtk.main()
     inherited = {name: value for name, value in os.environ.items()
                  if not name.startswith("CONSOLE_")}
     env = dict(inherited, CONSOLE_CONFIG=str(config), XDG_RUNTIME_DIR=runtime,
-               UPLOAD_TEST_SELECTION=str(selection), TEST_APP_READY=str(ready),
+               UPLOAD_TEST_SELECTION=str(selection), INPUT_TEST_SUBMITTED=str(submitted), TEST_APP_READY=str(ready),
                XDG_CONFIG_HOME=str(work / 'desktop-config'),
                XDG_DATA_HOME=str(work / 'desktop-data'), XDG_CACHE_HOME=str(work / 'desktop-cache'))
     try:
@@ -154,6 +160,8 @@ Gtk.main()
                 if packet[6].get('role') == 'GtkFileChooserDialog':
                     self.wid = packet[1]
                     self.send('send-file', filename, '', False, True, len(contents), contents, {})
+                elif tuple(packet[6].get('class-instance', ())) == (f'chatgpt ({state / "profile"})', 'Chatgpt'):
+                    self.input_wid = packet[1]
 
             def key(self, name, value, code, modifiers=()):
                 self.send('key-action', self.wid, name, True, list(modifiers), value, '', code, 0)
@@ -177,6 +185,12 @@ Gtk.main()
                           'UTF8_STRING', 'UTF8_STRING', 8, 'bytes', self.path.encode(), True, True, True)
                 GLib.timeout_add(100, self.paste)
 
+            def paste_text(self, text):
+                self.path = text
+                self.send('clipboard-token', 'CLIPBOARD', ['text/plain', 'UTF8_STRING'],
+                          'UTF8_STRING', 'UTF8_STRING', 8, 'bytes', text.encode(), True, True, True)
+                self.control('v', 118, 86)
+
             def clipboard_request(self, packet):
                 self.send('clipboard-contents', packet[1], 'CLIPBOARD', 'UTF8_STRING', 8, 'bytes', self.path.encode())
 
@@ -195,6 +209,30 @@ Gtk.main()
             def selected(self):
                 if not selection.exists():
                     return True
+                self.wid = self.input_wid
+                self.send('focus', self.wid, [])
+                GLib.timeout_add(100, self.first_commit)
+                return False
+
+            def first_commit(self):
+                self.paste_text('中文😀')
+                GLib.timeout_add(100, self.second_commit)
+                return False
+
+            def second_commit(self):
+                self.paste_text('第二段')
+                GLib.timeout_add(100, self.enter)
+                return False
+
+            def enter(self):
+                self.key('Return', 0xff0d, 13)
+                GLib.timeout_add(100, self.submitted)
+                return False
+
+            def submitted(self):
+                if not submitted.exists():
+                    return True
+                assert json.loads(submitted.read_text()) == '中文😀第二段', submitted.read_text()
                 self.quit(0)
                 return False
 
@@ -226,6 +264,7 @@ Gtk.main()
             capture_output=True, text=True, timeout=60)
         assert browser_check.returncode == 0, browser_check.stdout + browser_check.stderr
         print('PASS: browser hello → real server upload capabilities → browser native file input')
+        print('PASS: two immediate Unicode pastes with 100 ms protection → Enter → GTK receives 中文😀第二段')
         print(f'PASS: real {transport.upper()} upload → targeted completion → Unicode clipboard → original native chooser accepts file')
     finally:
         stopped = subprocess.run([str(root / "console.sh"), "stop"], env=env,

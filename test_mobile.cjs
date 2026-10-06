@@ -578,6 +578,9 @@ assert.equal(packets.length, 0, 'Uncommitted double-pinyin composition must stay
 input.value = '中文😀';
 input.dispatchEvent(new Event('compositionend'));
 input.dispatchEvent(new Event('input'));
+advance(0);
+assert.equal(packets.filter(packet => packet[0] === types.key_action).length, 4,
+  'Inline clipboard contents must be followed by paste without a 100 ms pre-paste wait');
 advance(250);
 const tokens = packets.filter(packet => packet[0] === types.clipboard_token);
 assert.equal(tokens.length, 1, 'A composition must be committed once');
@@ -612,6 +615,25 @@ assert.equal(backspace.defaultPrevented, true);
 assert.equal(enter.defaultPrevented, true);
 assert.deepEqual(packets.filter(packet => packet[0] === types.key_action).map(packet => packet[2]),
   ['BackSpace', 'BackSpace', 'Return', 'Return']);
+packets.length = 0;
+input.value = '第一段😀';
+input.dispatchEvent(new Event('input'));
+advance(0);
+advance(20);
+input.value = '第二段';
+input.dispatchEvent(new Event('input'));
+input.dispatchEvent(enter);
+advance(79);
+assert.equal(packets.filter(packet => packet[0] === types.clipboard_token).length, 1,
+  'Rapid commits must not replace the clipboard before the first paste can consume it');
+assert.ok(!packets.some(packet => packet[0] === types.key_action && packet[2] === 'Return'));
+advance(1);
+assert.deepEqual(packets.filter(packet => packet[0] === types.clipboard_token).map(packet => serverClipboardText(packet, 7)),
+  ['第一段😀', '第二段'], 'Queued Unicode commits must preserve their order');
+advance(100);
+assert.deepEqual(packets.filter(packet => packet[0] === types.key_action).map(packet => packet[2]),
+  ['Control_L', 'v', 'v', 'Control_L', 'Control_L', 'v', 'v', 'Control_L', 'Return', 'Return'],
+  'Enter must follow both pastes within 200 ms, without the old pre-paste waits');
 packets.length = 0;
 input.value = '草稿';
 input.dispatchEvent(new Event('input'));

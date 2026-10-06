@@ -529,7 +529,8 @@
         // ponytail: commit through Xpra clipboard; use an IME bridge to preserve remote clipboard contents.
         client._paste_clipboard = client.clipboard_buffer = item.text;
         client.send_clipboard_token(Utilities.StringToUint8(item.text));
-        // Xpra also waits 100 ms between a clipboard update and a paste key.
+        // Xpra carries UTF-8 contents inline and claims the selection before
+        // processing the following keys. Yield once to preserve disconnects.
         setTimeout(() => {
           if (!client.connected) { preserve('连接已断开，输入内容已保留'); return; }
           key('Control_L', true, [], 0xffe3, '', 17);
@@ -537,8 +538,9 @@
           key('v', false, ['control'], 118, 'v', 86);
           key('Control_L', false, [], 0xffe3, '', 17);
           queue.shift();
+          // Retain 100 ms before replacing clipboard contents.
           setTimeout(pump, 100);
-        }, 100);
+        }, 0);
       } else {
         key(item.name, true, [], item.value, '', item.code);
         key(item.name, false, [], item.value, '', item.code);

@@ -104,7 +104,7 @@ Only the custom Codex Console page is published. Upstream connection and diagnos
 | Keyboard | Focus a remote text field, then open the keyboard button in the top-right drawer |
 | Fullscreen / audio | Open the right-edge drawer and use the matching control |
 
-Single taps send when the finger lifts; consecutive one-finger taps stay left-clicks. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents. Over HTTPS, input commits and uploads reuse their prepared clipboard contents so the device clipboard cannot substitute older text.
+Single taps send when the finger lifts; consecutive one-finger taps stay left-clicks. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents. Text pastes start immediately; consecutive pastes retain a 100 ms clipboard guard. Over HTTPS, input commits and uploads reuse their prepared clipboard contents so the device clipboard cannot substitute older text.
 
 Choose **流畅** (Smooth), **均衡** (Balanced), or **高清** (Sharp) in the quality menu, or use `?performance=smooth`, `?performance=balanced`, or `?performance=sharp` in the URL. Balanced is the default. Audio playback may require a user gesture to satisfy browser permissions.
 
