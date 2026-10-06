@@ -53,6 +53,15 @@
     }
     return processClose.call(this, packet);
   };
+  const clipboardRequest = XpraClient.prototype._process_clipboard_request;
+  XpraClient.prototype._process_clipboard_request = function (packet) {
+    // HTTPS exposes the device clipboard, which can differ from an IME/upload paste.
+    if (packet[2] === 'CLIPBOARD' && this._paste_clipboard !== undefined &&
+        this.clipboard_buffer === this._paste_clipboard) {
+      return this.send_clipboard_string(packet[1], packet[2], this._paste_clipboard);
+    }
+    return clipboardRequest.call(this, packet);
+  };
   const getMouse = XpraClient.prototype.getMouse;
   XpraClient.prototype.getMouse = function (event) {
     const mouse = getMouse.call(this, event);
@@ -460,7 +469,7 @@
       };
       client.send([PACKET_TYPES.focus, request.wid, []]);
       control('l', 108, 76);
-      client.clipboard_buffer = result.path;
+      client._paste_clipboard = client.clipboard_buffer = result.path;
       client.send_clipboard_token(Utilities.StringToUint8(result.path));
       setTimeout(() => {
         if (!valid(request)) return;
@@ -518,7 +527,7 @@
           return;
         }
         // ponytail: commit through Xpra clipboard; use an IME bridge to preserve remote clipboard contents.
-        client.clipboard_buffer = item.text;
+        client._paste_clipboard = client.clipboard_buffer = item.text;
         client.send_clipboard_token(Utilities.StringToUint8(item.text));
         // Xpra also waits 100 ms between a clipboard update and a paste key.
         setTimeout(() => {

@@ -585,6 +585,17 @@ assert.equal(serverClipboardText(tokens[0], 7), '中文😀', 'Chinese and emoji
 client._process_clipboard_request([types.clipboard_request, 42, 'CLIPBOARD', 'UTF8_STRING']);
 const contents = packets.find(packet => packet[0] === types.clipboard_contents);
 assert.equal(serverClipboardText(contents, 6), '中文😀', 'A server clipboard request must also receive the original text');
+for (const api of ['read', 'readText']) {
+  let reads = 0;
+  context.navigator.clipboard = { [api]: async () => { reads++; return api === 'read' ? [] : 'old device clipboard'; } };
+  const beforeRequest = packets.length;
+  client._process_clipboard_request([types.clipboard_request, 44, 'CLIPBOARD', 'UTF8_STRING']);
+  const reply = packets.slice(beforeRequest).find(packet => packet[0] === types.clipboard_contents);
+  assert.ok(reply, 'HTTPS clipboard requests must use the committed IME text immediately');
+  assert.equal(serverClipboardText(reply, 6), '中文😀', 'Device clipboard contents must not replace committed IME text');
+  assert.equal(reads, 0, 'Programmatic paste must not depend on asynchronous device clipboard permissions');
+}
+delete context.navigator.clipboard;
 const keys = packets.filter(packet => packet[0] === types.key_action);
 assert.deepEqual(keys.map(packet => [packet[2], packet[3]]),
   [['Control_L', true], ['v', true], ['v', false], ['Control_L', false]],
@@ -787,6 +798,11 @@ async function checkUpload() {
   advance(700);
   const token = packets.find(packet => packet[0] === types.clipboard_token);
   assert.equal(serverClipboardText(token, 7), saved, 'Paste the actual completed path with Unicode intact');
+  context.navigator.clipboard = { read: () => { throw new Error('Must not read the device clipboard for an upload'); } };
+  uploadClient._process_clipboard_request([types.clipboard_request, 45, 'CLIPBOARD', 'UTF8_STRING']);
+  assert.equal(serverClipboardText(packets.find(packet => packet[0] === types.clipboard_contents), 6), saved,
+    'HTTPS requests must receive the completed upload path, not device clipboard contents');
+  delete context.navigator.clipboard;
   const keys = packets.filter(packet => packet[0] === types.key_action);
   assert.ok(keys.some(packet => packet[2] === 'l' && packet[3]), 'Open the native chooser location field');
   assert.ok(keys.some(packet => packet[2] === 'o' && packet[3] && packet[4].includes('mod1')),
