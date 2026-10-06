@@ -221,8 +221,6 @@
     // Xpra 6.5 applies Xsettings only when DPI changes: set it after connection.
     this.capabilities.dpi = 0;
     this.capabilities.system_tray = false;
-    this.capabilities.bandwidth = true;
-    this.capabilities['bandwidth-detection'] = true;
     this.capabilities.wants.push('display', 'features');
     this.capabilities['metadata.supported'] = [...this.capabilities['metadata.supported'], 'pid', 'role'];
   };

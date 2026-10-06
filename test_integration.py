@@ -135,7 +135,6 @@ Gtk.main()
                 return {'keyboard': True}
 
             def do_command(self, caps):
-                assert caps['bandwidth']['detection'], 'Congestion detection is disabled on the actual server'
                 server_hello.write_text(json.dumps({name: caps[name] for name in
                     ('version', 'rencodeplus', 'readonly', 'clipboard', 'file', 'actual_desktop_size') if name in caps}))
                 assert caps['file']['enabled'] and caps['file']['open'], 'The upload completion bridge is disabled'
@@ -211,7 +210,6 @@ Gtk.main()
                                   'encodings': {'': ['png'], 'core': ['png'], 'rgb_formats': ['RGB', 'RGBX', 'RGBA']},
                                   'metadata.supported': ['class-instance', 'pid', 'role'],
                                   'wants': browser_caps['wants'], 'sharing': True})
-        client.hello_extra.update({name: browser_caps[name] for name in ('bandwidth', 'bandwidth-detection')})
         def connection_error(message):
             raise RuntimeError(message)
         client.make_protocol(connect_to(parse_display_name(connection_error, options, args[2]), options))
