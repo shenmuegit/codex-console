@@ -191,7 +191,7 @@
   // ponytail: fit one Codex window; use desktop mode for a layout with multiple apps.
   const mainWindow = client => Object.values(client.id_to_window).find(win =>
     !win.override_redirect && !win.tray && win.has_windowtype(['NORMAL']) &&
-    (win.metadata['class-instance'] || []).some(value => Utilities.s(value) === client.container.dataset.codexInstance));
+    (win.metadata.shadow || (win.metadata['class-instance'] || []).some(value => Utilities.s(value) === client.container.dataset.codexInstance)));
   const profiles = {
     smooth: [1, 45, 90], balanced: [1.5, 70, 80], sharp: [2, 95, 70],
   };
@@ -221,6 +221,7 @@
     // Xpra 6.5 applies Xsettings only when DPI changes: set it after connection.
     this.capabilities.dpi = 0;
     this.capabilities.system_tray = false;
+    this.capabilities['metadata.supported'].push('shadow');
     this.capabilities.wants.push('display', 'features');
     this.capabilities['metadata.supported'] = [...this.capabilities['metadata.supported'], 'pid', 'role'];
   };
@@ -239,6 +240,19 @@
     const viewport = window.visualViewport;
     const width = Math.max(1, viewport?.width || window.innerWidth);
     const height = Math.max(1, viewport?.height || window.innerHeight);
+    const shared = mainWindow(client);
+    if (shared?.metadata.shadow) {
+      // A shared window keeps its desktop dimensions; scale its pixels uniformly.
+      const scale = Math.min(width / shared.w, height / shared.h);
+      client.scale = 1 / scale;
+      client._effective_density = 1;
+      Object.assign(client.container.style, {
+        width: `${shared.w}px`, height: `${shared.h}px`,
+        transform: `scale(${scale})`, transformOrigin: 'top left',
+      });
+      for (const win of Object.values(client.id_to_window)) win.scale = client.scale;
+      return;
+    }
     const minimum = mainWindow(client)?.metadata['size-constraints']?.['minimum-size'] || [480, 600];
     const desiredScale = (client._render_density || 1) * Math.max(1, minimum[0] / width, minimum[1] / height);
     // A fixed Xvfb display clips pointer coordinates beyond this advertised size.
@@ -373,6 +387,7 @@
       client.id_to_window[request.wid] === request.window && findChooser() === request.window &&
       (!client.focused_wid || client.focused_wid === request.wid);
     const refresh = () => {
+      if (mainWindow(client)?.metadata.shadow) fit(client);
       const next = client.connected && client._upload_ready && findChooser();
       if (next && next !== chooser && !pending) {
         status.textContent = '请选择当前手机或电脑上的文件，上传后由 Codex 添加附件。';

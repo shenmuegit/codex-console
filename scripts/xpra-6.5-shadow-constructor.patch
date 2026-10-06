@@ -1,0 +1,29 @@
+--- a/xpra/x11/shadow/server.py
++++ b/xpra/x11/shadow/server.py
+@@ -81 +81 @@
+-            model = rwmc(root, self.capture, title, geometry)
++            model = rwmc(self.capture, title, geometry)
+--- a/xpra/x11/shadow/filter.py
++++ b/xpra/x11/shadow/filter.py
+@@ -116 +116 @@
+-            # absp = wb.get_absolute_position(xid)
++            x, y = wb.get_absolute_position(xid)
+--- a/xpra/server/shadow/gtk_shadow_server_base.py
++++ b/xpra/server/shadow/gtk_shadow_server_base.py
+@@ -21,0 +22 @@
++GLib = gi_import("GLib")
+@@ -32,0 +34 @@
++        self.window_models_timer = 0
+@@ -48,0 +51,12 @@
++        if "windows=" in self.display_options:
++            self.window_models_timer = GLib.timeout_add(1000, self.poll_window_models)
++
++    def poll_window_models(self) -> bool:
++        self.refresh_window_models()
++        return True
++
++    def cleanup(self) -> None:
++        if self.window_models_timer:
++            GLib.source_remove(self.window_models_timer)
++            self.window_models_timer = 0
++        super().cleanup()

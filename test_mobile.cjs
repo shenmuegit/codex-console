@@ -824,5 +824,38 @@ async function checkUpload() {
   advance(250);
   assert.equal(uploadUI['mobile-upload'].open, false, 'Closing the native picker must release the modal surface');
 }
-checkClipboard().then(checkPasswordHandshake).then(checkUploadChunks).then(checkUpload).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, UTF-8 paste, and native chooser upload'))
+function checkShadowSizing() {
+  assert.ok(client.capabilities['metadata.supported'].includes('shadow'), 'The phone must request shadow metadata to identify the shared Codex window');
+  const previous = [browser.visualViewport.width, browser.visualViewport.height];
+  browser.visualViewport.width = 360;
+  browser.visualViewport.height = 680;
+  try {
+    const shadow = Object.assign(Object.create(Window.prototype), {
+      ...win, wid: 42, x: 0, y: 0, w: 2376, h: 1040,
+      metadata: { shadow: true, 'class-instance': ['xpra-linux', 'Xpra Linux'],
+        'size-constraints': { 'minimum-size': [2376, 1040], 'maximum-size': [2376, 1040] } },
+    });
+    const shared = Object.assign(Object.create(Client.prototype), client, {
+      container: Object.assign(new Surface(), { dataset: screen.dataset }), connected: false, id_to_window: { 42: shadow },
+      _server_size: [2376, 1080],
+    });
+    shared._screen_resized();
+    assert.equal(shared.container.style.width, '2376px', 'Sharing must retain the existing Codex window width');
+    assert.equal(shared.container.style.height, '1040px', 'Sharing must retain the existing Codex window height');
+    const scales = shared.container.style.transform.match(/scale\(([^)]+)\)/)[1].split(',').map(Number);
+    assert.ok(Math.abs(scales[0] - 5 / 33) < 1e-8, 'The shared landscape window must fit the phone width');
+    assert.ok(scales.length === 1 || Math.abs(scales[0] - scales[1]) < 1e-8, 'Sharing must preserve aspect ratio and pointer coordinates');
+    assert.ok(Math.abs(shared.scale - 6.6) < 1e-8, 'Pointer coordinates must use the inverse display scale');
+    browser.init_mobile_upload(shared);
+    shadow.w = 960;
+    shadow.h = 640;
+    shared._refresh_upload();
+    assert.equal(shared.container.style.width, '960px', 'Changing the KDE window size must update the phone viewport');
+    assert.equal(shared.container.style.height, '640px');
+    assert.equal(shared.container.style.transform, 'scale(0.375)');
+  } finally {
+    [browser.visualViewport.width, browser.visualViewport.height] = previous;
+  }
+}
+checkClipboard().then(checkPasswordHandshake).then(checkUploadChunks).then(checkUpload).then(checkShadowSizing).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, UTF-8 paste, and native chooser upload'))
   .catch(error => { console.error(error); process.exitCode = 1; });
