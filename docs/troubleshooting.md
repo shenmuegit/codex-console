@@ -83,8 +83,8 @@ are separate.
 | --- | --- |
 | Composed text not submitted | Focus the remote text field, confirm the connection is ready and clipboard forwarding is enabled |
 | Text held during disconnection | Reconnect and submit again; unsubmitted input remains in the local field |
-| Drag happens instead of scroll | Tap once, then hold the second touch while sliding |
-| Right-click triggers unexpectedly | Avoid a second rapid tap when you intend a single click; the double-tap interval is about 180 ms |
+| Drag happens instead of scroll | Slide with two fingers together; one finger drags |
+| Right-click triggers unexpectedly | Right-click uses a two-finger tap; consecutive one-finger taps are left-clicks |
 | Keyboard covers the field | Use the native keyboard control and a browser supporting `visualViewport` |
 | Incorrect taps on an older small display | Restart the session to use the 4096 × 4096 Xvfb configuration |
 | UI slow over the network | Choose Smooth; check host CPU load and link quality |

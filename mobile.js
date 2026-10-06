@@ -1,5 +1,4 @@
 (() => {
-  const doubleTapDelay = 180;
   const processKey = XpraClient.prototype._keyb_process;
   XpraClient.prototype._keyb_process = function (pressed, event) {
     // A reconnect can retain keyboard capture while authentication is pending.
@@ -72,12 +71,10 @@
     this._touch_events?.abort();
     this._touch_events = new AbortController();
     const options = { passive: false, signal: this._touch_events.signal };
-    let pointer = null;
+    const pointers = new Map();
     let start = null;
     let last = null;
     let mode = null;
-    let pending = null;
-    let holdTimer = null;
     const mouse = (event, button = 0) => ({
       clientX: event.clientX, clientY: event.clientY, which: button + 1, button, target: canvas,
       ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: event.shiftKey, metaKey: event.metaKey,
@@ -88,88 +85,86 @@
       this.mouse_down_cb(mouse(event, button), this);
       this.mouse_up_cb(mouse(event, button), this);
     };
-    const flush = () => {
-      if (!pending) return;
-      const event = pending.event;
-      clearTimeout(pending.timer);
-      pending = null;
-      click(event);
-    };
     const release = () => {
-      if (pointer === null) return;
-      clearTimeout(holdTimer);
       if (mode === 'drag') this.mouse_up_cb(mouse(last), this);
-      const id = pointer;
-      pointer = null;
+      const ids = [...pointers.keys()];
+      pointers.clear();
       mode = start = last = null;
-      if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+      for (const id of ids) if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     };
-    this._release_touch = () => {
-      if (pending) clearTimeout(pending.timer);
-      pending = null;
-      release();
+    this._release_touch = release;
+    const center = () => {
+      const points = [...pointers.values()];
+      return { clientX: points.reduce((sum, p) => sum + p.clientX, 0) / points.length,
+        clientY: points.reduce((sum, p) => sum + p.clientY, 0) / points.length };
     };
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', event => {
       if (event.pointerType !== 'touch') return;
       event.preventDefault();
       event.stopPropagation();
-      if (!event.isPrimary || pointer !== null) return;
-      const second = pending && performance.now() - pending.at <= doubleTapDelay &&
-        Math.hypot(event.clientX - pending.event.clientX, event.clientY - pending.event.clientY) <= 24;
-      if (second) {
-        clearTimeout(pending.timer);
-        pending = null;
-      } else {
-        flush();
-      }
-      pointer = event.pointerId;
-      start = last = event;
-      mode = second ? 'second' : 'tap';
-      canvas.setPointerCapture(pointer);
-      if (second) holdTimer = setTimeout(() => {
-        if (mode === 'second') mode = 'scroll';
-      }, 220);
+      // Keep an existing drag intact when another finger lands.
+      if (mode === 'drag') return;
+      pointers.set(event.pointerId, event);
+      canvas.setPointerCapture(event.pointerId);
+      if (pointers.size === 1) {
+        start = last = event;
+        mode = 'tap';
+      } else if (pointers.size === 2 && mode === 'tap') {
+        mode = 'two';
+        last = center();
+      } else mode = 'ignore';
     }, options);
     canvas.addEventListener('pointermove', event => {
-      if (event.pointerId !== pointer) return;
+      if (!pointers.has(event.pointerId)) return;
       event.preventDefault();
       event.stopPropagation();
+      pointers.set(event.pointerId, event);
+      if (mode === 'two' || mode === 'scroll') {
+        if (pointers.size !== 2) {
+          if (mode === 'two' && Math.hypot(event.clientX - last.clientX, event.clientY - last.clientY) > 6) mode = 'ignore';
+          return;
+        }
+        const next = center();
+        if (mode === 'two' && Math.hypot(next.clientX - last.clientX, next.clientY - last.clientY) <= 6) return;
+        mode = 'scroll';
+        this.mouse_scroll_cb({ ...mouse(start), deltaX: (last.clientX - next.clientX) * 3,
+          deltaY: (last.clientY - next.clientY) * 3, deltaMode: 0 }, this);
+        last = next;
+        return;
+      }
       const moved = Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) > 6;
       if (mode === 'tap' && moved) {
         mode = 'drag';
         this.mouse_down_cb(mouse(start), this);
-      } else if (mode === 'second' && moved) {
-        mode = 'scroll';
-        clearTimeout(holdTimer);
       }
       if (mode === 'drag') this.mouse_move_cb(mouse(event), this);
-      if (mode === 'scroll') this.mouse_scroll_cb({
-        ...mouse(event), deltaX: (last.clientX - event.clientX) * 3,
-        deltaY: (last.clientY - event.clientY) * 3, deltaMode: 0,
-      }, this);
       last = event;
     }, options);
     const end = event => {
-      if (event.pointerId !== pointer) return;
+      if (!pointers.has(event.pointerId)) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.type === 'pointercancel') {
         this._release_touch();
         return;
       }
-      last = event;
-      if (mode === 'tap') {
-        pending = { event, at: performance.now(), timer: setTimeout(flush, doubleTapDelay) };
-      } else if (mode === 'second') {
-        click(event, 2);
+      pointers.delete(event.pointerId);
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      if (pointers.size) {
+        if (mode === 'two') last = [...pointers.values()][0];
+        return;
       }
+      if (mode === 'tap') {
+        click(event);
+      } else if (mode === 'two') click(start, 2);
+      else if (mode === 'drag') last = event;
       release();
     };
     canvas.addEventListener('pointerup', end, options);
     canvas.addEventListener('pointercancel', end, options);
-    canvas.addEventListener('lostpointercapture', () => {
-      if (pointer !== null) this._release_touch();
+    canvas.addEventListener('lostpointercapture', event => {
+      if (event.pointerId === undefined || pointers.has(event.pointerId)) this._release_touch();
     }, options);
     window.addEventListener('blur', this._release_touch, options);
     document.addEventListener('visibilitychange', () => {

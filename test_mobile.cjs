@@ -436,11 +436,9 @@ packets.length = 0;
 touch('pointerdown', 80, 90);
 touch('pointerup', 80, 90);
 canvas.dispatchEvent(new Event('lostpointercapture'));
-assert.equal(clicks().length, 0, 'A single tap must wait briefly for the double-tap gesture');
-advance(179);
-assert.equal(clicks().length, 0, 'The 180 ms double-tap window must still be respected');
-advance(1);
-assert.equal(clicks().length, 2);
+assert.equal(clicks().length, 2, 'A single tap must send its click before returning from pointerup');
+advance(400);
+assert.equal(clicks().length, 2, 'A single tap must never send a delayed duplicate');
 assert.equal(clicks()[0][2], 1, 'A single tap must click the left mouse button');
 
 packets.length = 0;
@@ -450,22 +448,39 @@ advance(100);
 touch('pointerdown', 80, 90);
 touch('pointerup', 80, 90);
 advance(400);
-assert.equal(clicks().length, 2, 'A double tap must produce only a right click');
-assert.ok(clicks().every(packet => packet[2] === 3));
+assert.equal(clicks().length, 4, 'Two consecutive taps must produce two immediate left clicks');
+assert.ok(clicks().every(packet => packet[2] === 1));
 
 packets.length = 0;
 client.wheel_delta_x = client.wheel_delta_y = 0;
 touch('pointerdown', 80, 90);
-touch('pointerup', 80, 90);
-advance(100);
-touch('pointerdown', 80, 90);
-advance(250);
+touch('pointerdown', 120, 90, 2);
 touch('pointermove', 80, 30);
+touch('pointermove', 120, 30, 2);
 touch('pointerup', 80, 30);
+touch('pointerup', 120, 30, 2);
 advance(400);
-assert.ok(clicks().some(packet => packet[2] === 5), 'Holding the second tap and sliding up must scroll down');
+assert.ok(clicks().some(packet => packet[2] === 5), 'Two-finger sliding up must scroll down');
 assert.ok(clicks().every(packet => packet[2] !== 1 && packet[2] !== 3), 'Scrolling must not left-click or right-click');
 assert.equal(client.buttons_pressed.size, 0);
+
+packets.length = 0;
+touch('pointerdown', 80, 90);
+touch('pointerdown', 120, 90, 2);
+touch('pointerup', 120, 90, 2);
+assert.equal(clicks().length, 0, 'A two-finger tap must wait for both fingers to lift');
+touch('pointerup', 80, 90);
+assert.deepEqual(clicks().map(packet => [packet[2], packet[3]]), [[3, true], [3, false]],
+  'A two-finger tap must emit only a right-button press and release');
+for (const [lift, liftX, remain, remainX] of [[1, 80, 2, 120], [2, 120, 1, 80]]) {
+  packets.length = 0;
+  touch('pointerdown', 80, 90);
+  touch('pointerdown', 120, 90, 2);
+  touch('pointerup', liftX, 90, lift);
+  touch('pointermove', remainX, 30, remain);
+  touch('pointerup', remainX, 30, remain);
+  assert.equal(clicks().length, 0, 'Sliding a residual finger must cancel the two-finger tap');
+}
 
 packets.length = 0;
 touch('pointerdown', 80, 90);
@@ -484,10 +499,9 @@ browser.dispatchEvent(new Event('blur'));
 assert.equal(client.buttons_pressed.size, 0, 'Leaving the page must release the mouse button');
 packets.length = 0;
 touch('pointerdown', 80, 90);
-touch('pointerup', 80, 90);
 browser.dispatchEvent(new Event('blur'));
 advance(400);
-assert.equal(clicks().length, 0, 'A pending tap must not click after the page loses focus');
+assert.equal(clicks().length, 0, 'An unfinished tap must not click after the page loses focus');
 
 for (const [width, height] of [[360, 680], [752, 248], [1280, 900]]) {
   browser.innerWidth = browser.visualViewport.width = width;

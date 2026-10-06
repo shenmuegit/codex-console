@@ -25,7 +25,7 @@ This repository provides the remote access layer. You must install a compatible 
 | Capability | Behavior |
 | --- | --- |
 | Mobile layout | Adapts to the visible browser area, orientation, and on-screen keyboard |
-| Touch gestures | Tap, drag, double-tap for right-click, and tap-then-hold to scroll |
+| Touch gestures | Immediate taps, drag, two-finger right-click, and two-finger scrolling |
 | Native text input | Compose locally with your phone's IME and paste committed text into the app |
 | File upload | Open Codex's native attachment picker, then select a file from your phone or computer |
 | Quality profiles | Smooth, Balanced, and Sharp; the selected profile is retained in the page URL |
@@ -99,12 +99,12 @@ Only the custom Codex Console page is published. Upstream connection and diagnos
 | --- | --- |
 | Left-click | Tap once |
 | Drag / select | Touch and slide |
-| Right-click | Quickly tap twice in the same place |
-| Scroll | Tap, then touch again and slide while keeping the second touch held |
+| Right-click | Tap with two fingers together |
+| Scroll | Slide with two fingers together |
 | Keyboard | Focus a remote text field, then open the keyboard button in the top-right drawer |
 | Fullscreen / audio | Open the right-edge drawer and use the matching control |
 
-Double-tap recognition uses a roughly 180 ms interval. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents.
+Single taps send when the finger lifts; consecutive one-finger taps stay left-clicks. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents.
 
 Choose **流畅** (Smooth), **均衡** (Balanced), or **高清** (Sharp) in the quality menu, or use `?performance=smooth`, `?performance=balanced`, or `?performance=sharp` in the URL. Balanced is the default. Audio playback may require a user gesture to satisfy browser permissions.
 
