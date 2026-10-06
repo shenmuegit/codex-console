@@ -168,22 +168,28 @@ elif [[ $start == true ]]; then
   "$script_dir/console.sh" start
 fi
 
+scheme=http
+if [[ -n $CONSOLE_TLS_CERT ]]; then scheme=https; fi
 if [[ $start == true ]]; then
-  # Probe the local HTTPS page; this does not change browser certificate policy.
-  if ! python3 - "$CONSOLE_HOST" "$CONSOLE_PORT" <<'READY'
+  # Trust the configured identity for this local readiness probe.
+  if ! python3 - "$CONSOLE_HOST" "$CONSOLE_PORT" "$scheme" "$CONSOLE_TLS_CERT" <<'READY'
 import ssl
 import sys
 import time
 import urllib.request
 host = '127.0.0.1' if sys.argv[1] == '0.0.0.0' else sys.argv[1]
-url = f'https://{host}:{sys.argv[2]}/'
-context = ssl._create_unverified_context()
+url = f'{sys.argv[3]}://{host}:{sys.argv[2]}/'
+handlers = [urllib.request.ProxyHandler({})]
+if sys.argv[4]:
+    context = ssl.create_default_context(cafile=sys.argv[4])
+    context.check_hostname = False  # Local address may differ from the public certificate hostname.
+    context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    handlers.append(urllib.request.HTTPSHandler(context=context))
+opener = urllib.request.build_opener(*handlers)
 deadline = time.monotonic() + 30
 while time.monotonic() < deadline:
     try:
         request = urllib.request.Request(url)
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
-                                            urllib.request.HTTPSHandler(context=context))
         with opener.open(request, timeout=2) as response:
             page = response.read()
             if response.status == 200 and b'id="login-overlay"' in page and b'mobile.js?v=' in page:
@@ -194,15 +200,15 @@ while time.monotonic() < deadline:
 sys.exit(1)
 READY
   then
-    console_error "The HTTPS page did not become ready. Inspect $CONSOLE_STATE_DIR/xpra.log and journalctl --user -u codex-console.service."
+    console_error "The browser page did not become ready. Inspect $CONSOLE_STATE_DIR/xpra.log and journalctl --user -u codex-console.service."
     exit 1
   fi
 fi
 printf '\nInstallation complete.\n'
 if [[ $CONSOLE_HOST == 0.0.0.0 ]]; then
-  printf 'Browser address: https://HOST_IP:%s/ (replace HOST_IP with this host address)\n' "$CONSOLE_PORT"
+  printf 'Browser address: %s://HOST_IP:%s/ (replace HOST_IP with this host address)\n' "$scheme" "$CONSOLE_PORT"
 else
-  printf 'Browser address: https://%s:%s/\n' "$CONSOLE_HOST" "$CONSOLE_PORT"
+  printf 'Browser address: %s://%s:%s/\n' "$scheme" "$CONSOLE_HOST" "$CONSOLE_PORT"
 fi
 printf 'Access password: %q password\n' "$script_dir/console.sh"
 printf 'Configuration: %s\n' "$CONSOLE_CONFIG"

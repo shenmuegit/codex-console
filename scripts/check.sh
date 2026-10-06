@@ -18,6 +18,6 @@ if [[ ${1:-} == --live ]]; then
   source "$root/lib/config.sh"
   console_load_config
   console_validate_config
-  export CONSOLE_STATE_DIR CONSOLE_HOST CONSOLE_PORT CONSOLE_DISPLAY
+  export CONSOLE_STATE_DIR CONSOLE_HOST CONSOLE_PORT CONSOLE_DISPLAY CONSOLE_TLS_CERT
   python3 test_console.py
 fi

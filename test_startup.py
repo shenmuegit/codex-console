@@ -11,8 +11,7 @@ with tempfile.TemporaryDirectory() as directory:
     work = Path(directory)
     state = work / "state" / "codex-console"
     state.mkdir(parents=True)
-    for name in ("password", "cert.pem", "key.pem"):
-        (state / name).write_text("test-only")
+    (state / "password").write_text("test-only")
     xpra = work / "xpra"
     xpra.write_text("#!/usr/bin/env python3\nimport json, sys\nprint('xpra v6.5.4-r0' if sys.argv[1:] == ['--version'] else json.dumps(sys.argv[1:]))\n")
     xpra.chmod(0o755)
@@ -35,6 +34,9 @@ with tempfile.TemporaryDirectory() as directory:
         arguments = json.loads(result.stdout)
         assert f"--daemon={daemon}" in arguments, "Systemd must supervise the foreground server"
         assert arguments[:2] == ["seamless", ":100"]
+        assert f"--bind-ws=0.0.0.0:15443,auth=file:filename={state}/password" in arguments
+        assert '--ssl=no' in arguments
+        assert not (state / 'cert.pem').exists() and not (state / 'key.pem').exists(), 'HTTP startup must not generate certificates'
         child = shlex.split(next(argument.split('=', 1)[1] for argument in arguments if argument.startswith('--start-child=')))
         assert '--xdg-portal-required-version=999' in child, "Native upload must use the app-owned GTK picker"
         assert sorted(path.name for path in web.glob('*.html*')) == ['index.html'], \

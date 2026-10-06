@@ -46,11 +46,11 @@ If the service starts only after login, check `loginctl show-user "$(id -un)" -p
 ## Browser cannot connect
 
 1. Confirm the service is running and the host address/port match `doctor`.
-2. Use `https://`, and ensure the browser device can reach the host. Check VPN routing, Wi-Fi client isolation, and the host firewall.
+2. Use `http://` by default or `https://` with configured TLS, and ensure the browser device can reach the host. Check VPN routing, Wi-Fi client isolation, and the host firewall.
 3. Inspect the listener with `ss -ltn`; local-only binding to `127.0.0.1` cannot accept connections from your phone.
-4. Check certificate trust and the hostname in the certificate. The default self-signed certificate is not automatically trusted by a browser.
+4. Match the browser protocol to the configuration: HTTP by default, HTTPS when both TLS certificate paths are set. For HTTPS, check that the certificate is trusted and matches the hostname.
 
-If the login page opens but the connection fails, inspect browser console errors and Xpra logs for WebSocket/TLS or authentication errors. Both page requests and the WSS connection use the same configured port.
+If the login page opens but the connection fails, inspect browser console errors and Xpra logs for WebSocket/TLS or authentication errors. Both page requests and the WS/WSS connection use the same configured port.
 
 ## Password rejected
 

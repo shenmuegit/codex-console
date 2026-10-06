@@ -12,7 +12,7 @@
 </p>
 <p align="center">
   <img alt="Host: Linux" src="https://img.shields.io/badge/Host-Linux-24292f?style=flat-square" />
-  <img alt="HTTPS and WSS" src="https://img.shields.io/badge/Transport-HTTPS%20%2F%20WSS-24292f?style=flat-square" />
+  <img alt="HTTP and WS" src="https://img.shields.io/badge/Transport-HTTP%20%2F%20WS-24292f?style=flat-square" />
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-24292f?style=flat-square" /></a>
 </p>
 
@@ -66,7 +66,7 @@ If your app is installed elsewhere:
 ./deploy.sh --app /absolute/path/to/chatgpt
 ```
 
-The installer reuses an existing compatible runtime or installs the missing packages through the official Xpra APT repository. It creates a private configuration file, generates a random browser access password and self-signed TLS certificate, installs a service with your actual checkout path, enables it, and waits for the HTTPS page to respond. Review [what installation changes](docs/deployment.md#what-the-installer-changes).
+The installer reuses an existing compatible runtime or installs the missing packages through the official Xpra APT repository. It creates a private configuration file, generates a random browser access password, installs a service with your actual checkout path, enables it, and waits for the HTTP page to respond. Review [what installation changes](docs/deployment.md#what-the-installer-changes).
 
 Read the password on the host:
 
@@ -74,9 +74,9 @@ Read the password on the host:
 ./console.sh password
 ```
 
-Open `https://HOST_IP:15443/` in your browser and replace `HOST_IP` with the Linux host's address. Enter the access password, then sign in to the remote desktop app on first use. These are separate authentication steps. The dedicated profile may require a new app sign-in.
+Open `http://HOST_IP:15443/` in your browser and replace `HOST_IP` with the Linux host's address. Enter the access password, then sign in to the remote desktop app on first use. These are separate authentication steps. The dedicated profile may require a new app sign-in.
 
-The generated certificate is self-signed, so the browser displays a trust warning. See [TLS setup](docs/configuration.md#tls-certificates) to add your access address to the certificate or install a trusted certificate. Keep access limited to a trusted network or VPN: anyone with the password can control the app with your host account's permissions.
+The console defaults to HTTP/WS without transport encryption. Configure a browser-trusted certificate and key for [native HTTPS/WSS](docs/configuration.md#http-and-https-access). Keep access limited to a trusted network or VPN: anyone with the password can control the app with your host account's permissions.
 
 ## Everyday commands
 
@@ -89,7 +89,7 @@ systemctl --user stop codex-console.service        # Stop the managed console
 journalctl --user -u codex-console.service -n 100   # Read service logs
 ```
 
-For manual operation, use `./deploy.sh --no-service --no-start`, then `./console.sh start` and `./console.sh stop`. Repeated installation retains existing configuration, credentials, certificates, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
+For manual operation, use `./deploy.sh --no-service --no-start`, then `./console.sh start` and `./console.sh stop`. Repeated installation retains existing configuration, credentials, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
 
 Only the custom Codex Console page is published. Upstream connection and diagnostic pages such as `connect.html`, including their compressed copies, return 404. Preparing assets also removes copies left by earlier deployments.
 
@@ -117,7 +117,7 @@ Uploads accept one file at a time, up to 32 MiB or the server limit, whichever i
 | Guide | Contents |
 | --- | --- |
 | [Deployment](docs/deployment.md) | Supported hosts, installer options, manual setup, boot startup, updates, backups, uninstall |
-| [Configuration](docs/configuration.md) | Configuration file, every supported setting, paths, TLS, passwords, network binding |
+| [Configuration](docs/configuration.md) | Configuration file, every supported setting, paths, HTTP/HTTPS, passwords, network binding |
 | [Troubleshooting](docs/troubleshooting.md) | Dependency, startup, authentication, window, input, audio, and performance problems |
 | [Development](docs/development.md) | Components, tests, live checks, Xpra upgrade checks, release steps |
 | [Contributing](CONTRIBUTING.md) | Local workflow, bug reports, pull requests |

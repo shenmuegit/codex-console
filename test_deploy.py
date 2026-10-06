@@ -90,21 +90,19 @@ with open(os.environ['DEPLOY_TEST_EVENTS'], 'a') as out:
         self.write_config(f"CONSOLE_APP_BIN={shlex.quote(str(self.app))}\n"
                           f"CONSOLE_STATE_DIR={shlex.quote(str(state))}\n"
                           "CONSOLE_HOST=127.0.0.1\nCONSOLE_PORT=16443\nCONSOLE_DISPLAY=:123\n"
-                          "CONSOLE_TLS_NAME=192.0.2.10\n"
                           "CONSOLE_APP_ARGS=(--ozone-platform=x11 '--title=a b' '--literal=$HOME; echo nope')\n")
         args = json.loads(self.run_script("console.sh", "run").stdout)
         self.assertEqual(args[:2], ["seamless", ":123"])
-        self.assertIn(f"--bind-wss=127.0.0.1:16443,auth=file:filename={state}/password", args)
+        self.assertIn(f"--bind-ws=127.0.0.1:16443,auth=file:filename={state}/password", args)
+        self.assertIn("--ssl=no", args)
         child = shlex.split(next(arg.split("=", 1)[1] for arg in args if arg.startswith("--start-child=")))
         self.assertEqual(child[:2], [str(self.repo / "app-watch.sh"), str(self.app)])
         self.assertIn("--title=a b", child)
         self.assertIn("--literal=$HOME; echo nope", child)
         self.assertFalse(any(arg.startswith("--proxy-server") for arg in child))
-        certificate = subprocess.run(["openssl", "x509", "-in", str(state / "cert.pem"),
-                                      "-noout", "-ext", "subjectAltName"], capture_output=True, text=True)
-        self.assertIn("IP Address:192.0.2.10", certificate.stdout)
-        for name in ("password", "key.pem", "cert.pem"):
-            self.assertEqual((state / name).stat().st_mode & 0o777, 0o600)
+        self.assertEqual((state / "password").stat().st_mode & 0o777, 0o600)
+        self.assertFalse((state / "cert.pem").exists())
+        self.assertFalse((state / "key.pem").exists())
         self.assertEqual(json.loads(self.run_script("console.sh", "status").stdout)[:2], ["info", ":123"])
         self.assertEqual(json.loads(self.run_script("console.sh", "stop").stdout), ["stop", ":123"])
 
@@ -113,6 +111,39 @@ with open(os.environ['DEPLOY_TEST_EVENTS'], 'a') as out:
         result = self.run_script("console.sh", "start", success=False)
         self.assertIn("CONSOLE_PORT", result.stderr)
         self.assertFalse((self.work / "state/codex-console/password").exists())
+
+    def test_supplied_tls_identity_enables_native_https(self):
+        state = self.work / "private state"
+        state.mkdir()
+        cert, key = state / "cert.pem", state / "key.pem"
+        cert.write_text("certificate")
+        key.write_text("private key")
+        self.write_config(f"CONSOLE_APP_BIN={shlex.quote(str(self.app))}\n"
+                          f"CONSOLE_STATE_DIR={shlex.quote(str(state))}\n"
+                          f"CONSOLE_TLS_CERT={shlex.quote(str(cert))}\n"
+                          f"CONSOLE_TLS_KEY={shlex.quote(str(key))}\n")
+        args = json.loads(self.run_script("console.sh", "run").stdout)
+        self.assertTrue(any(arg.startswith("--bind-wss=") for arg in args))
+        self.assertIn("--ssl=on", args)
+        self.assertIn(f"--ssl-cert={cert}", args)
+        self.assertIn(f"--ssl-key={key}", args)
+        self.assertEqual(key.read_text(), "private key", "Startup must preserve the configured identity")
+        result = self.run_script("deploy.sh", "--skip-deps", "--no-service", "--no-start")
+        self.assertIn("https://HOST_IP:", result.stdout)
+        cert.unlink()
+        key.unlink()
+        self.assertEqual(json.loads(self.run_script("console.sh", "stop").stdout), ['stop', ':100'])
+        self.assertEqual(json.loads(self.run_script("console.sh", "status").stdout)[:2], ['info', ':100'])
+        self.assertEqual(self.run_script("console.sh", "password").stdout.strip(), (state / 'password').read_text())
+
+    def test_incomplete_tls_identity_fails_before_creating_state(self):
+        for certificate, key in [('/missing/cert.pem', ''), (str(self.work), str(self.work))]:
+            with self.subTest(certificate=certificate, key=key):
+                self.write_config(f"CONSOLE_APP_BIN={shlex.quote(str(self.app))}\n"
+                                  f"CONSOLE_TLS_CERT={shlex.quote(certificate)}\nCONSOLE_TLS_KEY={shlex.quote(key)}\n")
+                result = self.run_script("console.sh", "prepare", success=False)
+                self.assertIn("CONSOLE_TLS", result.stderr)
+                self.assertFalse((self.work / "state").exists())
 
     def test_doctor_reports_missing_app_without_creating_state(self):
         self.write_config("CONSOLE_APP_BIN=/missing/desktop-app\n")
@@ -130,14 +161,17 @@ with open(os.environ['DEPLOY_TEST_EVENTS'], 'a') as out:
         self.assertIn("Xpra X11/audio", result.stderr)
         self.assertFalse((self.work / "state").exists())
 
-    def test_missing_certificate_half_does_not_replace_existing_identity(self):
+    def test_http_preparation_removes_legacy_certificate_files(self):
         self.write_config(f"CONSOLE_APP_BIN={shlex.quote(str(self.app))}\n")
         state = self.work / "state/codex-console"
         state.mkdir(parents=True)
         (state / "cert.pem").write_text("existing certificate")
-        result = self.run_script("console.sh", "prepare", success=False)
-        self.assertIn("cert.pem", result.stderr)
-        self.assertEqual((state / "cert.pem").read_text(), "existing certificate")
+        (state / "key.pem").write_text("existing key")
+        (state / "password").write_text("existing password")
+        self.run_script("console.sh", "prepare")
+        self.assertFalse((state / "cert.pem").exists())
+        self.assertFalse((state / "key.pem").exists())
+        self.assertEqual((state / "password").read_text(), "existing password")
 
     def test_relocated_checkout_refreshes_generated_asset_links(self):
         self.run_script("deploy.sh", "--skip-deps", "--no-service", "--no-start", "--app", str(self.app))
@@ -191,14 +225,14 @@ Path(sys.argv[sys.argv.index('-o') + 1]).write_text('downloaded repository data'
         self.config.write_text(self.config.read_text() + "\nCONSOLE_PORT=17443\n")
         state = self.work / "state/codex-console"
         first_password = (state / "password").read_bytes()
-        first_cert = (state / "cert.pem").read_bytes()
         profile = state / "profile"
         profile.mkdir()
         (profile / "keep").write_text("signed-in data")
         self.run_script("deploy.sh", "--skip-deps", "--no-start")
         self.assertIn("CONSOLE_PORT=17443", self.config.read_text())
         self.assertEqual((state / "password").read_bytes(), first_password)
-        self.assertEqual((state / "cert.pem").read_bytes(), first_cert)
+        self.assertFalse((state / "cert.pem").exists())
+        self.assertFalse((state / "key.pem").exists())
         self.assertEqual((profile / "keep").read_text(), "signed-in data")
         events = [json.loads(line) for line in self.events.read_text().splitlines()]
         self.assertFalse(any("restart" in event or "start" in event for event in events))

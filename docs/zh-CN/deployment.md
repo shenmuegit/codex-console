@@ -38,10 +38,10 @@ cd codex-console
 
 1. 配置不存在时，在 `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh` 创建权限为 `600` 的配置文件；显式传入 `--app` 时只更新应用路径设置。
 2. 检查已有依赖；缺失或不兼容时在支持的 APT 系统上安装。通过 HTTPS 下载官方软件源定义与签名公钥，保留已有公钥和软件源；没有 Xpra 源时添加 `codex-console-xpra.sources`。
-3. 运行 `doctor`，准备私有数据目录、访问凭据和浏览器资源，保留已有配置、密码、证书和应用数据。
+3. 运行 `doctor`，准备私有数据目录、访问凭据和浏览器资源，保留已有配置、密码和应用数据；仅在未配置 TLS 时清理旧证书。
 4. 在 `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codex-console.service` 生成用户服务，使用真实克隆目录、配置路径和状态目录环境。按绝对路径注册，使用户服务管理器也能找到自定义配置目录。服务运行期间请保留项目和配置目录。
 5. 启用并启动服务；已在运行的服务会重启。尝试启用用户 lingering，使服务可在登录前启动；系统拒绝时，会打印所需的管理员命令。
-6. 最多等待 30 秒检查本机 HTTPS 登录页面是否就绪。页面就绪说明访问入口已启动，账号登录和手机操作仍需要在浏览器中完成。
+6. 最多等待 30 秒检查本机 HTTP 或已配置的 HTTPS 登录页面是否就绪。页面就绪说明访问入口已启动，账号登录和手机操作仍需要在浏览器中完成。参见 [TLS 配置](configuration.md#http-与-https-访问)。
 
 安装的依赖包括 Xpra、`xpra-html5`、Xvfb、X11 工具、Xauth、PulseAudio、D-Bus、Python、OpenSSL、GStreamer 工具与插件，以及拉丁字母和中日韩字体。即使系统默认不安装推荐包，脚本也会明确安装 Xpra 推荐的 X11 与音频子包；预检查会验证对应模块和浏览器音频编码器。软件源配置遵循 [Xpra 官方 APT 安装说明](https://github.com/Xpra-org/xpra/wiki/Download#debian-based-distributions)。
 
@@ -139,9 +139,9 @@ tar -C "$CONSOLE_STATE_DIR" --exclude='./pulse-runtime' -czf "$backup_dir/state.
 systemctl --user start codex-console.service
 ```
 
-手动运行时，分别使用 `./console.sh stop` 和 `./console.sh start`。恢复到已准备好依赖的主机时，将 `backup_dir` 设为保存的目录，把配置复制到实际配置位置，调整新主机的应用和数据路径，再按上面的方式加载配置。在服务停止的状态下，将 `state.tar.gz` 解压到 `CONSOLE_STATE_DIR`。仅恢复可信的自有备份；将数据目录设为 `700`，密码和证书文件设为 `600`，然后执行 `./deploy.sh --skip-deps` 重建资源与服务。
+手动运行时，分别使用 `./console.sh stop` 和 `./console.sh start`。恢复到已准备好依赖的主机时，将 `backup_dir` 设为保存的目录，把配置复制到实际配置位置，调整新主机的应用和数据路径，再按上面的方式加载配置。在服务停止的状态下，将 `state.tar.gz` 解压到 `CONSOLE_STATE_DIR`。仅恢复可信的自有备份；将数据目录设为 `700`，密码文件设为 `600`，然后执行 `./deploy.sh --skip-deps` 重建资源与服务。
 
-完整恢复需要保留 `profile/`、`password`、`cert.pem` 和 `key.pem`。生成的 `www/`、锁文件、音频运行文件与日志可以重新创建。
+完整恢复需要保留 `profile/` 和 `password`。配置的 TLS 证书、私钥及续期设置若保存在该目录外，需要单独备份。生成的 `www/`、锁文件、音频运行文件与日志可以重新创建。
 
 ## 卸载
 

@@ -61,7 +61,7 @@ cd codex-console
 ./deploy.sh --app /absolute/path/to/chatgpt
 ```
 
-脚本会复用已有的兼容依赖，必要时通过 Xpra 官方 APT 软件源安装系统包，然后创建私有配置、生成随机访问密码和自签名证书、按实际克隆位置生成用户服务、启用服务并等待 HTTPS 页面就绪。详见[部署脚本修改的内容](docs/zh-CN/deployment.md#脚本修改哪些内容)。
+脚本会复用已有的兼容依赖，必要时通过 Xpra 官方 APT 软件源安装系统包，然后创建私有配置、生成随机访问密码、按实际克隆位置生成用户服务、启用服务并等待 HTTP 页面就绪。详见[部署脚本修改的内容](docs/zh-CN/deployment.md#脚本修改哪些内容)。
 
 在主机终端查看访问密码：
 
@@ -69,9 +69,9 @@ cd codex-console
 ./console.sh password
 ```
 
-手机打开 `https://HOST_IP:15443/`，将 `HOST_IP` 替换为 Linux 主机地址。输入访问密码后，首次使用需要在远端桌面应用中登录账号。浏览器访问密码与应用账号登录是两个独立步骤；独立应用数据目录可能需要重新登录。
+手机打开 `http://HOST_IP:15443/`，将 `HOST_IP` 替换为 Linux 主机地址。输入访问密码后，首次使用需要在远端桌面应用中登录账号。浏览器访问密码与应用账号登录是两个独立步骤；独立应用数据目录可能需要重新登录。
 
-默认使用自签名证书，浏览器会提示信任警告。[证书配置说明](docs/zh-CN/configuration.md#tls-证书)介绍了如何加入访问地址或换用可信证书。建议通过可信网络或 VPN 访问；持有访问密码的人可以使用主机账号的权限操作应用。
+控制台默认使用 HTTP/WS，传输内容不加密。配置浏览器信任的证书和私钥可启用[原生 HTTPS/WSS](docs/zh-CN/configuration.md#http-与-https-访问)。建议通过可信网络或 VPN 访问；持有访问密码的人可以使用主机账号的权限操作应用。
 
 ## 日常操作
 
@@ -84,7 +84,7 @@ systemctl --user stop codex-console.service        # 停止托管会话
 journalctl --user -u codex-console.service -n 100   # 查看服务日志
 ```
 
-手动运行可先执行 `./deploy.sh --no-service --no-start`，再使用 `./console.sh start` 和 `./console.sh stop`。重复部署保留已有配置、密码、证书与应用数据；普通重复部署会重启托管服务，`--no-start` 只准备改动，不启动或重启。
+手动运行可先执行 `./deploy.sh --no-service --no-start`，再使用 `./console.sh start` 和 `./console.sh stop`。重复部署保留已有配置、密码与应用数据；普通重复部署会重启托管服务，`--no-start` 只准备改动，不启动或重启。
 
 网页只发布定制的 Codex Console 主页面。`connect.html` 等上游连接、诊断页面及其压缩版本均返回 404；准备资源时也会清理旧部署遗留的这些页面。
 
@@ -112,7 +112,7 @@ journalctl --user -u codex-console.service -n 100   # 查看服务日志
 | 文档 | 内容 |
 | --- | --- |
 | [部署与维护](docs/zh-CN/deployment.md) | 系统支持、脚本参数、手动运行、开机启动、更新、备份恢复、卸载 |
-| [配置参考](docs/zh-CN/configuration.md) | 配置文件、全部配置项、目录、证书、密码、网络监听 |
+| [配置参考](docs/zh-CN/configuration.md) | 配置文件、全部配置项、目录、HTTP/HTTPS、密码、网络监听 |
 | [故障排查](docs/zh-CN/troubleshooting.md) | 安装、服务、认证、窗口、输入法、音频、性能问题 |
 | [开发说明（English）](docs/development.md) | 代码结构、隔离测试、真实链路验证、依赖升级、发布步骤 |
 | [贡献指南](CONTRIBUTING.md) | 本地开发、问题反馈、提交规范 |

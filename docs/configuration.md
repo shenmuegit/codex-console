@@ -32,15 +32,16 @@ For manual operation, stop and start instead. Keep the data directory unchanged 
 | --- | --- | --- |
 | `CONSOLE_APP_BIN` | `/usr/bin/chatgpt` | Compatible desktop executable; prefer an absolute path |
 | `CONSOLE_APP_ARGS` | `(--ozone-platform=x11 --disable-gpu)` | Additional app arguments as a Bash array |
-| `CONSOLE_HOST` | `0.0.0.0` | IPv4 address or hostname for the HTTPS/WSS listener |
+| `CONSOLE_HOST` | `0.0.0.0` | IPv4 address or hostname for the browser listener |
 | `CONSOLE_PORT` | `15443` | TCP port, integer `1024`–`65535` |
 | `CONSOLE_DISPLAY` | `:100` | Dedicated X11 display; must not conflict with another session |
-| `CONSOLE_STATE_DIR` | `${XDG_STATE_HOME:-$HOME/.local/state}/codex-console` | Password, TLS files, profile, generated pages, logs |
+| `CONSOLE_STATE_DIR` | `${XDG_STATE_HOME:-$HOME/.local/state}/codex-console` | Password, profile, generated pages, logs |
 | `XPRA_HTML_DIR` | `/usr/share/xpra/www` | System-installed Xpra HTML5 assets |
-| `CONSOLE_TLS_NAME` | `localhost` | DNS name/IP added to a newly generated certificate |
+| `CONSOLE_TLS_CERT` | Empty | Readable absolute path to a PEM certificate/full chain; enables HTTPS/WSS with the key |
+| `CONSOLE_TLS_KEY` | Empty | Readable absolute path to the matching PEM private key |
 | `CONSOLE_CONFIG` | `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh` | Entry-point environment selector for the config file |
 
-`0.0.0.0` listens on all IPv4 interfaces; use `127.0.0.1` for local-only access or a specific LAN interface address. The current listener configuration does not accept IPv6 bind addresses. Certificate names may include an IPv6 address, but that does not enable an IPv6 listener.
+`0.0.0.0` listens on all IPv4 interfaces; use `127.0.0.1` for local-only access or a specific LAN interface address. The current listener configuration does not accept IPv6 bind addresses.
 
 The service captures the selected config path and `XDG_STATE_HOME` when deployed. Put persistent settings in the configuration file: shell-only environment overrides are not automatically carried into the service.
 
@@ -52,7 +53,6 @@ CONSOLE_APP_ARGS=(--ozone-platform=x11 --disable-gpu)
 CONSOLE_HOST=192.0.2.10
 CONSOLE_PORT=15443
 CONSOLE_DISPLAY=:100
-CONSOLE_TLS_NAME=192.0.2.10
 ```
 
 Replace the documentation address `192.0.2.10` with an address assigned to your host. The launcher adds `--user-data-dir=<state>/profile` automatically. Keep the X11 argument unless your compatible build selects X11 another way. Arguments are quoted individually; do not insert shell commands or combine all flags into one array element.
@@ -64,42 +64,56 @@ If you need a proxy, configure it in `CONSOLE_APP_ARGS` in the user configuratio
 | Path under the state directory | Purpose |
 | --- | --- |
 | `password` | Random browser access password |
-| `cert.pem` / `key.pem` | TLS certificate and private key |
 | `profile/` | Application settings, sign-in information, session data |
 | `www/` | Generated/adapted HTML5 entry and links to installed assets |
 | `xpra.log` | Xpra session log |
 | `app-watch.lock` | Prevents duplicate app supervisors |
 | `pulse-runtime/` | Private PulseAudio runtime/PID files, recreated on launch |
 
-The state directory has mode `700`; password, certificate, and key have mode `600`. The launcher exports `CODEX_ELECTRON_USER_DATA_PATH=<state>/profile` to the app. Browser passwords remain in page memory for reconnects and are requested again after reloading or closing the page.
+The state directory has mode `700`; the password has mode `600`. The launcher exports `CODEX_ELECTRON_USER_DATA_PATH=<state>/profile` to the app. Browser passwords remain in page memory for reconnects and are requested again after reloading or closing the page.
 
 Each configured state directory has its own profile. For multiple installations, use distinct config paths, state directories, ports, and displays. The installer manages one unit named `codex-console.service` per user; independently supervised instances require separately named units or manual operation.
 
-## TLS certificates
+## HTTP and HTTPS access
 
-On the first preparation, the launcher generates a 2048-bit RSA self-signed certificate valid for 365 days. It includes `localhost`, `127.0.0.1`, and `CONSOLE_TLS_NAME` in its subject alternative names. Self-signed certificates still require browser trust even when the hostname matches.
+By default, open `http://HOST_IP:15443/` using the configured host and port. Pages use HTTP and the password-authenticated session uses WS. Preparation removes legacy `cert.pem` and `key.pem` files only in this default mode. Passwords and app profiles are retained.
 
-Set `CONSOLE_TLS_NAME` before first deployment to include your host's IP or DNS name. Existing certificates are reused, so changing that setting does not renew them.
+HTTP provides no transport encryption; use a trusted network or VPN.
 
-For a trusted certificate, stop the service and install a certificate chain and its matching unencrypted private key at the state's `cert.pem` and `key.pem` paths. For example, after loading the config:
-
-```bash
-source ./lib/config.sh
-console_load_config
-console_validate_config
-systemctl --user stop codex-console.service
-install -m 600 /path/to/fullchain.pem "$CONSOLE_STATE_DIR/cert.pem"
-install -m 600 /path/to/privkey.pem "$CONSOLE_STATE_DIR/key.pem"
-systemctl --user start codex-console.service
-```
-
-Use certificate files your service user can read. Manage renewal separately and restart the service after replacing the pair. The installer does not obtain or renew public certificates. If only one nonempty TLS file exists, preparation fails instead of overwriting the remaining identity.
-
-To renew a self-signed certificate, stop the service, move **both** existing TLS files to a private backup directory, update `CONSOLE_TLS_NAME`, run `./console.sh prepare`, and start the service. Inspect expiry with:
+To enable Xpra's native HTTPS/WSS listener on the same port, set both paths in your configuration:
 
 ```bash
-openssl x509 -in "$CONSOLE_STATE_DIR/cert.pem" -noout -dates -ext subjectAltName
+CONSOLE_TLS_CERT=/absolute/path/to/fullchain.pem
+CONSOLE_TLS_KEY=/absolute/path/to/privkey.pem
 ```
+
+Use a certificate trusted by the browser for the hostname you visit, keep the key private, and restart the service. Open `https://YOUR_HOSTNAME:15443/`; HTTP/WS is replaced by HTTPS/WSS. The launcher retains configured certificates and never generates an identity automatically. Paths must contain no commas or line breaks.
+
+The supported HTML5 client's [Chrome offscreen/video decoder](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js) requires HTTPS. Browser codec support still determines the decoder; HTTPS alone does not guarantee H.264 or hardware acceleration, and Safari may use the fallback path.
+
+The last quality preset is saved in this browser for this server address and restored when reopening the page. An explicit `performance` URL parameter takes priority. Without either choice, phones default to Smooth and desktops to Balanced.
+
+### Public IP certificates
+
+Let’s Encrypt supports [public IP certificates with the `shortlived` profile](https://letsencrypt.org/2026/03/11/shorter-certs-certbot). Use Certbot 5.4 or newer. HTTP-01 validation must reach this server on public TCP port **80**, even when the console listens on 15443; changing Certbot's local challenge port does not change the CA's port.
+
+A standalone issuance command, with private account/certificate files outside the repository:
+
+```bash
+certbot certonly --standalone --ip-address YOUR_PUBLIC_IP \
+  --cert-name codex-console --required-profile shortlived \
+  --non-interactive --agree-tos --register-unsafely-without-email \
+  --keep-until-expiring \
+  --config-dir "$HOME/.local/state/codex-console/tls/acme" \
+  --work-dir "$HOME/.local/state/codex-console/tls/work" \
+  --logs-dir "$HOME/.local/state/codex-console/tls/logs"
+```
+
+Port 80 requires administrator assistance. A systemd **system** service can run Certbot as the console user with `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`, and `UMask=0077`; this keeps certificates readable by the console without running the app as root. Keep the certificate directories private (`700`) and the key private (`600`).
+
+After issuance, set the two TLS paths to `tls/acme/live/codex-console/fullchain.pem` and `privkey.pem` under the private state directory, then restart the user service. Validate trust and the IP SAN with `openssl verify -verify_ip YOUR_PUBLIC_IP -untrusted fullchain.pem fullchain.pem`, and check `https://YOUR_PUBLIC_IP:15443/` without disabling certificate verification.
+
+IP certificates last about six days. Run the same `--keep-until-expiring` command from a persistent system timer every eight hours (`OnCalendar=*-*-* 00,08,16:00:00`). Use a successful-issuance deploy hook to restart `codex-console.service`; set `XDG_RUNTIME_DIR=/run/user/UID` and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/UID/bus` for that user's manager. If binding or validation fails, keep the existing console configuration and inspect the certificate service log before enabling HTTPS. Certificate renewal and activation must both succeed before reporting the deployment complete.
 
 ## Access password
 

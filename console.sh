@@ -20,7 +20,7 @@ fi
 script_dir=$(dirname "$(readlink -f "$0")")
 source "$script_dir/lib/config.sh"
 console_load_config
-console_validate_config
+console_validate_config "${1:-start}"
 state=$CONSOLE_STATE_DIR
 case "${1:-start}" in
   stop) exec xpra stop "$CONSOLE_DISPLAY" ;;
@@ -40,31 +40,13 @@ console_check_dependencies >/dev/null
 umask 077
 mkdir -p "$state"
 chmod 700 "$state"
-if [[ -s "$state/cert.pem" && ! -s "$state/key.pem" || ! -s "$state/cert.pem" && -s "$state/key.pem" ]]; then
-  console_error "Incomplete TLS identity: restore the matching cert.pem and key.pem in $state."
-  exit 1
+if [[ -z $CONSOLE_TLS_CERT ]]; then
+  rm -f "$state/cert.pem" "$state/key.pem"
 fi
 if [[ ! -s "$state/password" ]]; then
   openssl rand -hex 24 | tr -d '\n' > "$state/password"
 fi
-if [[ ! -s "$state/cert.pem" || ! -s "$state/key.pem" ]]; then
-  san=$(python3 - "$CONSOLE_TLS_NAME" <<'SAN'
-import ipaddress
-import sys
-name = sys.argv[1]
-try:
-    ipaddress.ip_address(name)
-    extra = f'IP:{name}'
-except ValueError:
-    extra = f'DNS:{name}'
-print(f'DNS:localhost,IP:127.0.0.1,{extra}')
-SAN
-)
-  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 365 \
-    -subj "/CN=$CONSOLE_TLS_NAME" -addext "subjectAltName=$san" \
-    -keyout "$state/key.pem" -out "$state/cert.pem" 2>/dev/null
-fi
-chmod 600 "$state/password" "$state/key.pem" "$state/cert.pem"
+chmod 600 "$state/password"
 export CODEX_ELECTRON_USER_DATA_PATH="$state/profile"
 export XPRA_DOWNLOAD_DIR="$state/uploads"
 mkdir -p "$XPRA_DOWNLOAD_DIR"
@@ -250,9 +232,13 @@ print(shlex.join(['python3', *sys.argv[1:]]))
 UPLOAD
 )
 # ponytail: fixed 4096px Xvfb; use a resizable Xorg display for larger render sizes.
+transport=("--bind-ws=$CONSOLE_HOST:$CONSOLE_PORT,auth=file:filename=$state/password" --ssl=no)
+if [[ -n $CONSOLE_TLS_CERT ]]; then
+  transport=("--bind-wss=$CONSOLE_HOST:$CONSOLE_PORT,auth=file:filename=$state/password" --ssl=on
+             "--ssl-cert=$CONSOLE_TLS_CERT" "--ssl-key=$CONSOLE_TLS_KEY")
+fi
 exec xpra seamless "$CONSOLE_DISPLAY" \
-  --bind-wss="$CONSOLE_HOST:$CONSOLE_PORT,auth=file:filename=$state/password" \
-  --ssl-cert="$state/cert.pem" --ssl-key="$state/key.pem" \
+  "${transport[@]}" \
   --html="$web" --http-scripts=off --mdns=no \
   --start-child="$child" \
   --use-display=no --resize-display=no --dpi=96 \

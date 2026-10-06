@@ -25,7 +25,8 @@ console_load_config() {
   CONSOLE_DISPLAY=${CONSOLE_DISPLAY:-:100}
   CONSOLE_STATE_DIR=${CONSOLE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/codex-console}
   XPRA_HTML_DIR=${XPRA_HTML_DIR:-/usr/share/xpra/www}
-  CONSOLE_TLS_NAME=${CONSOLE_TLS_NAME:-localhost}
+  CONSOLE_TLS_CERT=${CONSOLE_TLS_CERT:-}
+  CONSOLE_TLS_KEY=${CONSOLE_TLS_KEY:-}
   export CONSOLE_STATE_DIR
 }
 
@@ -43,10 +44,6 @@ console_validate_config() {
     console_error 'CONSOLE_HOST must be an IPv4 address or hostname.'
     return 1
   fi
-  if [[ ! $CONSOLE_TLS_NAME =~ ^[a-zA-Z0-9.:-]+$ ]]; then
-    console_error 'CONSOLE_TLS_NAME must be a DNS name or IP address.'
-    return 1
-  fi
   local path
   for path in "$CONSOLE_CONFIG" "$CONSOLE_STATE_DIR" "$XPRA_HTML_DIR"; do
     if [[ $path != /* || $path == *$'\n'* || $path == *$'\r'* || $path == *,* ]]; then
@@ -55,6 +52,15 @@ console_validate_config() {
     fi
   done
   CONSOLE_STATE_DIR=$(readlink -m "$CONSOLE_STATE_DIR")
+  # Existing sessions remain manageable when their TLS files are moved or removed.
+  if [[ -n $CONSOLE_TLS_CERT || -n $CONSOLE_TLS_KEY ]] && [[ ! ${1:-} =~ ^(stop|status|password)$ ]]; then
+    for path in "$CONSOLE_TLS_CERT" "$CONSOLE_TLS_KEY"; do
+      if [[ $path != /* || $path == *$'\n'* || $path == *$'\r'* || $path == *,* || ! -f $path || ! -s $path || ! -r $path ]]; then
+        console_error 'CONSOLE_TLS_CERT and CONSOLE_TLS_KEY must both name readable, nonempty absolute files without commas or line breaks.'
+        return 1
+      fi
+    done
+  fi
   if [[ $(declare -p CONSOLE_APP_ARGS) != 'declare -a '* ]]; then
     console_error 'CONSOLE_APP_ARGS must be a Bash array, for example: (--ozone-platform=x11 --disable-gpu).'
     return 1

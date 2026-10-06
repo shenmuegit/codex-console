@@ -12,6 +12,6 @@ CONSOLE_DISPLAY=:100
 # CONSOLE_STATE_DIR="$HOME/.local/state/codex-console"
 XPRA_HTML_DIR=/usr/share/xpra/www
 
-# DNS name or IP address added to a newly generated self-signed certificate.
-# Changing this value does not replace an existing certificate.
-CONSOLE_TLS_NAME=localhost
+# Optional: browser-trusted certificate and private key enable native HTTPS/WSS.
+# CONSOLE_TLS_CERT=/absolute/path/to/fullchain.pem
+# CONSOLE_TLS_KEY=/absolute/path/to/privkey.pem

@@ -38,10 +38,10 @@ Do not run the whole script with sudo: the service and profile belong to your no
 
 1. Creates `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh` with mode `600` if missing. An explicit `--app` updates only the application setting.
 2. Checks the existing runtime. If it is incomplete or incompatible, installs dependencies on a supported APT host. It downloads the official repository definition and signing key using HTTPS, retains an existing key/source, and adds `codex-console-xpra.sources` only when no Xpra source is present.
-3. Runs `doctor`, prepares the private state directory, and creates credentials and browser assets. Saved configuration, passwords, certificates, and profiles are retained.
+3. Runs `doctor`, prepares the private state directory, and creates credentials and browser assets. Saved configuration, passwords, and profiles are retained; legacy certificates are removed only when TLS is not configured.
 4. Generates `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/codex-console.service` using the actual checkout, configuration, and state-home paths. Registers it by absolute path so the user manager can also find a custom configuration home. Keep the checkout and config directory in place while the service uses them.
 5. Enables and starts the service, or restarts an active service. It requests user lingering for startup before login. If the system denies lingering, it prints the administrator command required.
-6. Checks the local HTTPS page for up to 30 seconds. This confirms the login page is served; sign-in and mobile interaction still require a browser.
+6. Checks the local HTTP or configured HTTPS page for up to 30 seconds. This confirms the login page is served; sign-in and mobile interaction still require a browser. See [TLS configuration](configuration.md#http-and-https-access).
 
 The dependency packages include Xpra, `xpra-html5`, Xvfb, X11 utilities, Xauth, PulseAudio, D-Bus, Python, OpenSSL, GStreamer tools/plugins, and Latin/CJK fonts. Installation explicitly includes APT recommendations for Xpra's X11/audio split packages, even on minimal hosts. Preflight checks verify those modules and browser audio encoders. The source follows the [official Xpra APT instructions](https://github.com/Xpra-org/xpra/wiki/Download#debian-based-distributions).
 
@@ -141,9 +141,9 @@ tar -C "$CONSOLE_STATE_DIR" --exclude='./pulse-runtime' -czf "$backup_dir/state.
 systemctl --user start codex-console.service
 ```
 
-For a manual session, substitute `./console.sh stop` and `./console.sh start`. To restore on a prepared host, set `backup_dir` to your saved directory, copy its config to the configuration location, adjust machine-specific app/data paths, load the config as above, and extract `state.tar.gz` into `CONSOLE_STATE_DIR` while the service is stopped. Restore only your own trusted archive. Set the state directory to `700`, the password and TLS files to `600`, and rerun `./deploy.sh --skip-deps` to rebuild browser assets and the service.
+For a manual session, substitute `./console.sh stop` and `./console.sh start`. To restore on a prepared host, set `backup_dir` to your saved directory, copy its config to the configuration location, adjust machine-specific app/data paths, load the config as above, and extract `state.tar.gz` into `CONSOLE_STATE_DIR` while the service is stopped. Restore only your own trusted archive. Set the state directory to `700`, the password to `600`, and rerun `./deploy.sh --skip-deps` to rebuild browser assets and the service.
 
-The complete state includes `profile/`, `password`, `cert.pem`, and `key.pem`. Generated `www/`, lock files, audio runtime files, and logs can be rebuilt and do not need to be restored.
+The complete state includes `profile/` and `password`. Back up configured TLS certificates, private keys, and renewal settings separately when stored outside this directory. Generated `www/`, lock files, audio runtime files, and logs can be rebuilt and do not need to be restored.
 
 ## Uninstall
 

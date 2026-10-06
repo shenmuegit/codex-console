@@ -7,10 +7,10 @@
 ```mermaid
 flowchart LR
     Browser["Browser<br/>Xpra HTML5 + mobile.js + console.css"]
-    Server["Linux host<br/>Xpra HTTPS / WSS session"]
+    Server["Linux host<br/>Xpra HTTP(S) / WS(S) session"]
     Watch["app-watch.sh"]
     App["Dedicated desktop app profile"]
-    Browser <-->|"Password-authenticated WSS"| Server
+    Browser <-->|"Password-authenticated WS/WSS"| Server
     Server -->|"Starts on Xvfb"| Watch
     Watch -->|"Reopens missing main window"| App
     Server <-->|"X11 window / input / audio"| App
@@ -42,7 +42,7 @@ Install the normal runtime and Node.js 20+; Python must be able to import the in
 | --- | --- |
 | Bash syntax | All shell entry points and config example |
 | `test_startup.py` | Foreground service launch vs daemonized manual launch |
-| `test_deploy.py` | Config validation, argument quoting, alternate state/port/display, TLS identity, service rendering, repeat install, dependency installation boundary, relocation, uninstall |
+| `test_deploy.py` | Config validation, argument quoting, alternate state/port/display, HTTP startup, configured TLS and certificate preservation, service rendering, repeat install, dependency installation boundary, relocation, uninstall |
 | `test_app_watch.py` | Reopening closed/exited app, avoiding duplicates, excluding foreign profiles, cleaning up children |
 | `test_mobile.cjs` | Browser authentication, retry/reconnect, gestures, scaling, quality, IME and UTF-8 clipboard behavior |
 | `test_upload.py` | Real Xpra save completion, private original filenames, request and client isolation |
@@ -55,9 +55,10 @@ Use the runtime's GTK 3 Python bindings, then run:
 
 ```bash
 python3 test_integration.py
+CONSOLE_TEST_TLS=1 python3 test_integration.py
 ```
 
-This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity and a native file picker without a profile class or transient parent. It verifies HTTPS, correct and rejected passwords, window isolation, decoded WSS audio, and upload completion followed by Unicode clipboard/key packets that make the original picker accept the file. It then stops the session. It uses no desktop-app account and does not change your service; compatibility with a particular app build still needs that app.
+This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity and a native file picker without a profile class or transient parent. It verifies HTTP, correct and rejected passwords, window isolation, decoded WS audio, and upload completion followed by Unicode clipboard/key packets that make the original picker accept the file. It then stops the session. It uses no desktop-app account and does not change your service; compatibility with a particular app build still needs that app. The TLS variant generates a temporary identity, explicitly trusts it for the test, and checks HTTPS/WSS on the same paths.
 
 ## Existing-app live check
 

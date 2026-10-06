@@ -19,8 +19,14 @@ if host == "0.0.0.0":
 with socket.socket() as connection:
     assert connection.connect_ex((host, port)) == 0, "Codex console is not listening"
 
-context = ssl.create_default_context(cafile=str(state / "cert.pem"))
-connection = http.client.HTTPSConnection(host, port, context=context, timeout=10)
+certificate = os.environ.get('CONSOLE_TLS_CERT', '')
+if certificate:
+    context = ssl.create_default_context(cafile=certificate)
+    context.check_hostname = False  # Probe the bind address, which can differ from the public hostname.
+    context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    connection = http.client.HTTPSConnection(host, port, timeout=10, context=context)
+else:
+    connection = http.client.HTTPConnection(host, port, timeout=10)
 connection.request("GET", "/")
 response = connection.getresponse()
 content = response.read()
@@ -54,8 +60,11 @@ assert response.status == 404, "Session metadata is exposed without authenticati
 response.read()
 connection.close()
 
-command = ["xpra", "info", f"wss://{host}:{port}/",
-           f"--ssl-ca-certs={state / 'cert.pem'}", "--challenge-handlers=file", "--splash=no"]
+transport = 'wss' if certificate else 'ws'
+command = ["xpra", "info", f"{transport}://{host}:{port}/", "--challenge-handlers=file", "--splash=no"]
+if certificate:
+    command.append(f'--ssl-ca-certs={certificate}')
+    command.append('--ssl-check-hostname=no')
 result = subprocess.run(command + [f"--password-file={state / 'password'}"],
                         capture_output=True, text=True, timeout=20)
 assert result.returncode == 0, result.stderr
@@ -86,8 +95,9 @@ with tempfile.NamedTemporaryFile(mode="w") as wrong_password:
                             capture_output=True, text=True, timeout=20)
     assert result.returncode != 0 and "authentication failed" in result.stderr.lower(), result.stderr
 
-for name in ("password", "key.pem"):
-    assert (state / name).stat().st_mode & 0o077 == 0, f"{name} must be private"
+assert (state / "password").stat().st_mode & 0o077 == 0, "Access password must be private"
+if not certificate:
+    assert not (state / "cert.pem").exists() and not (state / "key.pem").exists(), "HTTP service must not create certificates"
 
 # Receive the same Opus/WebM stream as the HTML5 client and decode a known test tone.
 from xpra.client.base.command import CommandConnectClient
@@ -174,4 +184,4 @@ assert samples, "The received stream could not be decoded"
 amplitude = 2 * abs(sum(value * cmath.exp(-2j * cmath.pi * 440 * i / 48000)
                         for i, value in enumerate(samples))) / len(samples)
 assert amplitude > 100, "The session's 440 Hz test tone was not transmitted"
-print("PASS: HTTPS, authentication, Codex and login-browser windows, and decoded session audio over WSS")
+print(f"PASS: {'HTTPS' if certificate else 'HTTP'}, authentication, Codex and login-browser windows, and decoded session audio over {transport.upper()}")
