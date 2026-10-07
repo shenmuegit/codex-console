@@ -4,9 +4,10 @@
 · [Source investigation](../../codex-source.md)
 · [Verified backend test](../../local-app-server-test.md)
 
-Revised 2026-10-08 for written-spec review. Browser-client implementation has not
-started. This revision replaces the IPC-first design with the verified shared
-app-server route. Spec approval precedes the implementation plan and its review.
+Revised and approved by the user on 2026-10-08. Browser-client implementation has
+not started. This revision replaces the IPC-first design with the verified shared
+app-server route. The [implementation plan](../plans/2026-10-08-native-web-client.md)
+is the next review artifact.
 
 ## Goal and scope
 
@@ -164,10 +165,11 @@ with remote containment confirmed before the next begins.
 | 4 | Models/efforts, context and weekly quota. Next-turn settings take effect; compaction/model changes, nulls and multiple windows are correct. |
 | 5 | `@`/`$`/`/`, mobile/IME, reconnect, native user-service startup and bilingual operator docs. References/commands produce real effects; closing a page does not stop work; processes survive the tool session ending. |
 
-At this revision, the earlier temporary test processes have exited; the source
-binary and test data remain. The host's native user service manager is available
-for durable backend/web startup. A preview identifies its configured backend and
-must not be presented as the original desktop's active tasks.
+The earlier temporary test processes have exited. A later implementation-plan
+preflight found their temporary build/data directories absent; the plan therefore
+reconstructs them from the pinned source and installs a persistent binary. The
+host's native user service manager is available for durable backend/web startup.
+A preview identifies its configured backend and must not be presented as the original desktop's active tasks.
 
 Required checks cover: same-thread desktop/browser updates; double clicks and lost
 write replies; closing/switching pages during work; backend restart, slow SSE and
@@ -193,7 +195,7 @@ Pinned official source: `ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8`, GitNexus rep
 - [Node.js 24 native WebSocket](https://nodejs.org/download/release/v24.12.0/docs/api/globals.html#class-websocket)
   and [browser EventSource standard](https://html.spec.whatwg.org/multipage/server-sent-events.html).
 
-After written-spec approval, write the implementation plan and obtain its review
+Written-spec approval has been received. Obtain the implementation plan's review
 and execution-method selection before product code or dependency installation.
 Native capability checks remain part of implementation, and credentials, usage
 values and real conversation data stay outside Git.
