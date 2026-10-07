@@ -51,7 +51,7 @@
 共享类型：`Cursor = {generation:number, seq:number}`，`RpcResult = {result:JSON, cursor:Cursor}`。
 每个后端帧（包括响应）递增 `seq`；SSE 序号跳跃合法，只有代次变化或显式 resync 事件使视图失效。
 
-`createCodexClient({url})` 提供 `rpc(method,params):Promise<RpcResult>`、`retainThread(threadId,viewId):Promise<RpcResult>`、`releaseThread(threadId,viewId):Promise<void>`、`respond(requestKey,answer):Promise<void>`、`onEvent(fn):unsubscribe`、`status()`、`close()`。
+`createCodexClient({url})` 提供 `rpc(method,params):Promise<RpcResult>`、`retainThread(threadId,viewId):Promise<RpcResult>`、`releaseThread(threadId,viewId):Promise<void>`、`respond(requestKey,answer):Promise<void>`、`onEvent(fn):unsubscribe`、`status():{online:boolean,generation:number,endpoint:string}`、`close():void`。工厂同步返回客户端，探针等待在线状态事件；HTTPS 服务可立即启动并显示离线状态。
 `requestKey` 包含连接代次与原生请求 ID；已发送的写入断线后以 `outcome:"unknown"` 拒绝，未发送为 `outcome:"not-sent"`。
 
 `createWebServer({config,codex}):https.Server` 使用上述客户端。服务器配置字段为 `origin`、`listenHost`、`port`、`backendUrl`、`tlsCert`、`tlsKey`、`passwordHash`、`stateDir`、`generatedRoots`、`uploadLimitBytes`；同一私有文件保存安装字段 `repoDir`、`nodePath`、`backendExecutable`、`backendHome`、`workspace`、`environmentFile`。启动验证，后端只接受回环 WS。
@@ -79,8 +79,8 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 
 ## 任务 1：具备顺序订阅和重连的原生客户端
 
-**文件：** 新建 `web/package.json`、`web/codex.mjs`、`web/test/helpers.mjs`、`web/test/codex.test.mjs` 及两份使用文档。
-**接口：** 提供上文 `createCodexClient`、`RpcResult`。测试辅助 `connectedFixture()` 返回 `{client,peer,flush}`，peer 支持 `replyTo(method,result)`、`notify(method,params)`、`request(id,method,params)`、`disconnect()` 和已发送 JSON 数组，以 EventTarget 模拟原生 API，不模拟帧协议。
+**文件：** 新建 `web/package.json`、`web/codex.mjs`、`web/test/helpers.mjs`、`web/test/codex.test.mjs`、`web/test/native-probe.mjs` 及两份使用文档。
+**接口：** 提供上文 `createCodexClient`、`RpcResult`。测试辅助 `connectedFixture()` 返回 `{client,peer,flush}`，peer 支持 `replyTo(method,result)`、`notify(method,params)`、`request(id,method,params)`、`disconnect()` 和已发送 JSON 数组，以 EventTarget 模拟原生 API，不模拟帧协议。显式运行 `native-probe.mjs --url URL --workspace PATH [--exercise-files]`，最多等 10 秒在线、输出安全读取计数，失败退出非零；文件选项只建/删临时原生线程，核对私有文件字节，轮次最多 180 秒；不纳入自动测试 glob。
 
 - [ ] **1. 写失败测试：** 乱序响应、通知/服务端请求区分、原生错误/超时、重连不重放、代次应答。断言示例：
   ```js
@@ -94,7 +94,7 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
   增加 `resume_checkpoint_orders_snapshot_and_deltas`、`active_thread_survives_last_view_close`、`idle_thread_unsubscribes`、`stale_answer_after_reconnect_is_rejected`，检查准确的原生发送序列。
 - [ ] **2. 确认 RED：** `node --test web/test/codex.test.mjs`，初始因缺少模块/导出失败。
 - [ ] **3. 最小实现：** 一个持久连接，`initialize`/`initialized`、`experimentalApi:true`，不声明 attestation。RPC 30 秒、连接/初始化 10 秒，0.5–10 秒带抖动退避。同步给每个响应记录帧游标；resume 快照事件在唤醒 RPC 等待者或处理后续帧之前同步发布，异步渲染/文件补充不能覆盖较新的原生文本；每次 retain 获取原生原子快照，零查看者且无活动任务时才 unsubscribe；保留原生错误，不重放写入。
-- [ ] **4. 确认 GREEN 与真实读取：** 跑测试；检查固定源码与产物，缺失时用 Rust 1.95.0 和文档中的 locked dev-small 配方重建，验证后安装到 Git 外的 `~/.local/lib/codex-console-web/bin/codex-app-server`；建立 `~/.local/state/codex-console-web/integration/{codex-home,desktop-profile,workspace}`，仅私有复制已有登录快照（0600），不复制聊天/账号数据库；用命名临时用户服务 `codex-console-native-backend-test`、`codex-console-native-desktop-test` 和现有产物/数据/配置、回环端口恢复独立后端与额外桌面；GUI/代理/TLS 环境仅明确按变量名传递，秘密不进命令参数或跟踪文件。只读探针确认握手及模型/项目/会话读取，再在私有工作目录验证一次原生文件工具写入/读取；两份文档记录安全结果，不记录账号值或日志。
+- [ ] **4. 确认 GREEN 与真实读取：** 跑测试；检查固定源码与产物，缺失时用 Rust 1.95.0 和文档中的 locked dev-small 配方重建，验证后安装到 Git 外的 `~/.local/lib/codex-console-web/bin/codex-app-server`；建立 `~/.local/state/codex-console-web/integration/{codex-home,desktop-profile,workspace}`，仅私有复制已有登录快照（0600），不复制聊天/账号数据库；用命名临时用户服务 `codex-console-native-backend-test`、`codex-console-native-desktop-test` 和现有产物/数据/配置、回环端口恢复独立后端与额外桌面；GUI/代理/TLS 环境仅明确按变量名传递，秘密不进命令参数或跟踪文件。执行 `node web/test/native-probe.mjs --url ws://127.0.0.1:4500 --workspace "$HOME/.local/state/codex-console-web/integration/workspace" --exercise-files`，预期退出 0、读取握手计数及匹配私有文件字节，再删除探针线程；两份文档记录安全结果，不记录账号值或日志。
 - [ ] **5. 提交推送：** `feat: connect the web client to the shared native app server`，仅暂存本任务文件和双语说明，立即推送当前分支并确认远端包含后进入任务 2。
 
 ## 任务 2：HTTPS 登录与有界事件推送
