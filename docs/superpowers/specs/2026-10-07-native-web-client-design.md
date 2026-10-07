@@ -2,199 +2,198 @@
 
 [中文](../../zh-CN/superpowers/specs/2026-10-07-native-web-client-design.md)
 · [Source investigation](../../codex-source.md)
+· [Verified backend test](../../local-app-server-test.md)
 
-Status: proposed design; browser-client implementation has not started.
-On 2026-10-08, the [local source backend and extra desktop test](../../local-app-server-test.md)
-validated the shared app-server connection. Prefer that route for the next design
-revision; the IPC-first architecture below is superseded by this connection result.
-The complete feature contracts still need validation.
+Revised 2026-10-08 for written-spec review. Browser-client implementation has not
+started. This revision replaces the IPC-first design with the verified shared
+app-server route. Spec approval precedes the implementation plan and its review.
 
 ## Goal and scope
 
-Use the existing Codex desktop account, projects, conversations, and running tasks
-from a native browser interface at `https://HOST_IP:PORT`. One authenticated owner,
-one host, one gateway process running as the desktop's OS user. Conversation state
-and model execution remain owned by the desktop and its existing backend.
+Open `https://HOST_IP:PORT` from a browser and manage Codex projects, conversations
+and work. One owner, one host, one small web service running as the backend's OS
+user. Desktop and browser connect to the same configured native app-server; that
+backend owns the account, projects, conversations and model execution.
 
-The full first release includes every capability in the table below. Delivery
-phases sequence that scope; later phases are not optional feature deferrals.
+Development and acceptance use the isolated source-built backend and extra
+desktop. The original desktop keeps its current backend. Moving it to a shared
+instance requires a separate operation after its active work finishes; no hot
+transfer of running tasks or direct private-SQLite edits are implied.
 
-Two planning assumptions await clarification:
+The first complete release includes every feature below. Phases order delivery;
+they do not drop later features. Defaults retained from the requirements:
 
-- Seven-day usage means account weekly quota consumption and reset time. Token
-  activity and monetary costs are different metrics.
-- Editing a workspace means its display name and directory binding. Archiving
-  preserves its directory and conversations. A code editor or physical repository
-  move is additional scope.
+- Seven-day usage means account weekly quota percentages and reset time, not
+  recent token activity or monetary costs.
+- Editing a project means its name and directory binding. Rebinding does not move
+  disk files; existing threads retain their actual `cwd`.
 
 ## Feature contracts
 
-| Capability | Required behavior |
+| Capability | First-release behavior |
 | --- | --- |
-| Workspace management | List desktop workspaces; register an existing host directory or create one; edit name/binding; archive and restore. The picker browses host directories, not the phone's filesystem. |
-| Workspace history | Rebinding a workspace never moves files or rewrites existing threads' `cwd`. Existing threads retain their actual paths; new threads use the new binding. Archiving hides the workspace without stopping tasks or deleting files. |
-| Conversation management | List by workspace; create, open, and delete conversations; show native running/idle/failed states. Use real native thread IDs and provide a copy action. |
-| Read conversations | Paginate history; display user/assistant messages, visible tool activity, files, and live updates. Preserve scroll position when loading older messages. |
-| Send and stop | Send to the selected native thread. Delegate running-turn steering/queuing to the desktop and display the result. Stop through the native interruption action; do not kill the desktop process. |
-| Delete conversations | Use native deletion, not hidden archiving or direct database edits. Confirm once; if running, wait for interruption before deleting. Keep project files and completed uploads. Both clients must reflect deletion. |
-| Files and photos | Native file/photo pickers, multiple selections, preview/removal, and a serial upload queue. Default cap: 32 MiB per file, configurable. Upload completes before its attachment is sent. |
-| File downloads | Resolve file references shown in a conversation into authenticated download actions. Preserve original filenames and bytes. Resolve against the thread's actual workspace, including after a project binding changes. |
-| Models and reasoning | Populate choices from native capabilities. Offer only that model's supported reasoning efforts. Changes apply to the next sent turn and retain the draft; display the effective model when the backend reroutes. |
-| Default authorization | New threads and subsequent sends default to full filesystem/network access and no execution-approval prompts, subject to native managed restrictions. Show effective settings. |
-| Context usage | Show the latest active-context tokens, model window when available, and the native used/remaining percentage. Update after compaction and model changes. Missing data is unavailable, never a fabricated zero. |
-| Seven-day usage | Display account weekly used/remaining percentages and reset time, separated by quota bucket. It is account-wide, not a project total. |
-| `@` | Search/select files, directories, conversations, and available applications/plugins. Preserve exact native reference descriptors and permissions. |
-| `$` | List skills for the current workspace and send the selected native skill name/path with its visible invocation. |
-| `/` | Display the installed desktop's supported command catalog. Route each entry as a native action, UI action, or prompt command; do not invent a `commands/list` RPC. |
+| Projects and directories | List native projects; register an existing host directory or create one; edit name/roots; archive/restore in the web list. The directory picker browses the host, not the phone filesystem. |
+| Project archive | Preserve files, threads and running work. The pinned native schema has no project archive field: store archived native project IDs in the existing private web-preferences file. Desktop may still display the project; do not claim native desktop archive synchronization. |
+| Conversations | List by project; create/open/delete; show actual native state and copy the real thread ID. A running thread must finish interruption before confirmed deletion. Deleting a thread preserves project files and completed uploads. |
+| Chat history | Paginate history, preserve scroll position, show user/assistant messages, tools and files, and stream native changes. |
+| Send and stop | Send to the selected native thread. Native steer/queue operations govern input during active work. Stop through native interruption. Retain drafts on failure. |
+| Files and photos | Native multiple-file/photo picker, preview/removal and serial upload progress. Default per-file limit 32 MiB, configurable; honor lower native/model limits. Finish uploads before sending attachments. |
+| Downloads | Authenticated links for actual transcript file references; preserve names and bytes. Resolve using the thread's actual directory, including after project rebinding. |
+| Models and reasoning | Native model list and supported efforts; selection applies to the next turn and preserves the draft. Show effective model/settings and native rejection. |
+| Maximum authorization by default | New threads and subsequent sends default to full filesystem/network access and no execution approvals, subject to native managed restrictions. Reading a thread does not change active-turn permissions. |
+| Context usage | Latest active-context tokens, available model window and native used/remaining calculation. Recompute after compaction/model changes. Missing values are unavailable, not zero. |
+| Seven-day usage | Account-wide weekly used/remaining percentages and reset time, separated by quota bucket. |
+| `@` | Select files, directories, conversations and available apps/plugins, preserving their distinct native context/reference representations. A reference does not authorize messaging another conversation. |
+| `$` | List workspace skills and send the selected native skill name/path plus its visible invocation. |
+| `/` | Implement `/new`, `/model`, `/permissions`, `/status`, `/usage`, `/skills`, `/compact`, `/rename`, `/archive`, `/delete`, `/fork`, `/export` through native/UI actions. Do not advertise terminal-only commands or invent `commands/list`. |
 
-## Minimal architecture
+## Selected architecture
 
-The browser talks to the authenticated HTTP/WebSocket gateway. A single desktop
-adapter connects that gateway to the selected desktop instance's existing IPC
-and native actions. The adapter translates protocol details; it does not own a
-second chat database or start an independent Codex engine.
+A small Node.js 24 service hosts fixed UI assets and authenticates the owner.
+Browser actions use native `fetch`; streamed events use `EventSource` (SSE). Node's
+native WebSocket client forwards native JSON-RPC to app-server. This avoids a
+WebSocket-server dependency and preserves app-server's browser-Origin rejection.
+The only runtime package is `markdown-it` for safe Markdown rendering.
 
-- Desktop is authoritative for conversations, running turns, account state,
-  native project registrations, model capabilities, and usage.
-- Browser-only aliases, project archive overlays where needed, and preferences
-  fit in one small JSON file outside the repository. If project mutations are
-  unavailable through a supported desktop interface, add that bridge capability
-  explicitly; do not silently create an unrelated project registry.
-- Only active conversation snapshots and pending request correlations are cached
-  in memory. Reconnect obtains authoritative state before applying live changes.
-- The adapter is for one verified desktop protocol/build. Record capabilities
-  and reject unsupported operations visibly; no generic provider/plugin framework.
+The alternative is hosting the web entry inside Rust app-server. It reduces the
+process count but requires source patches and rebuilds; the separate small web
+service is the selected proposal for this first client.
 
-Proposed implementation boundary, after the connection gate passes:
+```mermaid
+flowchart LR
+  B[Browser] -->|HTTPS actions| W[Small Node web service]
+  W -->|SSE events| B
+  W <-->|Native WebSocket RPC| C[Shared Codex app-server]
+  D[Desktop] <-->|Native WebSocket RPC| C
+```
+
+- Keep one upstream connection for the single owner; correlate HTTP calls with
+  unique native request IDs. Broadcast native notifications/server requests only
+  to authenticated owner event streams; pages filter by native thread ID.
+- Track page subscriptions by thread. Closing a page does not close the upstream
+  connection or interrupt work. Keep active threads subscribed until completion;
+  unsubscribe idle, unviewed threads with `thread/unsubscribe`.
+- Reconnect with `initialize`/`initialized`, resubscribe and load authoritative
+  snapshots before applying deltas. A slow SSE reader is disconnected for resync
+  instead of accumulating an unbounded buffer.
+- Use native `project/list`, `project/create`, `project/update` and thread project
+  membership as the registry. Host picking/creation uses `fs/readDirectory`,
+  `fs/getMetadata`, `fs/createDirectory`. Preserve unrelated project metadata.
+- Store only web preferences and upload metadata outside the repository. There
+  is no second chat/project database, desktop IPC adapter or provider framework.
+- The backend URL is server configuration, not browser input. Initial integration
+  uses same-host loopback `ws://127.0.0.1:4500`; no remote-backend selector is needed.
 
 | Files | Responsibility |
 | --- | --- |
-| `web/package.json`, lockfile | Node.js 24; [ws](https://github.com/websockets/ws) for WebSocket serving and [markdown-it](https://github.com/markdown-it/markdown-it) for safe Markdown. |
-| `web/server.mjs` | HTTP/HTTPS, owner login, API allowlist, WebSocket sessions, project actions, preferences. |
-| `web/desktop.mjs` | IPC framing, permitted handshake, request correlation, native action mapping, capabilities, snapshots/events. |
-| `web/files.mjs` | Streaming uploads, native attachment descriptors, validated file-reference downloads. |
-| `web/public/index.html`, `app.js`, `styles.css` | Responsive project list, conversation list, transcript, model/usage controls and status. |
-| `web/public/composer.js` | Drafts, attachments, `@`, `$`, `/` menus, native input descriptors and IME handling. |
-| `web/test/*.test.mjs` | Built-in `node:test`; synthetic protocol fixtures and HTTP/WS/file/composer checks. |
+| `web/package.json`, lockfile | Node.js 24; `markdown-it` only; no frontend build tool. |
+| `web/server.mjs` | HTTPS, fixed assets, API allowlist, SSE, project operations/preferences. |
+| `web/auth.mjs` | Password verification, owner cookies, Origin checks and login throttling. |
+| `web/codex.mjs` | Native WebSocket handshake, request correlation, subscriptions/reconnect, server-request responses. |
+| `web/files.mjs` | Streaming uploads, native attachment encoding and validated file-reference downloads. |
+| `web/public/index.html`, `app.js`, `styles.css` | Project/thread/chat views, model/usage/status controls; flat, native-Codex-like presentation. |
+| `web/public/composer.js` | Drafts, attachments, `@`/`$`/`/`, native input ranges and IME. |
+| `web/test/*.test.mjs` | Built-in `node:test`; protocol fixtures and HTTPS/SSE/file/composer checks. |
 
-Serve static assets from the gateway, including only the fixed Markdown asset.
-Use browser-native file pickers and clipboard APIs. No frontend build step is
-required. Desktop/mobile navigation is project → conversation → chat; desktop
-can show three columns, while mobile shows one level at a time.
+Desktop may show three columns; mobile shows project → thread → chat one level at
+a time. Use system fonts, native dialogs/pickers and clipboard APIs, visible focus
+and labeled controls. Show only implemented actions during phased development.
 
-## Authorization and data handling
+## Authorization, files and state
 
-The normalized web permission preset is `full`. The adapter maps it to native
-`sandbox: "danger-full-access"` and `approvalPolicy: "never"` for thread creation;
-turn requests use the native `sandboxPolicy` representation. Named `permissions`
-profiles and sandbox fields are mutually exclusive. Reading a thread does not
-escalate an already-running turn. A policy refusal is shown rather than bypassed.
+Map `full` to `sandbox: "danger-full-access"`, `approvalPolicy: "never"` on thread
+creation, and the native `sandboxPolicy` on turns. Named `permissions` and sandbox
+fields are mutually exclusive. Honor managed restrictions and display effective
+values. Native user-input, approval and identity requests remain visible; accept
+one response per pending native request, reflecting resolution in other windows.
 
-Full execution authorization does not remove web login, OS ownership checks, or
-native identity/tool verification. Native requests for user input and approvals
-still need a visible response path with a single designated responder.
+Use HTTPS, `HttpOnly`, `Secure`, `SameSite=Strict` cookies and configured-Origin
+checks on every mutation, including login. Verify passwords with Node crypto and
+throttle failed logins. Only UI-required RPCs are allowed; account tokens, global
+configuration writes and arbitrary process execution are not raw browser RPCs.
+Backend/model tool execution remains governed by native policy.
 
-Configuration, TLS keys, login credentials and state live outside the repository:
-`~/.config/codex-console-web/` and `~/.local/state/codex-console-web/`, respecting
-XDG overrides. Initial deployment assumes an already-running, signed-in desktop.
-Use HTTPS/WSS for the host-IP entry, authenticated cookies, origin validation,
-and an explicit API allowlist. Do not expose arbitrary IPC methods.
+Config, TLS keys and login credentials live in `~/.config/codex-console-web/`;
+preferences/uploads live in `~/.local/state/codex-console-web/`, with XDG overrides.
+Keep private directories/files owner-only. Do not silently start another backend
+or copy its account database. Deployment explicitly supplies the shared backend.
 
-Uploads use a metadata request followed by a raw binary body, avoiding a custom
-multipart parser. Count streamed bytes, clean incomplete files after failure,
-and retain completed attachments for later native reads. Downloads use issued
-file-reference IDs bound to the native host/thread and validated real paths;
-there is no arbitrary-path or arbitrary-URL fetch endpoint. Render Markdown with
-raw HTML disabled and validate links; executable uploads are downloads, not pages.
-Ordinary files must use the desktop's file-context/attachment representation;
-photos use its image-input path. Do not invent a generic binary `UserInput` type.
-Honor a lower native/model limit and retain the draft if an attachment is rejected.
+Upload metadata first, then a raw binary body: no custom multipart parser.
+Count streamed bytes; clean partial files after interruption/failure and retain
+completed attachments. Ordinary files use the verified native file/context
+representation; photos use native image input. Verify these encodings against
+source and the backend rather than inventing a binary `UserInput` variant.
 
-## Input, settings and usage rules
+Issue opaque download references bound to host/thread and actual file targets.
+Allow the thread's actual `cwd` and explicit upload/generated-file roots; reject
+path escapes, directories, arbitrary URL fetching and symlink races. Check the
+opened file as well as the original reference. Preserve Unicode filenames and
+bytes. Render Markdown with raw HTML disabled and validated links; uploaded active
+content is downloaded rather than executed as a page.
 
-- A selected `@` target remains a structured native reference. Application/plugin
-  mentions, file context and conversation references have different native
-  representations. Referencing a conversation grants no implicit right to send
-  messages to it.
-- A selected `$` skill includes a `skill` input item. Unknown dollar expressions,
-  emails, paths, and text inside code remain literal. `/` completion is limited
-  to the appropriate command position and the actual supported command catalog.
-- Rich input spans use native UTF-8 byte offsets. JavaScript UTF-16 caret offsets
-  must be converted correctly, including Chinese and emoji. IME confirmation
-  never triggers send or a menu choice; Enter sends, Shift+Enter inserts a newline.
-- Use a stable client message/request ID for correlation. Native support for
-  `clientUserMessageId` is not proof of idempotency. Never automatically replay an
-  uncertain send/create/delete after disconnect; reconcile with native state and
-  preserve the draft/pending status.
-- Prefer the desktop's computed context status. Public protocol reference data
-  distinguishes `last.totalTokens` (latest active context) from accumulated
-  `total.totalTokens`; native percentage calculation also accounts for its fixed
-  baseline. Do not estimate context using accumulated conversation tokens.
-- For weekly quota, prefer `rateLimitsByLimitId`; use the legacy snapshot only
-  when needed. A seven-day window is `windowDurationMins == 10080`. Do not assume
-  `secondary` always means weekly or add percentages across buckets. Clear cached
-  account data on account changes. Null values are unavailable.
-- Model and effort selections come from the native list and remain subject to
-  account policy. A catalog entry is not an entitlement guarantee. Surface native
-  rejection and retain the draft; do not silently select another model.
+## Input, consistency and usage
 
-## Delivery sequence and acceptance gates
+- App/plugin mentions, file context and thread references have different native
+  encodings. `$` includes a native `skill` item. Unknown dollar text, email, paths
+  and code remain literal; `/` completion applies only at a command position.
+- Convert JavaScript UTF-16 caret positions to native UTF-8 byte ranges, including
+  Chinese and emoji. IME confirmation never sends/selects; Enter sends and
+  Shift+Enter inserts a newline.
+- `clientUserMessageId` provides correlation, not a proven idempotency guarantee.
+  Disable duplicate submits; never replay uncertain send/create/delete calls on
+  reconnect. Reconcile native state and retain the draft/pending outcome.
+- Use `last.totalTokens` for latest active context, not accumulated
+  `total.totalTokens`. Match native baseline-aware percentage calculation.
+- Prefer `rateLimitsByLimitId`; a weekly window has `windowDurationMins == 10080`.
+  Do not assume `secondary` is weekly or add bucket percentages. Null is unknown;
+  native account changes clear old account/usage caches.
+- A model catalog entry is not an entitlement guarantee. Preserve the draft and
+  surface native rejection; do not silently substitute a different model.
 
-Every independently completed implementation problem must be verified, committed
-and pushed before the next begins, as required by this repository's AGENTS.md.
+## Delivery and verification
 
-| Phase | Deliverable | Acceptance gate |
-| --- | --- | --- |
-| 0 — Prove desktop access | Record IPC handshake/schema, instance identity and operation capabilities; a disposable bridge probe only. | Read a real existing desktop thread and receive matching live changes without creating another engine. Demonstrate create/send/stop/delete only on a disposable test thread. Determine the supported workspace, attachment, settings, usage and reference paths. |
-| 1 — Usable core | Authenticated gateway, responsive navigation, project create/edit/archive/restore, conversation management, history/live chat, send/stop, copy ID, effective full permissions and native pending-input handling. | Desktop and browser refer to the same native thread; lifecycle changes are visible in both. Archiving retains files and threads; rebinding retains old thread paths. |
-| 2 — Files | File/photo picker, progress/preview, native attachment delivery, transcript file downloads. | A Unicode-named document and photo reach the native thread; a generated local target downloads byte-for-byte with its original name. A failed upload leaves the draft and existing data intact. |
-| 3 — Model and usage | Native model/effort controls, context meter, weekly quota and reset display. | Only supported efforts appear; next-turn settings are effective; compaction/model changes update context correctly; multiple/null quota windows are handled honestly. |
-| 4 — Composer and release | `@`, `$`, `/` native references/commands, mobile/IME completion, reconnect recovery, packaging and bilingual operator documentation. | Selected references reach Codex with native identities; native commands have their real effects; a disconnect never duplicates a user message; desktop/mobile workflows pass. |
+Per AGENTS.md, each independent deliverable is verified, committed and pushed,
+with remote containment confirmed before the next begins.
 
-If phase 0 cannot expose an authorized write/subscribe path, stop the client build
-at that gate and propose a desktop-side bridge change. A shared app-server is an
-alternative only if the desktop itself can be made to use that same instance and
-desktop-level behavior is verified. It must not masquerade as the existing desktop
-while operating an independent backend or modifying private SQLite directly.
-
-## Required verification
-
-| Condition | Expected result |
+| Phase | Deliverable and acceptance |
 | --- | --- |
-| Desktop creates/messages a thread while the web view is open | Native IDs, message order and live state match; reconnect reloads on revision gaps. |
-| Double click or disconnect after a write was accepted | Correlate/reconcile; no automatic duplicate turn or empty thread. |
-| Delete a running thread | Interrupt first; refusal/timeout preserves history and project files. |
-| Rebind/archive a project with existing threads | Old `cwd` and artifact references stay valid; archive preserves disk data and running tasks. |
-| Chinese, emoji, IME, pasted code and email addresses | UTF-8 spans remain correct; no accidental send, skill expansion or command execution. |
-| Oversized, interrupted, unreadable or disk-full upload; forged download target | Clear failure, partial-file cleanup, no cross-thread leak or arbitrary host-file fetch. |
-| Model disappears, reasoning choice is unsupported, quota/context fields are null | Preserve the draft and report native status; never fabricate settings or zero usage. |
-| Native permission restriction or pending verification | Show effective policy and the real pending action; never forge acceptance. |
-| Unauthenticated/cross-origin request, unsafe Markdown link/HTML | Reject at the gateway or render safely; no IPC or credential exposure. |
+| 0 | Restore the isolated shared backend/extra desktop using the existing binary. Map native inputs, server requests, stop/delete and subscriptions with disposable fixtures. Connection and real generation have already been proven. |
+| 1 | HTTPS/login, backend/SSE, responsive project/thread lists, history, new thread, send/stop, copy ID, effective full authorization and native pending-input handling. Browser and desktop display the same thread and real streamed reply. |
+| 2 | Host directory picker, create/edit project, web archive/restore and native conversation deletion. Rebinding preserves old thread paths; archiving retains files/tasks; active deletion waits for interruption. |
+| 3 | Upload/photo/preview/download. A Unicode document and photo reach the native thread; a generated file downloads byte-for-byte. Failure retains drafts/completed data and removes partial uploads. |
+| 4 | Models/efforts, context and weekly quota. Next-turn settings take effect; compaction/model changes, nulls and multiple windows are correct. |
+| 5 | `@`/`$`/`/`, mobile/IME, reconnect, native user-service startup and bilingual operator docs. References/commands produce real effects; closing a page does not stop work; processes survive the tool session ending. |
 
-Run `node --test web/test/*.test.mjs` once the implementation exists, then exercise
-a real desktop with disposable fixtures and a real mobile browser for IME,
-clipboard, photo upload, download and keyboard layout. Planning itself changes
-documentation only and requires diff/link/coverage checks, not runtime tests.
+At this revision, the earlier temporary test processes have exited; the source
+binary and test data remain. The host's native user service manager is available
+for durable backend/web startup. A preview identifies its configured backend and
+must not be presented as the original desktop's active tasks.
 
-## Evidence and remaining uncertainty
+Required checks cover: same-thread desktop/browser updates; double clicks and lost
+write replies; closing/switching pages during work; backend restart, slow SSE and
+login expiry; running-thread deletion; project rebind/archive; Unicode/IME and
+literal code/email; upload limits/interruption/disk-full; forged/escaped/raced
+file downloads; null/model/effort/quota changes; native restrictions and pending
+inputs; unauthenticated/cross-origin requests and Markdown XSS.
 
-Reference source: official Codex checkout `ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8`;
-GitNexus repository `codex`. Installed desktop inspected: `26.928.21956`.
+Use `node --test web/test/*.test.mjs` once code exists, then test against the real
+isolated desktop/backend and a mobile browser. Spec-only changes require
+coverage, consistency, link and diff checks; no client runtime is claimed here.
 
-| Evidence | What it establishes |
-| --- | --- |
-| [Thread/turn protocol](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/common.rs) | Native thread deletion, model/skill/app lists, usage requests and events exist. Their presence does not prove they are callable through desktop IPC. |
-| [Turn inputs/settings](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L167) | Message ID correlation, model/effort and authorization overrides; typed local-image/skill/mention inputs. |
-| [UTF-8 input spans](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/protocol/src/user_input.rs#L16) | Rich input ranges are UTF-8 byte ranges. General files are not a generic binary `UserInput` variant. |
-| [Context accounting](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/tui/src/chatwidget.rs#L1122) and [quota windows](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/v2/account.rs#L752) | Latest context versus accumulated usage; nullable quota durations/reset times. |
-| Desktop distribution code | Local IPC, `thread-stream-state-changed` snapshots/patches and workspace-root actions exist in installed code. Runtime handshake, RPC reachability and permissions remain unverified. |
-| [Official App Server documentation](https://learn.chatgpt.com/docs/app-server) | Published conversation, skill, account-usage and rate-limit protocol guidance. |
+## Evidence and review handoff
 
-Inspected desktop bundle fingerprints:
+Pinned official source: `ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8`, GitNexus repository
+`codex` with a matching index. Desktop tested: `26.928.21956`.
 
-- `.vite/build/bootstrap-B7ariqxX.js`: `ad9f3da3d96e6713c89b800d1e0c369f8fad1cc20af8233cf7bd906550a2a5fd`.
-- `.vite/build/main-BbeJ4AAR.js`: `1ff5a43bde26ea6c1b77dbcf782625c890e35a836d489163c19d5ba9942d68b4`.
+- [Runtime proof](../../local-app-server-test.md): native desktop WebSocket selection,
+  reads, same-thread live updates and one real generated reply.
+- [Native RPC catalog](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/common.rs),
+  [project schema](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/v2/project.rs),
+  [turn inputs/settings](https://github.com/openai/codex/blob/ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8/codex-rs/app-server-protocol/src/protocol/v2/turn.rs).
+- [Node.js 24 native WebSocket](https://nodejs.org/download/release/v24.12.0/docs/api/globals.html#class-websocket)
+  and [browser EventSource standard](https://html.spec.whatwg.org/multipage/server-sent-events.html).
 
-Open decisions are limited to the two user-facing assumptions above and the
-phase-0 desktop contract. Live quota values, account credentials and real chat
-contents are not collected or stored in this design.
+After written-spec approval, write the implementation plan and obtain its review
+and execution-method selection before product code or dependency installation.
+Native capability checks remain part of implementation, and credentials, usage
+values and real conversation data stay outside Git.
