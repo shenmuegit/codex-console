@@ -3,8 +3,11 @@
 [中文](../../zh-CN/superpowers/specs/2026-10-07-native-web-client-design.md)
 · [Source investigation](../../codex-source.md)
 
-Status: proposed design; no client implementation has started. The user requested
-planning. Desktop IPC access is a required validation step, not a proven connection.
+Status: proposed design; browser-client implementation has not started.
+On 2026-10-08, the [local source backend and extra desktop test](../../local-app-server-test.md)
+validated the shared app-server connection. Prefer that route for the next design
+revision; the IPC-first architecture below is superseded by this connection result.
+The complete feature contracts still need validation.
 
 ## Goal and scope
 
