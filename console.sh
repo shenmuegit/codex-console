@@ -95,6 +95,10 @@ client_js = client_js.replace('if(packet=packet[1]){', 'if((packet=packet[1]).le
 client_js = client_js.replace('SHOW_START_MENU=!0', 'SHOW_START_MENU=!1')
 # Reconnection must keep the page's password dialog for file authentication.
 client_js = client_js.replace('this.password_prompt_fn=null', 'this.password_prompt_fn??=null')
+# Xpra resets these preferences/catalogues during reconnect without rerunning init_audio.
+for field in ('audio_enabled', 'audio_mediasource_enabled', 'audio_aurora_enabled',
+              'audio_codecs', 'audio_codec', 'audio_framework', 'mediasource_codecs', 'aurora_codecs'):
+    client_js = client_js.replace(f'this.{field}=', f'this.{field}??=', 1)
 (web / 'Client.js').write_text(client_js)
 version = hashlib.sha256(mobile.read_bytes() + mobile.with_name('network.js').read_bytes() + mobile.with_name('console.css').read_bytes() + client_js.encode()).hexdigest()[:12]
 html = (assets / 'index.html').read_text()

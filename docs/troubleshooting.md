@@ -125,3 +125,9 @@ For a live check, use `./scripts/check.sh --live` when the session can tolerate 
 ## Reporting a problem
 
 Include OS/architecture, Xpra and HTML5 package versions, browser/device versions, installation command, reproduction steps, and relevant errors. Remove access passwords, private keys, account details, window titles, project paths, and screenshots containing private work before sharing. Use [GitHub Issues](https://github.com/shenmuegit/codex-console/issues) for ordinary bugs; follow [Security](../SECURITY.md) for sensitive reports.
+
+## No sound after reconnecting
+
+Xpra HTML5 19 resets its audio switch, selected codec, and decoder catalogue during automatic reconnection. The resulting handshake advertises no audio decoders, so the server cannot forward sound even while Codex is playing to `Xpra-Speaker`. The launcher preserves those browser preferences and codec catalogues across reconnects.
+
+After updating, refresh the browser page once to load the repaired client. If the browser blocks automatic playback, click the speaker control. Run `node test_audio.cjs` to check repeated reconnection against the installed Xpra client without starting another desktop app.

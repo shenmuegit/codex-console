@@ -122,3 +122,9 @@ CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
 ## 反馈问题
 
 提供系统与架构、Xpra 与 HTML5 包版本、浏览器和设备版本、安装命令、复现步骤及相关错误。公开之前删除访问密码、私钥、账号、窗口标题、私人项目路径与包含私人内容的截图。普通问题提交到 [GitHub Issues](https://github.com/shenmuegit/codex-console/issues)，敏感漏洞按[安全说明](../../SECURITY.md)处理。
+
+## 重连后没有声音
+
+Xpra HTML5 19 自动重连时会重置音频开关、所选编码器和解码器列表。新连接因此不声明音频解码器，即使 Codex 正在向 `Xpra-Speaker` 播放，服务器也无法转发声音。启动脚本现已在重连时保留这些浏览器偏好和编码器列表。
+
+更新后刷新一次网页以加载修复。如果浏览器阻止自动播放，请点击扬声器按钮。执行 `node test_audio.cjs` 可使用已安装的 Xpra 客户端验证连续重连，不会启动额外的桌面客户端。
