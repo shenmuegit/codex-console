@@ -22,6 +22,8 @@ conversation is selected. Switching conversations does not change its scope.
 The attachment plus opens the existing file/photo pickers. There are no project
 or directory mutation controls, logout control or manual conversation refresh.
 Native row menus require a current browser with Popover API support.
+Archive always asks for confirmation that any running work will stop, including
+when the conversation list has not yet received its latest status.
 
 ## Install and operate
 
@@ -126,7 +128,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-90 Node checks passed; the production dependency audit reported zero vulnerabilities.
+91 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's review found six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation

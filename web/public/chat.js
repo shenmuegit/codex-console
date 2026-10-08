@@ -454,8 +454,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     layout.dataset.sidebarCollapsed = 'false'; layout.dataset.level = 'threads'; draw(); $('#new-thread').focus();
   }
   async function archiveConversation(item) {
-    if (busyThreads.has(item.id)) return false;
-    if (item.status?.type === 'active' && !window.confirm('归档会停止此会话正在运行的工作，继续？')) return false;
+    if (busyThreads.has(item.id) || !window.confirm('归档此会话？正在运行的工作会先停止。')) return false;
     busyThreads.add(item.id);
     try { await api('/api/thread/archive', { viewId, threadId: item.id, confirmed: true });
       const state = states.get(item.id); if (state) { state.archived = true; state.ready = false; }

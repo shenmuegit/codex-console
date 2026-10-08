@@ -63,3 +63,14 @@ test('archiving a running row can be cancelled before any native interruption', 
   window.confirm = () => true; f.menu(other); f.dom.get('thread-menu-archive').click(); await delay(0);
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body.threadId, other);
 });
+
+test('archive confirmation does not trust a stale idle list row', async t => {
+  const f = await fixture(t); let confirmations = 0;
+  f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 2 }, native: { method: 'turn/started', params: { threadId: 'current', turn: { id: 'running', status: 'inProgress', items: [] } } } });
+  assert.equal(f.chat.getState().turns.at(-1).status, 'inProgress');
+  window.confirm = () => { confirmations++; return false; };
+  f.menu('current'); f.dom.get('thread-menu-archive').click(); await delay(0);
+  assert.equal(confirmations, 1); assert.deepEqual(f.calls, []); assert.equal(f.chat.getState().ready, true);
+  f.menu(other); f.dom.get('thread-menu-archive').click(); await delay(0);
+  assert.equal(confirmations, 2); assert.deepEqual(f.calls, []);
+});
