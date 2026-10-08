@@ -41,6 +41,9 @@ initialization writes anything, then checked again when configuration is loaded.
 A symlinked directory cannot redirect credentials or application data into the checkout.
 An existing project workspace keeps its permissions; only newly created workspaces
 and private application storage receive owner-only permissions.
+Initialization checks the native executables before creating credentials. A later
+failure removes files created by that attempt, preserves pre-existing material,
+and allows the corrected initialization command to be retried.
 
 The only managed units are `codex-console-native-backend.service` and
 `codex-console-native-web.service`. Native startup uses the configured persistent

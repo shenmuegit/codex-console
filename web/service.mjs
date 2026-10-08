@@ -1,4 +1,4 @@
-import { access, stat, realpath, mkdir, readFile, writeFile, chmod, copyFile } from 'node:fs/promises';
+import { access, stat, realpath, mkdir, readFile, writeFile, chmod, open, mkdtemp, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, isAbsolute } from 'node:path';
@@ -49,6 +49,14 @@ async function requireExternal(repo, paths) {
     if (destination === repo || destination.startsWith(repo + '/')) throw fail('PRIVATE_PATH_IN_REPO', 'Configuration and app data must stay outside the checkout.');
   }
 }
+async function requireExecutables(config) {
+  for (const key of ['nodePath', 'backendExecutable']) if (!pathValue(config[key])) throw fail('ABSOLUTE_PATH_REQUIRED', `${key} must be an absolute path.`);
+  if (config.backendExecutable.includes('/.cache/')) throw fail('CACHE_BINARY_REFUSED', 'Install the verified source binary in a persistent path.');
+  for (const path of [config.nodePath, config.backendExecutable, join(dirname(config.backendExecutable), 'codex-code-mode-host')]) {
+    if (!(await stat(path)).isFile()) throw fail('EXECUTABLE_REQUIRED', 'A required native executable is missing.');
+    await access(path, constants.X_OK);
+  }
+}
 export async function validateConfig(config, configPath) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw fail('NODE_REQUIRED', 'Node.js 24 or newer is required.');
   const url = new URL(config.origin);
@@ -60,8 +68,7 @@ export async function validateConfig(config, configPath) {
   if (await realpath(config.backendHome) === original || resolve(config.backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Keep the original desktop home separate; migration is a separate operation.');
   const repo = await realpath(config.repoDir);
   await requireExternal(repo, [configPath, config.stateDir, config.backendHome, config.environmentFile, config.tlsKey, config.tlsCert]);
-  if (config.backendExecutable.includes('/.cache/')) throw fail('CACHE_BINARY_REFUSED', 'Install the verified source binary in a persistent path.');
-  for (const path of [config.nodePath, config.backendExecutable, join(dirname(config.backendExecutable), 'codex-code-mode-host')]) { if (!(await stat(path)).isFile()) throw fail('EXECUTABLE_REQUIRED', 'A required native executable is missing.'); await access(path, constants.X_OK); }
+  await requireExecutables(config);
   for (const path of [config.backendHome, config.workspace, config.repoDir]) if (!(await stat(path)).isDirectory()) throw fail('DIRECTORY_REQUIRED', 'A configured directory is missing.');
   await access(join(repo, 'web/server.mjs'), constants.R_OK);
   for (const path of [configPath, config.environmentFile, config.tlsKey, config.tlsCert]) assertPrivate(await stat(path));
@@ -105,31 +112,48 @@ export async function initialize(options) {
   if (canonicalHome === canonicalOriginal || resolve(backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Do not initialize the original desktop home.');
   for (const path of [configPath, stateDir, backendHome, workspace]) if (!pathValue(path)) throw fail('ABSOLUTE_PATH_REQUIRED', 'Configuration paths must be absolute.');
   await requireExternal(repoDir, [configPath, stateDir, backendHome]);
-  for (const path of [privateDir, stateDir, backendHome]) await privateDirectory(path);
-  await mkdir(workspace, { recursive: true, mode: 0o700 });
   const origin = new URL(options.origin || 'https://127.0.0.1:8443').origin, url = new URL(origin), host = url.hostname.replace(/^\[|\]$/g, '');
+  if (url.protocol !== 'https:') throw fail('INVALID_ORIGIN', 'Configure an HTTPS origin.');
+  const backendExecutable = options.backendExecutable || join(homedir(), '.local/lib/codex-console-web/bin/codex-app-server');
+  const backendUrl = options.backendUrl || 'ws://127.0.0.1:4500'; backendEndpoint(backendUrl);
+  await requireExecutables({ nodePath: process.execPath, backendExecutable });
   const tlsKey = join(privateDir, 'key.pem'), tlsCert = join(privateDir, 'cert.pem'), environmentFile = join(privateDir, 'runtime.env'), passwordFile = join(privateDir, 'owner-password');
   for (const path of [tlsKey, tlsCert, environmentFile, passwordFile]) if (await exists(path)) throw fail('CREDENTIAL_EXISTS', 'Existing private material is preserved.');
-  if (options.cert || options.key) {
-    if (!options.cert || !options.key) throw fail('TLS_PAIR_REQUIRED', 'Provide both --cert and --key.');
-    await copyFile(options.cert, tlsCert, constants.COPYFILE_EXCL); await copyFile(options.key, tlsKey, constants.COPYFILE_EXCL);
-  } else execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', tlsKey, '-out', tlsCert,
-    '-subj', '/CN=' + host, '-addext', `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`, '-days', '30'], { stdio: 'ignore' });
-  await chmod(tlsKey, 0o600); await chmod(tlsCert, 0o600);
-  const password = randomBytes(32).toString('base64url'); await writeFile(passwordFile, password + '\n', { mode: 0o600, flag: 'wx' });
-  const allowed = ['PATH', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'REQUESTS_CA_BUNDLE'];
-  const environment = options.environment || process.env;
-  const quote = value => '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`') + '"';
-  await writeFile(environmentFile, allowed.filter(key => environment[key] && !/[\r\n\0]/.test(environment[key])).map(key => `${key}=${quote(environment[key])}\n`).join(''), { mode: 0o600, flag: 'wx' });
-  const authSource = join(original, 'auth.json'), authTarget = join(backendHome, 'auth.json');
-  if (!await exists(authTarget) && await exists(authSource)) { await copyFile(authSource, authTarget, constants.COPYFILE_EXCL); await chmod(authTarget, 0o600); }
-  if (!await exists(join(backendHome, 'config.toml'))) await writeFile(join(backendHome, 'config.toml'), 'cli_auth_credentials_store = "file"\n[analytics]\nenabled = false\n', { mode: 0o600, flag: 'wx' });
-  const config = { origin, listenHost: options.listenHost || (['127.0.0.1', '::1', 'localhost'].includes(host) ? (host === 'localhost' ? '127.0.0.1' : host) : '0.0.0.0'), port: Number(url.port || 443),
-    backendUrl: options.backendUrl || 'ws://127.0.0.1:4500', backendExecutable: options.backendExecutable || join(homedir(), '.local/lib/codex-console-web/bin/codex-app-server'),
-    backendHome: await realpath(backendHome), workspace: await realpath(workspace), repoDir, nodePath: process.execPath, environmentFile, stateDir: await realpath(stateDir),
-    generatedRoots: options.generatedRoots || [await realpath(workspace)], uploadLimitBytes: options.uploadLimitBytes || 33_554_432, tlsKey, tlsCert, passwordHash: await hashPassword(password) };
-  await writeFile(configPath, JSON.stringify(config, null, 2), { mode: 0o600, flag: 'wx' });
-  await validateConfig(config, configPath); return { config, configPath, passwordFile };
+  if ((options.cert || options.key) && (!options.cert || !options.key)) throw fail('TLS_PAIR_REQUIRED', 'Provide both --cert and --key.');
+  for (const path of [privateDir, stateDir, backendHome]) await privateDirectory(path);
+  await mkdir(workspace, { recursive: true, mode: 0o700 });
+  const created = []; let staging;
+  async function writeNew(path, data) {
+    const file = await open(path, 'wx', 0o600); created.push(path);
+    try { await file.writeFile(data); } finally { await file.close(); }
+  }
+  try {
+    if (options.cert) {
+      await writeNew(tlsCert, await readFile(options.cert)); await writeNew(tlsKey, await readFile(options.key));
+    } else {
+      staging = await mkdtemp(join(privateDir, '.init-'));
+      const key = join(staging, 'key.pem'), cert = join(staging, 'cert.pem');
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', key, '-out', cert,
+        '-subj', '/CN=' + host, '-addext', `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`, '-days', '30'], { stdio: 'ignore' });
+      await writeNew(tlsKey, await readFile(key)); await writeNew(tlsCert, await readFile(cert));
+    }
+    const password = randomBytes(32).toString('base64url'); await writeNew(passwordFile, password + '\n');
+    const allowed = ['PATH', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'REQUESTS_CA_BUNDLE'];
+    const environment = options.environment || process.env;
+    const quote = value => '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`') + '"';
+    await writeNew(environmentFile, allowed.filter(key => environment[key] && !/[\r\n\0]/.test(environment[key])).map(key => `${key}=${quote(environment[key])}\n`).join(''));
+    const authSource = join(original, 'auth.json'), authTarget = join(backendHome, 'auth.json'), nativeConfig = join(backendHome, 'config.toml');
+    if (!await exists(authTarget) && await exists(authSource)) await writeNew(authTarget, await readFile(authSource));
+    if (!await exists(nativeConfig)) await writeNew(nativeConfig, 'cli_auth_credentials_store = "file"\n[analytics]\nenabled = false\n');
+    const config = { origin, listenHost: options.listenHost || (['127.0.0.1', '::1', 'localhost'].includes(host) ? (host === 'localhost' ? '127.0.0.1' : host) : '0.0.0.0'), port: Number(url.port || 443),
+      backendUrl, backendExecutable, backendHome: await realpath(backendHome), workspace: await realpath(workspace), repoDir, nodePath: process.execPath, environmentFile, stateDir: await realpath(stateDir),
+      generatedRoots: options.generatedRoots || [await realpath(workspace)], uploadLimitBytes: options.uploadLimitBytes || 33_554_432, tlsKey, tlsCert, passwordHash: await hashPassword(password) };
+    await writeNew(configPath, JSON.stringify(config, null, 2));
+    await validateConfig(config, configPath); return { config, configPath, passwordFile };
+  } catch (e) {
+    for (const path of created.reverse()) await rm(path, { force: true });
+    throw e;
+  } finally { if (staging) await rm(staging, { recursive: true, force: true }); }
 }
 async function install(config, configPath) {
   const dir = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd/user'); await privateDirectory(dir);

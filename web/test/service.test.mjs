@@ -88,6 +88,30 @@ test('initialization preserves permissions of an existing project workspace', as
   assert.equal((await stat(f.config.workspace)).mode & 0o777, 0o755);
 });
 
+test('failed executable preflight leaves no credentials and initialization can be retried', async t => {
+  const f = await configFixture(t), configPath = join(f.root, 'retry-bin', 'config.json');
+  const options = { configPath, origin: 'https://127.0.0.1:8443', backendExecutable: join(f.root, 'missing'),
+    backendHome: f.config.backendHome, workspace: f.config.workspace, repoDir: f.config.repoDir, stateDir: join(f.root, 'retry-state') };
+  await assert.rejects(initialize(options), { code: 'ENOENT' });
+  await assert.rejects(stat(configPath), { code: 'ENOENT' });
+  await assert.rejects(stat(join(f.root, 'retry-bin', 'owner-password')), { code: 'ENOENT' });
+  const result = await initialize({ ...options, backendExecutable: f.config.backendExecutable });
+  await validateConfig(result.config, configPath);
+});
+
+test('late initialization failure removes only newly created files and permits a corrected retry', async t => {
+  const f = await configFixture(t), configPath = join(f.root, 'retry-tls', 'config.json');
+  const auth = join(f.config.backendHome, 'auth.json'), nativeConfig = join(f.config.backendHome, 'config.toml');
+  await writeFile(auth, 'existing auth', { mode: 0o600 }); await writeFile(nativeConfig, 'existing native config', { mode: 0o600 });
+  const options = { configPath, origin: 'https://different.example:8443', backendExecutable: f.config.backendExecutable,
+    backendHome: f.config.backendHome, workspace: f.config.workspace, repoDir: f.config.repoDir, stateDir: join(f.root, 'retry-tls-state'),
+    cert: f.config.tlsCert, key: f.config.tlsKey };
+  await assert.rejects(initialize(options), { code: 'TLS_HOST_MISMATCH' });
+  for (const name of ['config.json', 'owner-password', 'key.pem', 'cert.pem', 'runtime.env']) await assert.rejects(stat(join(f.root, 'retry-tls', name)), { code: 'ENOENT' });
+  assert.equal(await readFile(auth, 'utf8'), 'existing auth'); assert.equal(await readFile(nativeConfig, 'utf8'), 'existing native config');
+  const result = await initialize({ ...options, origin: 'https://127.0.0.1:8443' }); await validateConfig(result.config, configPath);
+});
+
 test('initialization rejects symlinked repository ancestors before writing private material', async t => {
   const f = await configFixture(t), alias = join(f.root, 'outside');
   await symlink(f.config.repoDir, alias);
