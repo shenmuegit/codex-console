@@ -83,8 +83,8 @@ Before adopting another release:
 5. Verify only the intended profile is forwarded and that closing/reopening the app still works.
 6. Record the tested app/browser/package versions before changing the documented baseline or preflight rules.
 
-## CI and release preparation
+## Local checks and release preparation
 
-The GitHub Actions workflow prepares the runtime on Ubuntu 24.04, runs isolated checks, and exercises a temporary integration session. It does not use app credentials. CI configuration is included here; a local check does not certify a remote Actions run.
+This repository does not include GitHub Actions workflows. Pushes and pull requests do not start repository-defined automatic checks. Run the applicable checks locally before a release.
 
 For a release, run the checks on the supported runtime, confirm both README languages and linked guides match the script behavior, review the diff for private data, move relevant `Unreleased` entries into a versioned changelog section, and create the corresponding tag/release. Published tags should identify the exact source commit.
