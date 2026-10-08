@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile, chmod, stat, readFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { renderUserUnits, validateConfig, assertPrivate, unitCommand, initialize, statusSummary } from '../service.mjs';
 import { httpsFixture } from './helpers.mjs';
 
@@ -18,6 +19,18 @@ async function configFixture(t) {
   const configPath = join(root, 'config.json'); await writeFile(configPath, '{}', { mode: 0o600 }); await chmod(f.config.tlsCert, 0o600);
   const config = { ...f.config, port: Number(new URL(f.config.origin).port), repoDir, nodePath: process.execPath, backendExecutable, backendHome, workspace, environmentFile };
   return { ...f, root, config, configPath };
+}
+
+async function serviceCommandFixture(t) {
+  const f = await configFixture(t), unitDir = join(f.root, 'systemd', 'user'), log = join(f.root, 'systemctl.log');
+  await mkdir(unitDir, { recursive: true }); await writeFile(f.configPath, JSON.stringify(f.config));
+  const bin = join(f.root, 'bin');
+  await writeFile(join(bin, 'systemctl'), `#!${process.execPath}\nimport { appendFileSync } from 'node:fs';
+const args=process.argv.slice(2); appendFileSync(${JSON.stringify(log)}, JSON.stringify(args)+'\\n');
+if (args.includes('show')) for (const name of ['codex-console-native-backend.service','codex-console-native-web.service']) console.log('Id='+name+'\\nFragmentPath='+${JSON.stringify(unitDir)}+'/'+name+'\\nActiveState=inactive\\n');
+`, { mode: 0o700 });
+  return { ...f, unitDir, log, run(action) { return spawnSync(process.execPath, [fileURLToPath(new URL('../service.mjs', import.meta.url)), action, '--config', f.configPath],
+    { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: f.root, PATH: bin + ':' + process.env.PATH } }); } };
 }
 
 test('unit paths quote spaces/Unicode and escape systemd percent/dollar without a shell or fallback backend', async t => {
@@ -81,4 +94,28 @@ test('configuration validation rejects canonical private files inside the reposi
   await symlink(f.config.repoDir, alias);
   await writeFile(join(f.config.repoDir, 'private-config.json'), '{}', { mode: 0o600 });
   await assert.rejects(validateConfig(f.config, join(alias, 'private-config.json')), { code: 'PRIVATE_PATH_IN_REPO' });
+});
+
+test('installation checks both unit owners before changing either unit', async t => {
+  const f = await serviceCommandFixture(t), backend = join(f.unitDir, 'codex-console-native-backend.service');
+  const original = '# codex-console managed unit\noriginal backend\n';
+  await writeFile(backend, original); await writeFile(join(f.unitDir, 'codex-console-native-web.service'), 'unrelated web service\n');
+  const result = f.run('install'); assert.equal(result.status, 1); assert.match(result.stderr, /UNIT_OWNERSHIP/);
+  assert.equal(await readFile(backend, 'utf8'), original);
+  await assert.rejects(stat(f.log), { code: 'ENOENT' });
+});
+
+test('lifecycle mutations refuse an unrelated loaded unit before invoking start or stop', async t => {
+  const f = await serviceCommandFixture(t);
+  await writeFile(join(f.unitDir, 'codex-console-native-backend.service'), '# codex-console managed unit\n');
+  await writeFile(join(f.unitDir, 'codex-console-native-web.service'), 'unrelated web service\n');
+  for (const action of ['start', 'stop']) {
+    const result = f.run(action); assert.equal(result.status, 1); assert.match(result.stderr, /UNIT_OWNERSHIP/);
+  }
+  const calls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(calls.some(args => args.includes('start') || args.includes('stop')), false);
+  await writeFile(join(f.unitDir, 'codex-console-native-web.service'), '# codex-console managed unit\n');
+  for (const action of ['start', 'stop']) assert.equal(f.run(action).status, 0);
+  const ownedCalls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  assert.ok(ownedCalls.some(args => JSON.stringify(args) === JSON.stringify(unitCommand('stop'))));
 });

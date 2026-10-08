@@ -82,6 +82,19 @@ export function statusSummary(config, units, health) {
 }
 async function privateDirectory(path) { await mkdir(path, { recursive: true, mode: 0o700 }); await chmod(path, 0o700); }
 async function exists(path) { try { await stat(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } }
+async function requireOwnedUnit(path, allowMissing = false) {
+  if (allowMissing && !await exists(path)) return;
+  if (!pathValue(path) || !await exists(path) || (await stat(path)).uid !== process.getuid() || !(await readFile(path, 'utf8')).startsWith(MARKER)) {
+    throw fail('UNIT_OWNERSHIP', 'An unrelated or missing unit uses the requested name; it is preserved.');
+  }
+}
+async function requireOwnedLoadedUnits() {
+  const blocks = execFileSync('systemctl', ['--user', 'show', BACKEND, WEB, '--property=Id,FragmentPath'], { encoding: 'utf8' }).trim().split(/\n\n/);
+  for (const name of [BACKEND, WEB]) {
+    const block = blocks.find(block => block.split('\n').includes('Id=' + name));
+    await requireOwnedUnit(block?.match(/^FragmentPath=(.*)$/m)?.[1]);
+  }
+}
 export async function initialize(options) {
   const configPath = options.configPath || join(configBase(), 'config.json');
   if (await exists(configPath)) throw fail('CONFIG_EXISTS', 'Existing credentials/configuration are preserved.');
@@ -120,11 +133,9 @@ export async function initialize(options) {
 async function install(config, configPath) {
   const dir = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd/user'); await privateDirectory(dir);
   const units = renderUserUnits({ ...config, configPath });
-  for (const [name, value] of [[BACKEND, units.backend], [WEB, units.web]]) {
-    const path = join(dir, name);
-    if (await exists(path) && !(await readFile(path, 'utf8')).startsWith(MARKER)) throw fail('UNIT_OWNERSHIP', 'An unrelated unit uses the requested name; it is preserved.');
-    await writeFile(path, value, { mode: 0o600 });
-  }
+  const targets = [[BACKEND, units.backend], [WEB, units.web]];
+  for (const [name] of targets) await requireOwnedUnit(join(dir, name), true);
+  for (const [name, value] of targets) await writeFile(join(dir, name), value, { mode: 0o600 });
   execFileSync('systemctl', ['--user', 'daemon-reload']); execFileSync('systemctl', ['--user', 'enable', BACKEND, WEB], { stdio: 'pipe' });
 }
 async function health(config, configPath) {
@@ -159,7 +170,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         const output = execFileSync('systemctl', unitCommand('status'), { encoding: 'utf8' }), blocks = output.trim().split(/\n\n/);
         const state = name => blocks.find(block => block.includes('Id=' + name))?.match(/ActiveState=(.*)/)?.[1] || 'unknown';
         console.log(JSON.stringify(statusSummary(config, { backend: state(BACKEND), web: state(WEB) }, await health(config, configPath))));
-      } else execFileSync('systemctl', unitCommand(action), { stdio: 'pipe' });
+      } else { const command = unitCommand(action); await requireOwnedLoadedUnits(); execFileSync('systemctl', command, { stdio: 'pipe' }); }
     }
   } catch (e) { console.error(`Native service command failed (${e.code ?? e.name}).`); process.exitCode = 1; }
 }

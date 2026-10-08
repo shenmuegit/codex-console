@@ -45,6 +45,9 @@ The only managed units are `codex-console-native-backend.service` and
 source executable and isolated home. The web handshake checks that native home;
 there is no fallback engine. Unit paths preserve spaces/Unicode/%/$ without a
 shell. A worktree referenced by an installed unit must stay present.
+Installation checks both existing unit owners before changing either file.
+Start/stop verify the OS-user owner and managed marker of both loaded unit files;
+an unrelated service with the same name is preserved.
 
 ## Current verified deployment
 

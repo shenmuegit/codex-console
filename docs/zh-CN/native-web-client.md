@@ -35,6 +35,8 @@ node web/service.mjs stop
 只管理 `codex-console-native-backend.service`、`codex-console-native-web.service`。
 原生服务使用明确的持久源码程序和独立数据目录；网页握手核对原生数据目录，不启动备用引擎。
 服务路径支持空格、Unicode、% 和 $，不经过 shell。服务引用的工作树必须保留。
+安装会先检查两个服务文件的归属，再修改文件。启动和停止前会核对实际加载文件的
+系统用户及管理标记，保留同名但不属于本项目的服务。
 
 ## 当前已验证部署
 
