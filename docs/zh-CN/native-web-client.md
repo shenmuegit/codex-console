@@ -125,15 +125,41 @@ HTTPS/原生检查通过，包含项目、双客户端聊天、打断、文件/�
 `codex-code-mode-host` 组件安装在旁边。本源码版本的默认工具执行需要后者，
 仅测试文字回复无法发现它缺失。尝试从源码编译组件时，遇到 V8 sandbox 预编译库缺失；
 该特性在依赖库说明及[上游发布资产](https://github.com/denoland/rusty_v8/releases/expanded_assets/v150.4.0)中没有对应预编译产物。
-app-server 仍使用固定源码构建，没有修改源码或功能配置。
+app-server 仍使用固定源码构建，功能代码不变。构建时临时写入与桌面版本对应的
+`0.159.2-dev.ff9ab4a` 发布元数据；默认 `0.0.0` 会使模型服务返回不完整的兼容目录。
+Cargo 仅离线更新工作区版本，验证第三方锁定依赖未变，构建后恢复源码的两个元数据文件。
+模型和思考强度继续使用原生目录，隐藏的内部型号不加入桌面下拉框。
 两个程序一起安装到仓库外的 `~/.local/lib/codex-console-web/bin/`。
 
 ```bash
 cd /home/desktop/Documents/Codex/codex-console/codex/codex-rs
-CARGO_HTTP_MULTIPLEXING=false CARGO_INCREMENTAL=0 \
-CARGO_TARGET_DIR="$HOME/.cache/codex-console-web-build" \
-  "$HOME/.cargo/bin/cargo" +1.95.0 build --locked --profile dev-small -j 2 \
-  -p codex-app-server --bin codex-app-server
+(
+  set -e
+  codex_build_backup=$(mktemp -d)
+  cp Cargo.toml Cargo.lock "$codex_build_backup/"
+  trap 'cp "$codex_build_backup/Cargo.toml" Cargo.toml; cp "$codex_build_backup/Cargo.lock" Cargo.lock; rm -rf "$codex_build_backup"' EXIT
+  python3 - <<'STAMP'
+from pathlib import Path
+import tomllib
+p = Path('Cargo.toml')
+text = p.read_text()
+assert tomllib.loads(text)['workspace']['package']['version'] == '0.0.0'
+start = text.index('[workspace.package]')
+p.write_text(text[:start] + text[start:].replace('version = "0.0.0"', 'version = "0.159.2-dev.ff9ab4a"', 1))
+STAMP
+  "$HOME/.cargo/bin/cargo" +1.95.0 update --offline --workspace
+  python3 - "$codex_build_backup/Cargo.lock" <<'LOCK'
+from pathlib import Path
+import sys, tomllib
+old = tomllib.loads(Path(sys.argv[1]).read_text())['package']
+new = tomllib.loads(Path('Cargo.lock').read_text())['package']
+assert [p for p in old if 'source' in p] == [p for p in new if 'source' in p]
+LOCK
+  CARGO_HTTP_MULTIPLEXING=false CARGO_INCREMENTAL=0 \
+  CARGO_TARGET_DIR="$HOME/.cache/codex-console-web-build" \
+    "$HOME/.cargo/bin/cargo" +1.95.0 build --offline --locked --profile dev-small -j 2 \
+    -p codex-app-server --bin codex-app-server
+)
 install -d -m 700 "$HOME/.local/lib/codex-console-web/bin"
 install -m 700 "$HOME/.cache/codex-console-web-build/dev-small/codex-app-server" \
   /usr/lib/chatgpt/resources/codex-code-mode-host "$HOME/.local/lib/codex-console-web/bin/"
@@ -148,6 +174,8 @@ install -m 700 "$HOME/.cache/codex-console-web-build/dev-small/codex-app-server"
 两个临时用户服务为 `codex-console-native-backend-test` 和
 `codex-console-native-desktop-test`，仅停止或重启这两个自有测试服务。
 界面、代理和证书环境按明确的变量名写入私有环境文件传递；凭据及日志不提交。
+
+修正后的构建返回与桌面一致的 7 个常规模型，包含 GPT-6.1-Sol、GPT-6-Sol 和 GPT-6-Luna。真实 GPT-6.1 原生文件工具调用及公网 HTTPS/模型/SSE 检查通过，一次性测试会话和文件已清理。
 
 ## 验证
 
@@ -169,7 +197,7 @@ node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
 
 任务 1 实测：源码 app-server 编译退出码 0，耗时 11m 13s；10 项原生连接检查和原项目隔离检查通过。原生目录读取返回 4 个模型，隔离项目/会话均为 0，已有登录可用；额外桌面的 WebSocket 连接已初始化。真实文件探针通过：原生工具写入的字节完全一致，一次性测试会话已删除；桌面官方组件与本次工具调用兼容。
 
-已验证程序 SHA-256：app-server 为 `85ef3000722cab4fdb576ab5cfdce0e8e791641641a671a7593e6b23b7334431`，桌面组件为 `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`。开发版本号为 `0.0.0`，以源码 commit 和哈希识别构建。
+当前 app-server 版本为 `0.159.2-dev.ff9ab4a`，SHA-256 为 `060d8d708d00c10b50d16620c9c63374c2ceb262f482163e3dbdac81110c7c37`；桌面组件 SHA-256 仍为 `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`。任务 1 的 `0.0.0` 构建仅作历史记录；复现模型目录时同时记录源码 commit、发布元数据和程序哈希。
 
 
 ## HTTPS 用户访问

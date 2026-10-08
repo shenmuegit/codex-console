@@ -162,16 +162,44 @@ companion beside it. This source version needs the companion for default tool
 execution; an echo-only turn does not detect its absence. The attempted companion
 source build encountered an unavailable V8 sandbox prebuilt archive; this feature
 has no prebuilt archives in the crate's README and [release assets](https://github.com/denoland/rusty_v8/releases/expanded_assets/v150.4.0).
-The app-server itself remains the pinned source build, with no source/config
-feature changes. Both executables live outside Git at
+The app-server remains the pinned source build with unchanged feature code.
+Temporarily stamp `0.159.2-dev.ff9ab4a` release metadata to match the installed
+Codex version: the development default `0.0.0` receives a reduced compatible
+model catalog. Cargo updates only workspace versions offline, third-party locked
+dependencies are checked unchanged, and both source metadata files are restored
+after building. Models and reasoning efforts remain native; hidden internal
+models are not added to the desktop picker. Both executables live outside Git at
 `~/.local/lib/codex-console-web/bin/`.
 
 ```bash
 cd /home/desktop/Documents/Codex/codex-console/codex/codex-rs
-CARGO_HTTP_MULTIPLEXING=false CARGO_INCREMENTAL=0 \
-CARGO_TARGET_DIR="$HOME/.cache/codex-console-web-build" \
-  "$HOME/.cargo/bin/cargo" +1.95.0 build --locked --profile dev-small -j 2 \
-  -p codex-app-server --bin codex-app-server
+(
+  set -e
+  codex_build_backup=$(mktemp -d)
+  cp Cargo.toml Cargo.lock "$codex_build_backup/"
+  trap 'cp "$codex_build_backup/Cargo.toml" Cargo.toml; cp "$codex_build_backup/Cargo.lock" Cargo.lock; rm -rf "$codex_build_backup"' EXIT
+  python3 - <<'STAMP'
+from pathlib import Path
+import tomllib
+p = Path('Cargo.toml')
+text = p.read_text()
+assert tomllib.loads(text)['workspace']['package']['version'] == '0.0.0'
+start = text.index('[workspace.package]')
+p.write_text(text[:start] + text[start:].replace('version = "0.0.0"', 'version = "0.159.2-dev.ff9ab4a"', 1))
+STAMP
+  "$HOME/.cargo/bin/cargo" +1.95.0 update --offline --workspace
+  python3 - "$codex_build_backup/Cargo.lock" <<'LOCK'
+from pathlib import Path
+import sys, tomllib
+old = tomllib.loads(Path(sys.argv[1]).read_text())['package']
+new = tomllib.loads(Path('Cargo.lock').read_text())['package']
+assert [p for p in old if 'source' in p] == [p for p in new if 'source' in p]
+LOCK
+  CARGO_HTTP_MULTIPLEXING=false CARGO_INCREMENTAL=0 \
+  CARGO_TARGET_DIR="$HOME/.cache/codex-console-web-build" \
+    "$HOME/.cargo/bin/cargo" +1.95.0 build --offline --locked --profile dev-small -j 2 \
+    -p codex-app-server --bin codex-app-server
+)
 install -d -m 700 "$HOME/.local/lib/codex-console-web/bin"
 install -m 700 "$HOME/.cache/codex-console-web-build/dev-small/codex-app-server" \
   /usr/lib/chatgpt/resources/codex-code-mode-host "$HOME/.local/lib/codex-console-web/bin/"
@@ -189,6 +217,8 @@ The two transient user units are `codex-console-native-backend-test` and
 `codex-console-native-desktop-test`. Only stop/restart these owned test units.
 GUI/proxy/TLS environment is forwarded through a private environment file using
 explicit variable names; credentials and logs are never committed.
+
+The corrected build returns the same seven visible models as the desktop, including GPT-6.1-Sol, GPT-6-Sol and GPT-6-Luna. A real GPT-6.1 native filesystem turn and the public HTTPS/model/SSE smoke passed; the disposable thread/file were removed.
 
 ## Verification
 
@@ -213,7 +243,7 @@ The remaining sections document the implemented components; no Xpra connection i
 
 Task 1 verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
 
-Verified executable SHA-256: app-server `85ef3000722cab4fdb576ab5cfdce0e8e791641641a671a7593e6b23b7334431`; desktop companion `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`. Identify the development build by source commit and hash, not its `0.0.0` version.
+Current executable: app-server `0.159.2-dev.ff9ab4a`, SHA-256 `060d8d708d00c10b50d16620c9c63374c2ceb262f482163e3dbdac81110c7c37`; desktop companion SHA-256 `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`. The original Task 1 `0.0.0` build is historical. Keep the source commit, release metadata and binary hash together when reproducing model discovery.
 
 
 ## HTTPS owner access
