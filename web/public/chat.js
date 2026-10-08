@@ -250,6 +250,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     selected = state; layout.dataset.level = 'chat'; messageNodes.clear(); formNodes.clear();
     completions.close();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
+    const url = new URL(location.href); url.searchParams.set('thread', state.threadId); history.replaceState(null, '', url);
   }
   async function open(threadId) {
     const version = ++opening, state = stateFor(threadId); select(state); state.ready = false; draw();
@@ -259,7 +260,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     if (!alive || version !== opening) return;
     installSnapshot(state, result); save(state); draw();
     attachments.hydrate(state);
-    const url = new URL(location.href); url.searchParams.set('thread', threadId); history.replaceState(null, '', url);
     await loadThreads();
   }
   function addInput(label, schema, parent) {

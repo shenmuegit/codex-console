@@ -396,6 +396,8 @@ writing a host file. There is no invented commands/list or read_thread tool.
 Command submission locks before awaiting native work, so double Enter/click
 cannot create duplicate forks or compactions. Failed commands preserve the draft;
 editing while a command runs preserves the newer text.
+Opening, creating or forking a conversation updates its thread ID in the page
+address, so refresh reopens the conversation currently selected.
 
 Eight focused checks and the full suite passed. Live
 `web-probe.mjs --exercise-references` verified a file, real skill, real plugin,

@@ -98,6 +98,27 @@ test('mounted slash submission locks synchronously and preserves newer drafts on
   assert.equal(calls.length, 2);
 });
 
+test('new and forked selections update the URL and reload the visible conversation', async t => {
+  const dom = domFixture(); let chat, seq = 0; const opened = [];
+  t.after(() => { chat?.dispose(); dom.restore(); });
+  const api = async (path, body) => {
+    if (path === '/api/rpc') return { result: { data: [], nextCursor: null } };
+    const id = path === '/api/thread/start' ? 'new' : path === '/api/thread/fork' ? 'forked' : body.threadId;
+    if (path === '/api/thread/open') opened.push(id);
+    return { snapshot: resumeFixture(id), cursor: cursor(++seq) };
+  };
+  const mount = () => mountChat({ api, viewId: 'view', defaultCwd: '/tmp', uploadLimitBytes: 32 });
+  chat = mount(); chat.connection(true); await chat.open('t');
+  for (const id of ['new', 'forked']) {
+    if (id === 'new') dom.get('new-thread').click();
+    else { chat.getState().draft = '/fork'; dom.event('composer', 'submit'); }
+    await delay(0); assert.equal(chat.getState().threadId, id);
+    assert.equal(new URL(dom.location.href).searchParams.get('thread'), id);
+    chat.dispose(); chat = mount(); chat.connection(true); await chat.load();
+    assert.equal(opened.at(-1), id); assert.equal(chat.getState().threadId, id);
+  }
+});
+
 test('IME confirmation, mobile Enter and Shift+Enter never send a draft', () => {
   assert.equal(shouldSubmitKey({ key: 'Enter' }, { composing: false, finePointer: true }), true);
   for (const event of [{ key: 'Enter', isComposing: true }, { key: 'Enter', keyCode: 229 }, { key: 'Enter', shiftKey: true }]) {
