@@ -264,8 +264,9 @@ responder; permission grants cannot exceed the corresponding native request.
 Each browser page gets a session-bound view ID. Events arrive over authenticated
 SSE with 15-second heartbeats and a 1 MiB per-stream queue cap. A slow reader is
 disconnected; every new/reconnected stream requests an authoritative snapshot.
-Logging out revokes that session and closes its streams without affecting other
-sessions or the persistent native connection.
+The UI has no logout control; the existing secure owner session is reused until
+its absolute expiry requires the password again. Internal session cleanup closes
+only its own streams, preserving other sessions and the native connection.
 
 The isolated HTTPS test unit is `codex-console-native-web-test`, listening only
 on `https://127.0.0.1:8443`. Its temporary integration configuration and private

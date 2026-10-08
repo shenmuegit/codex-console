@@ -35,5 +35,4 @@ $('#login-form').addEventListener('submit', async event => {
   catch (e) { $('#login-error').textContent = e.message; }
   finally { button.disabled = false; }
 });
-$('#logout').addEventListener('click', async () => { try { await api('/api/logout', {}); showLogin(); } catch (e) { $('#connection').textContent = e.message; } });
 api('/api/status').then(connected).catch(() => showLogin());

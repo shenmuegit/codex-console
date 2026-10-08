@@ -104,7 +104,6 @@ dialog::backdrop { background: rgb(0 0 0 / .6); }
   .topbar { padding: max(8px, env(safe-area-inset-top)) 16px 8px; flex-wrap: nowrap; }
   .topbar strong { width: auto; font-size: 15px; }
   .topbar #connection { font-size: 12px; }
-  .topbar #logout { font-size: 13px; padding: 8px; }
   .work-layout { display: flex; }
   .work-layout > * { display: none; width: 100%; border: 0; }
   .work-layout[data-level="projects"] .projects-pane, .work-layout[data-level="threads"] .threads-pane { display: block; }
