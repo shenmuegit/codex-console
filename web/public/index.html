@@ -25,12 +25,17 @@
     <div class="work-layout" data-level="projects">
       <aside class="projects-pane" aria-label="项目">
         <div class="pane-heading"><h2>项目</h2><button id="refresh-projects" aria-label="刷新项目">刷新</button></div>
+        <button id="new-project" class="primary">新建项目</button>
+        <div class="toolbar project-actions"><button id="edit-project" disabled>编辑项目</button><button id="archive-project" disabled>归档（仅网页）</button></div>
+        <label class="check-label"><input id="show-archived-projects" type="checkbox">显示网页归档项目</label>
+        <p class="muted small">网页归档保留目录和会话；桌面仍可能显示该项目。</p>
         <nav id="projects" aria-label="项目列表"></nav>
         <button id="more-projects" hidden>更多项目</button>
       </aside>
       <aside class="threads-pane" aria-label="会话">
         <div class="pane-heading"><button class="mobile-back" id="back-projects">项目</button><h2 id="project-title">全部会话</h2></div>
         <label for="cwd">新会话工作目录</label><input id="cwd" placeholder="/主机上的目录" autocomplete="off" spellcheck="false">
+        <select id="cwd-roots" aria-label="项目根目录" hidden></select><button id="pick-cwd">选择主机目录</button>
         <div class="toolbar"><button id="new-thread" class="primary">新建会话</button><button id="refresh-threads">刷新</button></div>
         <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" hidden>更多会话</button>
       </aside>
@@ -38,7 +43,7 @@
         <header class="chat-heading">
           <button class="mobile-back" id="back-threads">会话</button>
           <div class="thread-title"><h1 id="thread-title">选择或新建一个会话</h1><code id="thread-id"></code></div>
-          <button id="copy-thread" disabled>复制 ID</button><button id="refresh-chat" disabled>刷新会话</button>
+          <button id="copy-thread" disabled>复制 ID</button><button id="refresh-chat" disabled>刷新会话</button><button id="delete-thread" disabled>删除会话</button>
         </header>
         <p id="effective-settings" class="muted chat-meta"></p>
         <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
@@ -58,5 +63,27 @@
       </section>
     </div>
   </main>
+  <dialog id="project-dialog">
+    <form id="project-form" class="dialog-form">
+      <div class="pane-heading"><h2 id="project-editor-title">新建项目</h2><button id="close-project-editor" type="button">关闭</button></div>
+      <label for="project-name">项目名称</label><input id="project-name" maxlength="160" required>
+      <label for="project-root">主机上的主要根目录</label><input id="project-root" required autocomplete="off" spellcheck="false">
+      <button id="pick-project-root" type="button">浏览主机目录</button>
+      <p id="secondary-roots" class="muted small"></p>
+      <p class="muted small">编辑只改变项目名称和根目录绑定；文件及已有会话的实际工作目录保留。</p>
+      <p id="project-error" class="error" role="alert"></p><button id="save-project" type="submit" class="primary">保存项目</button>
+    </form>
+  </dialog>
+  <dialog id="directory-dialog">
+    <form id="directory-form" class="dialog-form">
+      <div class="pane-heading"><h2>选择主机目录</h2><button id="close-directory" type="button">关闭</button></div>
+      <label for="directory-path">主机路径</label><input id="directory-path" required autocomplete="off" spellcheck="false">
+      <div class="toolbar"><button id="directory-go" type="button">打开路径</button><button id="directory-parent" type="button">上一级</button></div>
+      <nav id="directory-list" aria-label="主机子目录"></nav>
+      <label for="directory-name">新文件夹名称</label><input id="directory-name" maxlength="160" autocomplete="off">
+      <button id="directory-create" type="button">在此新建文件夹</button>
+      <p id="directory-error" class="error" role="alert"></p><button id="directory-choose" type="submit" class="primary">选择已打开的目录</button>
+    </form>
+  </dialog>
 </body>
 </html>

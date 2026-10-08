@@ -138,16 +138,16 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 更新服务端/页面，新建 `web/test/projects.test.mjs`。
 **接口：** `saveProject(codex,{projectId?,name,rootPath,idempotencyKey}):Promise<Project>`、`setProjectArchived(projectId,archived):Promise<void>`、`deleteThread(codex,{threadId,confirmed}):Promise<void>`；使用专用 handler，不放开任意浏览器 RPC。
 
-- [ ] **1. 写失败测试：** 主机目录选择/创建、项目分页、编辑保留次级根目录、幂等键、归档不做原生删除、改绑定不改旧 `cwd`、运行中删除。示例：
+- [x] **1. 写失败测试：** 主机目录选择/创建、项目分页、编辑保留次级根目录、幂等键、归档不做原生删除、改绑定不改旧 `cwd`、运行中删除。示例：
   ```js
   assert.deepEqual(await fixtureArchive('p'), {archivedProjectIds:['p'],nativeCalls:[]});
   assert.deepEqual(await fixtureUnarchive('p'), {archivedProjectIds:[],nativeCalls:[]});
   ```
   此测试文件定义 HTTP 辅助 `fixtureArchive`/`fixtureUnarchive`；断言匹配的中断完成前、超时/拒绝后都不发送原生 delete。
-- [ ] **2. 确认 RED：** `node --test web/test/projects.test.mjs`。
-- [ ] **3. 最小实现：** 原生项目 CRUD/list 与 FS 目录 API；仅改主根目录，保留其他 roots/metadata，不改旧线程路径。偏好串行原子写入；明确归档仅网页可见。会话删除确认一次，读真实活动状态、中断并最多等 30 秒后才 `thread/delete`；所有路径保留项目文件/上传，不开放原生项目删除。
-- [ ] **4. 确认 GREEN 与原生：** 建私有临时目录/项目及成员会话，改绑定验证旧路径，网页归档/恢复，仅删除临时线程；跑全部当前测试，双语记录桌面归档限制。
-- [ ] **5. 提交推送：** `feat: manage native projects and delete conversations safely`，确认远端包含。
+- [x] **2. 确认 RED：** `node --test web/test/projects.test.mjs`。
+- [x] **3. 最小实现：** 原生项目 CRUD/list 与 FS 目录 API；仅改主根目录，保留其他 roots/metadata，不改旧线程路径。偏好串行原子写入；明确归档仅网页可见。会话删除确认一次，读真实活动状态、中断并最多等 30 秒后才 `thread/delete`；所有路径保留项目文件/上传，不开放原生项目删除。
+- [x] **4. 确认 GREEN 与原生：** 建私有临时目录/项目及成员会话，改绑定验证旧路径，网页归档/恢复，仅删除临时线程；跑全部当前测试，双语记录桌面归档限制。
+- [x] **5. 提交推送：** `feat: manage native projects and delete conversations safely`，确认远端包含。
 
 ## 任务 5：文件、照片与聊天文件下载
 

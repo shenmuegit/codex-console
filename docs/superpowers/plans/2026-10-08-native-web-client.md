@@ -138,16 +138,16 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 **Files:** Update server/public files; create `web/test/projects.test.mjs`.
 **Interfaces:** `saveProject(codex,{projectId?,name,rootPath,idempotencyKey}):Promise<Project>`, `setProjectArchived(projectId,archived):Promise<void>`, `deleteThread(codex,{threadId,confirmed}):Promise<void>`; these are dedicated handlers, not unrestricted browser RPC forwarding.
 
-- [ ] **1. Write failing tests** for host directory picking/creation, project pagination, preserve-secondary-roots editing, idempotency keys, archive/restore without native deletion, old-thread `cwd` after rebinding, and active-thread deletion. Example:
+- [x] **1. Write failing tests** for host directory picking/creation, project pagination, preserve-secondary-roots editing, idempotency keys, archive/restore without native deletion, old-thread `cwd` after rebinding, and active-thread deletion. Example:
   ```js
   assert.deepEqual(await fixtureArchive('p'), {archivedProjectIds:['p'],nativeCalls:[]});
   assert.deepEqual(await fixtureUnarchive('p'), {archivedProjectIds:[],nativeCalls:[]});
   ```
   `fixtureArchive`/`fixtureUnarchive` are test-only HTTP helpers in this test file. Assert native delete is not sent before the matching interruption completion or after a timeout/refusal.
-- [ ] **2. Verify RED:** `node --test web/test/projects.test.mjs`.
-- [ ] **3. Implement** native project CRUD/list and FS directory APIs. Editing the primary root preserves additional native roots and metadata; existing thread paths are never rewritten. Serialize atomic preference-file writes. Archive affects only web visibility, with explicit UI wording. Confirm thread deletion once, read actual active state, interrupt/wait up to 30 s, then call native `thread/delete`; preserve files and uploads on every path. Do not expose native project deletion.
-- [ ] **4. Verify GREEN and disposable native lifecycle:** create a private directory/project, create a member thread, rebind the project, verify the old thread path, archive/restore the web list and delete only the disposable thread. Run all current tests and update both docs with the desktop-archive limitation.
-- [ ] **5. Commit/push:** `feat: manage native projects and delete conversations safely`; verify remote containment.
+- [x] **2. Verify RED:** `node --test web/test/projects.test.mjs`.
+- [x] **3. Implement** native project CRUD/list and FS directory APIs. Editing the primary root preserves additional native roots and metadata; existing thread paths are never rewritten. Serialize atomic preference-file writes. Archive affects only web visibility, with explicit UI wording. Confirm thread deletion once, read actual active state, interrupt/wait up to 30 s, then call native `thread/delete`; preserve files and uploads on every path. Do not expose native project deletion.
+- [x] **4. Verify GREEN and disposable native lifecycle:** create a private directory/project, create a member thread, rebind the project, verify the old thread path, archive/restore the web list and delete only the disposable thread. Run all current tests and update both docs with the desktop-archive limitation.
+- [x] **5. Commit/push:** `feat: manage native projects and delete conversations safely`; verify remote containment.
 
 ## Task 5: Files, photos and authenticated transcript downloads
 

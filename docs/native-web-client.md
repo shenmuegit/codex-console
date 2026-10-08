@@ -5,7 +5,8 @@
 Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
 components include shared native transport, HTTPS owner login and live browser
-conversations. Projects/files/model controls follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+conversations and native project management. Files/model controls follow in
+subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -81,7 +82,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Project editing, attachments, model/usage controls and deployment are subsequent
+Attachments, model/usage controls and deployment are subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
@@ -165,3 +166,35 @@ thread. The original desktop remained running. No UI automation surface was
 available; browser/desktop keyboard actions, actual clipboard copying and mobile
 visual layout await manual acceptance. Use the extra desktop to open the same
 real thread ID, send in both directions, then verify mobile navigation and copy.
+
+
+## Projects and host directories
+
+Create a project by browsing an existing host directory or creating a child
+folder in the native directory picker. Paths are absolute host paths; traversal
+segments are rejected. A project has one editable primary root; additional
+native roots and metadata survive editing. Choose among registered roots when
+creating a member conversation. Rebinding changes the project registration,
+not files or existing threads' actual `cwd`.
+
+**Archive (web only)** hides a project from the web list. Enable **Show web
+archived projects** to restore it. Native projects, files and conversations stay
+intact; the extra desktop can still show that project. Visibility lives only in
+the private atomic web-preferences file, and is preserved when editing a hidden
+project. Native project deletion is not exposed.
+
+Conversation deletion asks for one confirmation, covering the native thread and
+its native descendants. It obtains fresh atomic active state, interrupts the
+matching turn, waits up to 30 seconds and then calls native deletion. A refusal,
+timeout or newly observed different active turn prevents deletion. Workspace
+files and completed uploads are retained. Browser sends to a thread being
+removed are rejected instead of racing deletion.
+
+`web/test/projects.test.mjs` passed seven checks, including the real 30-second
+interruption deadline and a turn starting immediately after the history
+checkpoint. The full suite passed 38 checks. The opt-in `web-probe.mjs
+--exercise-projects` passed against the source backend: native folder/project
+creation, create-key idempotency, member-thread creation, rebinding with original
+thread cwd intact, web archive/restore and thread deletion with exact workspace
+file bytes preserved. Its disposable project is left web-archived in the private
+test environment; no host directory or native project is deleted.

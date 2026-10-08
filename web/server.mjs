@@ -1,5 +1,5 @@
 import https from 'node:https';
-import { readFileSync, mkdirSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, existsSync, chmodSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -20,6 +20,7 @@ const error = (status, code, message) => Object.assign(new Error(message), { sta
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = (v, max = 8192) => typeof v === 'string' && v.length <= max && !v.includes('\0');
 const id = v => text(v, 128) && /^[A-Za-z0-9_-]+$/.test(v);
+const absolutePath = path => text(path) && path.startsWith('/') && !path.split('/').includes('..');
 const secretKeys = new Set(['accesstoken', 'refreshtoken', 'idtoken', 'apikey', 'authorization', 'authtoken', 'bearertoken', 'password', 'passwordhash', 'tokens']);
 function safe(value) {
   if (Array.isArray(value)) return value.map(safe);
@@ -45,6 +46,8 @@ function validateRead(method, p) {
   } else if (method === 'account/read') {
     fields(p, ['refreshToken']);
     if (p.refreshToken !== undefined && p.refreshToken !== false) throw error(400, 'INVALID_PARAMS', '网页登录不读取或刷新原生凭据。');
+  } else if (['fs/readDirectory', 'fs/getMetadata'].includes(method)) {
+    fields(p, ['path']); if (!absolutePath(p.path)) throw error(400, 'INVALID_PATH', '请选择绝对主机路径，不能包含上级跳转。');
   } else if (method === 'account/rateLimits/read') fields(p, []);
   else if (method === 'project/read') {
     fields(p, ['projectId']); if (!id(p.projectId)) throw error(400, 'INVALID_PARAMS', '项目 ID 不正确。');
@@ -55,6 +58,52 @@ function validateRead(method, p) {
         (p.sortDirection != null && !['asc', 'desc'].includes(p.sortDirection)) ||
         (p.itemsView != null && p.itemsView !== 'full')) throw error(400, 'INVALID_PARAMS', '会话参数不正确。');
   } else throw error(403, 'RPC_DENIED', '浏览器不能调用这个原生接口。');
+}
+
+export async function saveProject(codex, { projectId, name, rootPath, idempotencyKey }) {
+  if ((projectId != null && !id(projectId)) || !text(name, 160) || !name.trim() || !absolutePath(rootPath) ||
+      (!projectId && !id(idempotencyKey))) throw error(400, 'INVALID_PROJECT', '项目名称、目录或操作标识不正确。');
+  const metadata = (await codex.rpc('fs/getMetadata', { path: rootPath })).result;
+  if (!metadata.isDirectory) throw error(400, 'INVALID_DIRECTORY', '项目根目录必须是可访问的目录。');
+  let canonical;
+  try { canonical = await realpath(rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '无法访问项目根目录。'); }
+  if (projectId) {
+    const { project } = (await codex.rpc('project/read', { projectId })).result;
+    // Native owns metadata and additional roots; editing one primary root must not erase them.
+    return (await codex.rpc('project/update', { projectId, name: name.trim(), roots: [{ path: canonical }, ...project.roots.slice(1)] })).result.project;
+  }
+  return (await codex.rpc('project/create', { name: name.trim(), roots: [{ path: canonical }], idempotencyKey })).result.project;
+}
+
+export async function deleteThread(codex, { threadId, confirmed }) {
+  if (!id(threadId) || confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认删除会话记录。');
+  const watcher = `delete:${randomBytes(16).toString('hex')}`;
+  let timer, currentTurnId, expected, completed;
+  const generation = codex.status().generation;
+  const off = codex.onEvent(event => {
+    const p = event.native?.params;
+    if (event.cursor.generation !== generation) return;
+    if (event.kind === 'snapshot' && event.native.thread.id === threadId) {
+      currentTurnId = (event.native.initialTurnsPage?.data ?? event.native.thread.turns).find(turn => turn.status === 'inProgress')?.id;
+    }
+    if (p?.threadId !== threadId) return;
+    if (event.native.method === 'turn/started') currentTurnId = p.turn.id;
+    if (event.native.method === 'turn/completed' && p.turn.id === currentTurnId) currentTurnId = null;
+    if (event.native.method === 'turn/completed' && p.turn.id === expected && p.turn.status !== 'inProgress') completed?.();
+  });
+  try {
+    await codex.retainThread(threadId, watcher);
+    if (currentTurnId) {
+      expected = currentTurnId;
+      const completion = new Promise((resolve, reject) => {
+        completed = resolve;
+        timer = setTimeout(() => reject(error(409, 'INTERRUPT_TIMEOUT', '停止尚未完成，会话未删除。')), 30_000);
+      });
+      await Promise.all([codex.rpc('turn/interrupt', { threadId, turnId: expected }), completion]);
+      if (currentTurnId) throw error(409, 'TURN_CHANGED', '其他客户端已启动新轮次，会话未删除。');
+    }
+    await codex.rpc('thread/delete', { threadId });
+  } finally { clearTimeout(timer); off?.(); await codex.releaseThread(threadId, watcher).catch(() => {}); }
 }
 
 const requestFields = new Map([
@@ -125,11 +174,19 @@ export function createWebServer({ config, codex }) {
   const origin = new URL(config.origin);
   if (origin.protocol !== 'https:' || origin.origin !== config.origin) throw error(500, 'INVALID_ORIGIN', '配置须包含完整 HTTPS 来源地址。');
   const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
-  const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map();
+  const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
   const prefsPath = join(config.stateDir, 'preferences.json');
   if (!existsSync(prefsPath)) writeFileSync(prefsPath, JSON.stringify({ archivedProjectIds: [], ui: {} }), { mode: 0o600 });
   chmodSync(prefsPath, 0o600);
+  let preferences = JSON.parse(readFileSync(prefsPath, 'utf8'));
+  if (!Array.isArray(preferences.archivedProjectIds) || preferences.archivedProjectIds.some(value => !id(value))) throw error(500, 'INVALID_PREFERENCES', '网页偏好文件无效。');
+  async function setProjectArchived(projectId, archived) {
+    if (!id(projectId) || typeof archived !== 'boolean') throw error(400, 'INVALID_PROJECT', '归档参数不正确。');
+    const ids = new Set(preferences.archivedProjectIds); if (archived) ids.add(projectId); else ids.delete(projectId);
+    const next = { ...preferences, archivedProjectIds: [...ids] }, temp = prefsPath + '.' + randomBytes(8).toString('hex');
+    writeFileSync(temp, JSON.stringify(next), { mode: 0o600, flag: 'wx' }); renameSync(temp, prefsPath); preferences = next;
+  }
   let checkpoint = { generation: codex.status().generation, seq: 0 };
   const reply = (res, status, value, headers = {}) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(value));
@@ -231,6 +288,7 @@ export function createWebServer({ config, codex }) {
   async function sendOnce(body, view) {
     fields(body, ['viewId', 'threadId', 'draft', 'mode', 'model', 'effort', 'clientUserMessageId']);
     if (!id(body.threadId) || !id(body.clientUserMessageId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+    if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在删除。');
     fields(body.draft, ['text', 'selections', 'uploadIds']);
     if (!text(body.draft.text, 500_000) || !body.draft.text.trim() ||
         (body.draft.selections?.length ?? 0) || (body.draft.uploadIds?.length ?? 0) ||
@@ -327,6 +385,7 @@ export function createWebServer({ config, codex }) {
       const token = cookieToken(req), session = auth.verifySession(token);
       if (!session) throw error(401, 'LOGIN_REQUIRED', '请先登录。');
       if (req.method === 'GET' && url.pathname === '/api/status') { reply(res, 200, publicStatus()); return; }
+      if (req.method === 'GET' && url.pathname === '/api/preferences') { reply(res, 200, safe(preferences)); return; }
       if (req.method === 'GET' && url.pathname === '/api/events') {
         const view = requireView(url.searchParams.get('viewId'), session);
         if (view.streams.size >= 2) throw error(429, 'TOO_MANY_STREAMS', '请关闭重复页面。');
@@ -364,7 +423,32 @@ export function createWebServer({ config, codex }) {
           const turns = structuredClone(result.result.data);
           for (const turn of turns) for (const item of turn.items) item._cursor = result.cursor;
           reply(res, 200, { ...result, result: { ...safe(result.result), transcript: renderTranscript({ id: body.params.threadId }, turns) } });
-        } else reply(res, 200, { ...result, result: safe(result.result) });
+        } else if (body.method === 'project/list') reply(res, 200, { ...result, result: { ...safe(result.result),
+          data: result.result.data.map(project => ({ ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) })) } });
+        else reply(res, 200, { ...result, result: safe(result.result) });
+      } else if (url.pathname === '/api/project/save') {
+        fields(body, ['viewId', 'projectId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
+        const project = await saveProject(codex, body);
+        reply(res, 200, { project: { ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) } });
+      } else if (url.pathname === '/api/project/archive') {
+        fields(body, ['viewId', 'projectId', 'archived']); requireView(body.viewId, session);
+        await setProjectArchived(body.projectId, body.archived); reply(res, 200, { archivedProjectIds: preferences.archivedProjectIds });
+        broadcast({ kind: 'preferences', cursor: checkpoint, native: { archivedProjectIds: preferences.archivedProjectIds } });
+      } else if (url.pathname === '/api/directory/create') {
+        fields(body, ['viewId', 'path']); requireView(body.viewId, session);
+        if (!absolutePath(body.path) || body.path === '/') throw error(400, 'INVALID_DIRECTORY', '请输入有效目录路径。');
+        if (!(await codex.rpc('fs/getMetadata', { path: dirname(body.path) })).result.isDirectory) throw error(400, 'INVALID_DIRECTORY', '父目录不存在。');
+        reply(res, 200, await codex.rpc('fs/createDirectory', { path: body.path, recursive: false }));
+      } else if (url.pathname === '/api/thread/delete') {
+        fields(body, ['viewId', 'threadId', 'confirmed']); requireView(body.viewId, session);
+        if (!id(body.threadId) || body.confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认删除会话记录。');
+        if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在删除。');
+        deleting.add(body.threadId);
+        try {
+          await deleteThread(codex, body);
+          for (const [key, view] of views) if (view.threadId === body.threadId) { view.threadId = null; ++view.openVersion; codex.releaseThread(body.threadId, key).catch(() => {}); }
+          discardIdle(body.threadId); reply(res, 200, {});
+        } finally { deleting.delete(body.threadId); }
       } else if (url.pathname === '/api/thread/open') {
         fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
@@ -376,6 +460,11 @@ export function createWebServer({ config, codex }) {
         let cwd;
         try { cwd = await realpath(body.cwd); if (!(await stat(cwd)).isDirectory()) throw new Error(); }
         catch { throw error(400, 'INVALID_DIRECTORY', '请选择存在且可访问的主机目录。'); }
+        if (body.projectId) {
+          const { project } = (await codex.rpc('project/read', { projectId: body.projectId })).result;
+          const roots = await Promise.all(project.roots.map(root => realpath(root.path).catch(() => null)));
+          if (!roots.includes(cwd)) throw error(400, 'PROJECT_ROOT_MISMATCH', '请选择该项目已登记的根目录。');
+        }
         const fingerprint = JSON.stringify([cwd, body.projectId, body.name]);
         if (view.creation?.fingerprint !== fingerprint && view.creation) throw error(409, 'CREATE_PENDING', '上一会话尚未确认，请先核对列表。');
         if (view.creation?.unknown) throw Object.assign(error(409, 'OUTCOME_UNKNOWN', '创建状态未知，请先核对会话列表。'), { outcome: 'unknown' });

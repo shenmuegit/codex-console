@@ -1,6 +1,7 @@
 // Opt-in live HTTPS/protocol acceptance. No browser UI or original desktop is controlled.
 import https from 'node:https';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -8,12 +9,13 @@ import assert from 'node:assert/strict';
 import { createCodexClient } from '../codex.mjs';
 import { createChatState, applyNativeEvent, installSnapshot } from '../public/chat.js';
 
-const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' }, 'exercise-chat': { type: 'boolean', default: false } } });
+const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
+  'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
 const password = (await readFile(values['password-file'], 'utf8')).trim();
-let cookie, viewId, threadId, state, actor, stream;
+let cookie, viewId, threadId, projectThreadId, state, actor, stream;
 const events = [];
 async function request(path, body, origin = config.origin) {
   return new Promise((resolve, reject) => {
@@ -72,6 +74,30 @@ try {
   const models = (await api('/api/rpc', { method: 'model/list', params: {} })).result;
   ({ viewId } = await api('/api/view', {})); stream = await connectEvents();
   const report = { https: true, unauthenticated: 401, foreignOrigin: 403, nativeModels: models.data.length, sseRequiresSnapshot: true };
+  if (values['exercise-projects']) {
+    const root = join(config.workspace ?? config.generatedRoots[0], 'project-probe-' + randomUUID());
+    for (const path of [root, join(root, 'old'), join(root, 'new')]) await api('/api/directory/create', { viewId, path });
+    const old = join(root, 'old'), next = join(root, 'new'), marker = join(old, 'keep.txt');
+    await writeFile(marker, 'PROJECT_FILES_PRESERVED\n', { mode: 0o600 });
+    const body = { viewId, name: 'Disposable project probe', rootPath: old, idempotencyKey: randomUUID() };
+    const { project } = await api('/api/project/save', body);
+    assert.equal((await api('/api/project/save', body)).project.id, project.id);
+    const created = await api('/api/thread/start', { viewId, projectId: project.id, cwd: old, name: 'Disposable project member' });
+    projectThreadId = created.snapshot.thread.id;
+    assert.equal(created.snapshot.thread.projectId, project.id);
+    await api('/api/project/save', { viewId, projectId: project.id, name: 'Rebound disposable project', rootPath: next });
+    const reopened = await api('/api/thread/open', { viewId, threadId: projectThreadId });
+    assert.equal(reopened.snapshot.thread.cwd, old); assert.equal(reopened.snapshot.cwd, old);
+    await api('/api/project/archive', { viewId, projectId: project.id, archived: true });
+    assert.ok((await api('/api/preferences')).archivedProjectIds.includes(project.id));
+    assert.equal((await api('/api/rpc', { method: 'project/read', params: { projectId: project.id } })).result.project.roots[0].path, next);
+    await api('/api/project/archive', { viewId, projectId: project.id, archived: false });
+    assert.equal((await api('/api/preferences')).archivedProjectIds.includes(project.id), false);
+    await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }); projectThreadId = null;
+    assert.equal(await readFile(marker, 'utf8'), 'PROJECT_FILES_PRESERVED\n');
+    await api('/api/project/archive', { viewId, projectId: project.id, archived: true });
+    report.projectLifecycle = true; report.projectCreateIdempotent = true; report.oldThreadCwdPreserved = true; report.projectFilesPreserved = true;
+  }
   if (values['exercise-chat']) {
     const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable HTTPS integration probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
@@ -109,6 +135,7 @@ try {
   console.log(JSON.stringify(report));
 } finally {
   stream?.destroy();
+  if (projectThreadId && cookie) await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }).catch(() => {});
   if (threadId && actor?.status().online) {
     const active = state?.turns.findLast(t => t.status === 'inProgress');
     if (active) await actor.rpc('turn/interrupt', { threadId, turnId: active.id }).catch(() => {});
