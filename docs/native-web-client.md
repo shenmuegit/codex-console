@@ -15,7 +15,7 @@ persistent native executables described below. Install the single package first:
 
 ```bash
 npm --prefix web ci
-node web/service.mjs init --origin https://127.0.0.1:8443 \
+node web/service.mjs init --origin https://127.0.0.1:15443 \
   --backend-bin "$HOME/.local/lib/codex-console-web/bin/codex-app-server" \
   --backend-home "$HOME/.local/state/codex-console-web/native-home" \
   --workspace "$HOME/.local/state/codex-console-web/workspace"
@@ -59,20 +59,32 @@ with HTTPS unavailable; installation and startup retain full validation.
 
 ## Current verified deployment
 
-- Entry: `https://172.16.0.6:8443`, bound on this host; native WS stays loopback
+- Entry: `https://172.16.0.6:15443`, bound on this host; native WS stays loopback
   `ws://127.0.0.1:4500`.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
   web preferences/uploads remain under its `web/` child.
 - Code: native managed worktree `/home/desktop/.codex/worktrees/native-web-client/codex-console`.
-- The old recorded transient backend/web units were stopped. The extra desktop
-  remains connected to the durable native service; the original desktop remains running.
+- The old Xpra service `codex-console.service` is stopped and disabled by owner
+  request to release port 15443; its original desktop/backend processes have ended.
+  The independent native backend continues to serve the browser client.
+
+The port change was verified with real HTTPS login, rejected foreign Origin,
+native model reads, SSE snapshot recovery and logout. Password, certificate and
+native/upload data are retained in the same private locations.
 
 172.16.0.6 is a private network address. Same-network HTTPS access was verified;
 external routing/public DNS is not configured by this install. For another host
 or public endpoint, configure its exact HTTPS origin and a matching certificate.
 
 ## Restart and rollback
+
+For an existing installation, change the private config's `origin` and `port`
+together to use another HTTPS port, for example `https://172.16.0.6:15443` and
+`15443`. The current certificate remains valid when the hostname/IP is unchanged.
+Confirm the target port is free before restarting the web unit. The old Xpra
+service can contain the original desktop and its active backend; stopping that
+whole service ends those processes and requires an agreed desktop shutdown.
 
 ```bash
 systemctl --user restart codex-console-native-web.service

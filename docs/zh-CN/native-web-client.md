@@ -12,7 +12,7 @@
 
 ```bash
 npm --prefix web ci
-node web/service.mjs init --origin https://127.0.0.1:8443 \
+node web/service.mjs init --origin https://127.0.0.1:15443 \
   --backend-bin "$HOME/.local/lib/codex-console-web/bin/codex-app-server" \
   --backend-home "$HOME/.local/state/codex-console-web/native-home" \
   --workspace "$HOME/.local/state/codex-console-web/workspace"
@@ -45,17 +45,26 @@ node web/service.mjs stop
 
 ## 当前已验证部署
 
-- 入口 `https://172.16.0.6:8443`，监听本机；原生 WS 仅回环 `ws://127.0.0.1:4500`。
+- 入口 `https://172.16.0.6:15443`，监听本机；原生 WS 仅回环 `ws://127.0.0.1:4500`。
 - 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
 - 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
   网页偏好及上传继续保留在其 `web/` 子目录。
 - 代码位于托管工作树 `/home/desktop/.codex/worktrees/native-web-client/codex-console`。
-- 已停止此前记录的临时后端/网页服务；额外桌面已连接长期后端，原桌面继续运行。
+- 按所有者要求停止并禁用旧 Xpra 服务 `codex-console.service`，释放 15443；
+  其中的原桌面及后端进程已结束，独立原生后端继续为网页客户端提供服务。
+
+端口切换已通过真实 HTTPS 登录、外来 Origin 拒绝、原生模型读取、SSE 快照恢复和退出验证。
+密码、证书、原生数据及上传文件继续保留在原私有位置。
 
 172.16.0.6 为内网地址，已验证同网络 HTTPS；本次安装未配置公网路由或公共 DNS。
 使用其他主机/公网入口时，需要配置准确 HTTPS 来源和匹配证书。
 
 ## 重启与回退
+
+已有部署更换 HTTPS 端口时，同时修改私有配置的 `origin` 和 `port`，例如
+`https://172.16.0.6:15443` 与 `15443`。主机名/IP 不变时可继续使用当前证书。
+确认目标端口空闲后再重启网页服务。旧 Xpra 服务可能包含原桌面及活动后端；
+停止整个服务会结束这些进程，需先确认可以关闭该桌面。
 
 ```bash
 systemctl --user restart codex-console-native-web.service
