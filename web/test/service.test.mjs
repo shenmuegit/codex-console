@@ -151,3 +151,16 @@ test('lifecycle mutations refuse an unrelated loaded unit before invoking start 
   const ownedCalls = (await readFile(f.log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.ok(ownedCalls.some(args => JSON.stringify(args) === JSON.stringify(unitCommand('stop'))));
 });
+
+test('owned units can stop and report status after TLS expiry or executable removal', async t => {
+  const f = await serviceCommandFixture(t), expired = join(f.root, 'expired.pem');
+  for (const name of ['codex-console-native-backend.service', 'codex-console-native-web.service']) await writeFile(join(f.unitDir, name), '# codex-console managed unit\n');
+  execFileSync('openssl', ['x509', '-in', f.config.tlsCert, '-signkey', f.config.tlsKey, '-days', '0', '-out', expired], { stdio: 'pipe' }); await chmod(expired, 0o600);
+  for (const [config, code] of [[{ ...f.config, tlsCert: expired }, 'TLS_INVALID'], [{ ...f.config, backendExecutable: join(f.root, 'removed-binary') }, 'ENOENT']]) {
+    await writeFile(f.configPath, JSON.stringify(config));
+    assert.equal(f.run('stop').status, 0);
+    const result = f.run('status'); assert.equal(result.status, 0);
+    const status = JSON.parse(result.stdout); assert.equal(status.backendUnit, 'inactive'); assert.equal(status.httpsAvailable, false); assert.equal(status.nativeOnline, null);
+    const start = f.run('start'); assert.equal(start.status, 1); assert.ok(start.stderr.includes(code));
+  }
+});

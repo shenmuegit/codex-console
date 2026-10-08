@@ -188,13 +188,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const action = positionals[0], configPath = values.config || join(configBase(), 'config.json');
     if (action === 'init') { const result = await initialize({ configPath, origin: values.origin, backendExecutable: values['backend-bin'], backendHome: values['backend-home'], workspace: values.workspace,
       cert: values.cert, key: values.key, stateDir: values['state-dir'], listenHost: values['listen-host'] }); console.log(JSON.stringify({ origin: result.config.origin, configPath, passwordFile: result.passwordFile })); }
+    else if (action === 'stop') { await requireOwnedLoadedUnits(); execFileSync('systemctl', unitCommand('stop'), { stdio: 'pipe' }); }
     else {
-      const config = JSON.parse(await readFile(configPath, 'utf8')); await validateConfig(config, configPath);
+      assertPrivate(await stat(configPath)); const config = JSON.parse(await readFile(configPath, 'utf8'));
+      if (action !== 'status') await validateConfig(config, configPath);
       if (action === 'install') { await install(config, configPath); console.log('Native user units installed.'); }
       else if (action === 'status') {
         const output = execFileSync('systemctl', unitCommand('status'), { encoding: 'utf8' }), blocks = output.trim().split(/\n\n/);
         const state = name => blocks.find(block => block.includes('Id=' + name))?.match(/ActiveState=(.*)/)?.[1] || 'unknown';
-        console.log(JSON.stringify(statusSummary(config, { backend: state(BACKEND), web: state(WEB) }, await health(config, configPath))));
+        const availability = await validateConfig(config, configPath).then(() => health(config, configPath)).catch(() => ({ httpsAvailable: false, nativeOnline: null }));
+        console.log(JSON.stringify(statusSummary(config, { backend: state(BACKEND), web: state(WEB) }, availability)));
       } else { const command = unitCommand(action); await requireOwnedLoadedUnits(); execFileSync('systemctl', command, { stdio: 'pipe' }); }
     }
   } catch (e) { console.error(`Native service command failed (${e.code ?? e.name}).`); process.exitCode = 1; }

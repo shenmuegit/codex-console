@@ -53,6 +53,9 @@ shell. A worktree referenced by an installed unit must stay present.
 Installation checks both existing unit owners before changing either file.
 Start/stop verify the OS-user owner and managed marker of both loaded unit files;
 an unrelated service with the same name is preserved.
+Stopping owned units does not require a working TLS/configuration installation.
+Status still reports unit state after certificate expiry or executable removal,
+with HTTPS unavailable; installation and startup retain full validation.
 
 ## Current verified deployment
 
