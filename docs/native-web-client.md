@@ -59,7 +59,7 @@ with HTTPS unavailable; installation and startup retain full validation.
 
 ## Current verified deployment
 
-- Entry: `https://172.16.0.6:15443`, bound on this host; native WS stays loopback
+- Entry: `https://117.72.158.35:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
   `ws://127.0.0.1:4500`.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
@@ -69,18 +69,21 @@ with HTTPS unavailable; installation and startup retain full validation.
   request to release port 15443; its original desktop/backend processes have ended.
   The independent native backend continues to serve the browser client.
 
-The port change was verified with real HTTPS login, rejected foreign Origin,
-native model reads, SSE snapshot recovery and logout. Password, certificate and
+The public entry was verified with direct HTTPS login, rejected foreign Host/Origin,
+native model reads, SSE snapshot recovery and logout. Password, private key and
 native/upload data are retained in the same private locations.
 
-172.16.0.6 is a private network address. Same-network HTTPS access was verified;
-external routing/public DNS is not configured by this install. For another host
-or public endpoint, configure its exact HTTPS origin and a matching certificate.
+The canonical Host/Origin is `https://117.72.158.35:15443`. The private config uses
+`cert-public-117.72.158.35.pem`, whose SAN matches the public IP. It is self-signed;
+trust/import the current certificate on the accessing device. Checks disable proxy
+variables and connect directly to the public IP. External-device acceptance is
+still manual. If the public IP or hostname changes, update both the configured
+origin and matching certificate; arbitrary Host/Origin values remain rejected.
 
 ## Restart and rollback
 
 For an existing installation, change the private config's `origin` and `port`
-together to use another HTTPS port, for example `https://172.16.0.6:15443` and
+together to use another HTTPS port, for example `https://117.72.158.35:15443` and
 `15443`. The current certificate remains valid when the hostname/IP is unchanged.
 Confirm the target port is free before restarting the web unit. The old Xpra
 service can contain the original desktop and its active backend; stopping that
@@ -99,7 +102,7 @@ mutations are never replayed. Stop/restart only these owned units. Moving the
 original desktop to this backend requires a separate migration instruction after
 its active work finishes.
 
-Rollback keeps original processes and all native/upload data intact:
+Rollback keeps all native/upload data intact:
 
 ```bash
 node web/service.mjs stop
