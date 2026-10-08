@@ -85,7 +85,7 @@ nav { display: grid; gap: 2px; }
 .welcome { margin: 0 auto; text-align: center; padding: 24px; }
 .welcome h2 { font-size: 32px; line-height: 1.2; font-weight: 600; letter-spacing: -.035em; margin: 0 0 12px; }
 .welcome p { color: var(--muted); margin: 0; }
-.chat-pane[data-empty="true"] .chat-feed { flex: 0 0 auto; padding-top: clamp(60px, 16dvh, 150px); padding-bottom: 0; }
+.chat-pane[data-empty="true"] .chat-feed { flex: 0 1 auto; padding-top: clamp(60px, 16dvh, 150px); padding-bottom: 0; }
 .chat-pane[data-empty="true"] .composer { margin-bottom: auto; margin-top: 12px; }
 .composer { flex: 0 0 auto; width: min(100%, calc(var(--content-width) + 48px)); margin: 0 auto; padding: 8px 24px max(12px, env(safe-area-inset-bottom)); }
 .composer-surface { position: relative; border: 1px solid var(--border); border-radius: 24px; padding: 12px 12px 8px; background: var(--surface); box-shadow: 0 1px 4px #00000008; }

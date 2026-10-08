@@ -144,13 +144,15 @@ authoritative resync after backend restart and one native user message per UUID.
 Runtime proof files stay outside Git.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
-390×844/1280×820 screenshot, real mobile IME/picker/clipboard/download or desktop
+authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop
 keyboard acceptance is claimed. Those are manual release checks: log in, open
 the sidebar and choose a native project/conversation on a phone, confirm IME
 Enter, choose/remove/retry files, copy
 the full ID, download exact bytes, open the same thread in the extra desktop and
 send in both directions. The CSS uses visible focus, native controls, safe areas
 and the visual viewport for the keyboard; physical-device behavior remains unverified.
+An offline static Firefox fixture at 390×844 with 430 px of visible app height
+confirmed that the empty welcome area shrinks and the send button stays visible.
 
 Known presentation limit: another page opening the same conversation can reset
 already loaded older pages to the latest 20-turn snapshot. Use **Load earlier
