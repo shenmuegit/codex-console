@@ -105,7 +105,8 @@ export async function initialize(options) {
   if (canonicalHome === canonicalOriginal || resolve(backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Do not initialize the original desktop home.');
   for (const path of [configPath, stateDir, backendHome, workspace]) if (!pathValue(path)) throw fail('ABSOLUTE_PATH_REQUIRED', 'Configuration paths must be absolute.');
   await requireExternal(repoDir, [configPath, stateDir, backendHome]);
-  for (const path of [privateDir, stateDir, backendHome, workspace]) await privateDirectory(path);
+  for (const path of [privateDir, stateDir, backendHome]) await privateDirectory(path);
+  await mkdir(workspace, { recursive: true, mode: 0o700 });
   const origin = new URL(options.origin || 'https://127.0.0.1:8443').origin, url = new URL(origin), host = url.hostname.replace(/^\[|\]$/g, '');
   const tlsKey = join(privateDir, 'key.pem'), tlsCert = join(privateDir, 'cert.pem'), environmentFile = join(privateDir, 'runtime.env'), passwordFile = join(privateDir, 'owner-password');
   for (const path of [tlsKey, tlsCert, environmentFile, passwordFile]) if (await exists(path)) throw fail('CREDENTIAL_EXISTS', 'Existing private material is preserved.');

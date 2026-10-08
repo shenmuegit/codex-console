@@ -80,6 +80,14 @@ test('refusing the original home happens before any filesystem or permission cha
   assert.equal((await stat(original)).mode & 0o777, 0o755);
 });
 
+test('initialization preserves permissions of an existing project workspace', async t => {
+  const f = await configFixture(t); await chmod(f.config.workspace, 0o755);
+  await initialize({ configPath: join(f.root, 'workspace-check', 'config.json'), origin: 'https://127.0.0.1:8443',
+    backendExecutable: f.config.backendExecutable, backendHome: f.config.backendHome, workspace: f.config.workspace,
+    repoDir: f.config.repoDir, stateDir: join(f.root, 'workspace-state') });
+  assert.equal((await stat(f.config.workspace)).mode & 0o777, 0o755);
+});
+
 test('initialization rejects symlinked repository ancestors before writing private material', async t => {
   const f = await configFixture(t), alias = join(f.root, 'outside');
   await symlink(f.config.repoDir, alias);
