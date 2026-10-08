@@ -263,7 +263,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (!alive || version !== threadLoad || project?.id !== projectId) return;
     if (!more) { if (menuTarget) closeThreadMenu(); $('#threads').replaceChildren(); }
     for (const item of page.data) {
-      const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id) : open(item.id));
+      const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
       const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
       const actions = element('button', null, 'thread-actions'); actions.type = 'button';
       actions.setAttribute('aria-label', '会话选项：' + (item.name || item.preview || item.id)); actions.setAttribute('aria-haspopup', 'menu'); actions.setAttribute('aria-expanded', 'false'); actions.setAttribute('aria-controls', 'thread-menu');
@@ -430,7 +430,19 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     finally { save(state); if (selected === state) draw(); }
   }
   function information(title, text) { $('#info-title').textContent = title; $('#info-body').textContent = text; $('#info-dialog').showModal(); }
-  async function restore(threadId) { await api('/api/thread/unarchive', { viewId, threadId }); const state = states.get(threadId); if (state) state.archived = false; $('#show-archived-threads').checked = false; await open(threadId); }
+  async function restore(threadId, selectRestored = false) {
+    if (busyThreads.has(threadId)) return false;
+    const version = selectRestored ? ++opening : opening, current = selected, currentProject = project;
+    busyThreads.add(threadId); draw();
+    try {
+      await api('/api/thread/unarchive', { viewId, threadId });
+      const state = states.get(threadId); if (state) state.archived = false;
+      if (!alive) return;
+      if (selectRestored && version === opening && selected === current && project === currentProject) {
+        $('#show-archived-threads').checked = false; await open(threadId);
+      } else await loadThreads();
+    } finally { busyThreads.delete(threadId); draw(); }
+  }
   async function runCommand({ command, args }) {
     if (command === 'new') return newThread();
     if (command === 'model') { if (args) { const [model, effort] = args.split(/\s+/); return usage.choose(model, effort); } $('#model').focus(); return; }

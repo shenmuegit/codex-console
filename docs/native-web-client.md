@@ -24,6 +24,9 @@ or directory mutation controls, logout control or manual conversation refresh.
 Native row menus require a current browser with Popover API support.
 Archive always asks for confirmation that any running work will stop, including
 when the conversation list has not yet received its latest status.
+Restoring from a row menu preserves the current conversation, draft and archive
+filter. Clicking the archived row itself restores and opens it unless a newer
+navigation supersedes that action; repeated restores share the row's busy guard.
 
 ## Install and operate
 
@@ -128,8 +131,8 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-91 Node checks passed; the production dependency audit reported zero vulnerabilities.
-The initial native web release's review found six Important findings and three findings
+95 Node checks passed; the production dependency audit reported zero vulnerabilities.
+The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
 reload identity; a real HTTPS/native check also confirms nested Unicode completion.
