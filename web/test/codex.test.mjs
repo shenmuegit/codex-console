@@ -109,6 +109,20 @@ test('idle_thread_unsubscribes only when every page has released it', async t =>
   assert.equal(peer.sent.filter(m => m.method === 'thread/unsubscribe').length, 1);
 });
 
+test('closing the last page during atomic resume waits to learn whether work is active', async t => {
+  const { client, peer, flush } = await connectedFixture();
+  t.after(() => client.close());
+  const retained = client.retainThread('t', 'view');
+  const released = client.releaseThread('t', 'view');
+  assert.equal(peer.sent.some(m => m.method === 'thread/unsubscribe'), false);
+  peer.replyTo('thread/resume', resumeFixture('t', [{ id: 'active', status: 'inProgress', items: [] }]));
+  await retained; await released;
+  assert.equal(peer.sent.some(m => m.method === 'thread/unsubscribe'), false);
+  peer.notify('turn/completed', { threadId: 't', turn: { id: 'active', status: 'completed', items: [] } });
+  await flush(); assert.equal(peer.sent.at(-1).method, 'thread/unsubscribe');
+  peer.replyTo('thread/unsubscribe', { status: 'unsubscribed' });
+});
+
 test('disconnect marks a sent write unknown, rejects stale answers and never replays writes', async t => {
   const { client, peer } = await connectedFixture();
   t.after(() => client.close());

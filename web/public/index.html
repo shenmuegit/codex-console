@@ -22,7 +22,41 @@
   </main>
   <main id="workspace" hidden>
     <header class="topbar"><strong>Codex Console</strong><span id="connection" role="status">正在连接…</span><button id="logout">退出登录</button></header>
-    <section class="empty"><h1>已连接工作主机</h1><p class="muted">原生连接状态会自动更新。</p></section>
+    <div class="work-layout" data-level="projects">
+      <aside class="projects-pane" aria-label="项目">
+        <div class="pane-heading"><h2>项目</h2><button id="refresh-projects" aria-label="刷新项目">刷新</button></div>
+        <nav id="projects" aria-label="项目列表"></nav>
+        <button id="more-projects" hidden>更多项目</button>
+      </aside>
+      <aside class="threads-pane" aria-label="会话">
+        <div class="pane-heading"><button class="mobile-back" id="back-projects">项目</button><h2 id="project-title">全部会话</h2></div>
+        <label for="cwd">新会话工作目录</label><input id="cwd" placeholder="/主机上的目录" autocomplete="off" spellcheck="false">
+        <div class="toolbar"><button id="new-thread" class="primary">新建会话</button><button id="refresh-threads">刷新</button></div>
+        <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" hidden>更多会话</button>
+      </aside>
+      <section class="chat-pane" aria-label="聊天">
+        <header class="chat-heading">
+          <button class="mobile-back" id="back-threads">会话</button>
+          <div class="thread-title"><h1 id="thread-title">选择或新建一个会话</h1><code id="thread-id"></code></div>
+          <button id="copy-thread" disabled>复制 ID</button><button id="refresh-chat" disabled>刷新会话</button>
+        </header>
+        <p id="effective-settings" class="muted chat-meta"></p>
+        <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
+          <button id="older-history" hidden>加载更早记录</button><div id="messages"></div>
+          <p id="chat-empty" class="empty muted">从左侧打开会话，继续你的工作。</p>
+        </div>
+        <section id="native-requests" aria-label="待回答的原生请求"></section>
+        <div id="chat-error" class="error chat-meta" role="alert"></div>
+        <form id="composer" class="composer">
+          <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="3" placeholder="给 Codex 发送消息…" disabled></textarea>
+          <div class="composer-footer"><span id="turn-status" class="muted" role="status"></span>
+            <label id="send-mode-label" hidden>运行中输入<select id="send-mode"><option value="steer">补充当前轮次</option><option value="queue">排队到下一轮</option></select></label>
+            <button id="retry-uncertain" type="button" hidden>核对后重新发送</button>
+            <button id="stop-turn" type="button" hidden>停止</button><button id="send" type="submit" class="primary" disabled>发送</button>
+          </div>
+        </form>
+      </section>
+    </div>
   </main>
 </body>
 </html>

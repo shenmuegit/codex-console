@@ -43,6 +43,7 @@ export function createCodexClient({ url }) {
 
   function unsubscribe(threadId, entry) {
     if (entry.views.size || entry.activeTurnId || entry.releasing) return entry.releasing;
+    if (entry.resumes.size) return Promise.allSettled([...entry.resumes]).then(() => unsubscribe(threadId, entry));
     if (!online) { threads.delete(threadId); return; }
     entry.releasing = send('thread/unsubscribe', { threadId }).finally(() => {
       entry.releasing = null;
@@ -52,8 +53,12 @@ export function createCodexClient({ url }) {
   }
 
   function resume(threadId) {
-    return send('thread/resume', { threadId, excludeTurns: true,
-      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'full' } });
+    const entry = threads.get(threadId);
+    const operation = send('thread/resume', { threadId, excludeTurns: true,
+      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'full' } })
+      .finally(() => entry?.resumes.delete(operation));
+    entry?.resumes.add(operation);
+    return operation;
   }
 
   function receive(raw) {
@@ -141,7 +146,7 @@ export function createCodexClient({ url }) {
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     retainThread(threadId, viewId) {
       let entry = threads.get(threadId);
-      if (!entry) threads.set(threadId, entry = { views: new Set(), activeTurnId: null, releasing: null });
+      if (!entry) threads.set(threadId, entry = { views: new Set(), activeTurnId: null, releasing: null, resumes: new Set() });
       entry.views.add(viewId);
       return entry.releasing ? entry.releasing.catch(() => {}).then(() => resume(threadId)) : resume(threadId);
     },

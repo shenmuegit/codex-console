@@ -4,8 +4,8 @@
 
 Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
-components are the shared native connection and HTTPS owner login/event stream.
-Conversation controls follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+components include shared native transport, HTTPS owner login and live browser
+conversations. Projects/files/model controls follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -81,7 +81,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Projects, conversation controls, attachments, usage and deployment are subsequent
+Project editing, attachments, model/usage controls and deployment are subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
@@ -119,3 +119,49 @@ Nine checks passed, including a paused real TLS/SSE reader while another page
 continued receiving events. A live HTTPS smoke against the source backend also
 passed: unauthenticated 401, foreign Origin 403, four native catalog models,
 snapshot-required SSE and logout. Password values were not printed.
+
+
+## Browser conversations
+
+Choose a native project or all conversations; list pages contain 20 entries.
+New conversations use the selected host directory, full access and no execution
+approvals, subject to native managed restrictions. Each new empty thread is named
+before its atomic resume. The header displays the real thread ID for copying and
+native conversation defaults. Reading a thread leaves its execution permissions
+unchanged.
+
+The composer keeps a stable message UUID, preserves failed/uncertain drafts and
+retains drafts in browser session storage when available. During active work,
+choose **Supplement current turn** or **Queue for the next turn** explicitly.
+Steering keeps current-turn settings; queued work uses native future defaults.
+Queueing waits for the native settings notification before applying full future
+permission defaults. Stop targets the actual active turn ID.
+
+Opening/switching pages uses native atomic resume and ordered cursors. Native
+completion summaries preserve previously streamed tool items. Older full history
+pages prepend without overwriting current items; delayed safe HTML cannot replace
+newer text. Markdown uses the pinned sole dependency `markdown-it` 15.0.2 with raw
+HTML disabled, restricted URL schemes and no automatic external image loads.
+Text streams immediately; safe HTML updates coalesce to 100 ms.
+
+Native approvals, permission requests, questions and MCP form/URL elicitations
+have explicit response controls. Resolved/stale forms cannot answer again.
+Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
+desktop Enter sends, and the Send button is available on all devices.
+
+Opt-in live acceptance (uses the private owner password without printing it):
+
+```bash
+node web/test/web-probe.mjs \
+  --config "$HOME/.config/codex-console-web/integration/config.json" \
+  --password-file "$HOME/.config/codex-console-web/integration/owner-password" \
+  --exercise-chat
+```
+
+Verified against the source-built backend: HTTPS send, a second native protocol
+client's reply arriving over SSE, close/reopen during a real command, interruption,
+one native message per repeated UUID and deletion of only the disposable test
+thread. The original desktop remained running. No UI automation surface was
+available; browser/desktop keyboard actions, actual clipboard copying and mobile
+visual layout await manual acceptance. Use the extra desktop to open the same
+real thread ID, send in both directions, then verify mobile navigation and copy.

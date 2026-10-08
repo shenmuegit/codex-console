@@ -9,3 +9,4 @@ __pycache__/
 /config.sh
 *.pem
 /dist/
+/web/node_modules/

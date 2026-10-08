@@ -118,18 +118,20 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 新建 `web/transcript.mjs`、`web/public/chat.js`、`web/test/chat.test.mjs`；更新服务器/页面/`web/package.json`，新建 `web/package-lock.json`。
 **接口：** `createChatState(threadId)`、`applyNativeEvent(state,envelope):state`、`installSnapshot(state,{snapshot,cursor}):state`、`buildTurnParams({threadId,input,model?,effort?,clientUserMessageId}):object`、`renderTranscript(thread,turns):{items,html}`。按原生 item ID 与帧游标更新，不按文本相等去重。
 
-- [ ] **1. 写失败测试：** 重复 SSE ID、不同事件的相同文字、运行中原子接入、分页、不确定写入、实际权限和草稿保留。示例：
+- [x] **1. 写失败测试：** 重复 SSE ID、不同事件的相同文字、运行中原子接入、分页、不确定写入、实际权限和草稿保留。示例：
   ```js
   const p = buildTurnParams({threadId:'t',input:[{type:'text',text:'测试'}],clientUserMessageId:'m'});
   assert.deepEqual(p.sandboxPolicy, {type:'dangerFullAccess'});
   assert.equal(p.approvalPolicy,'never'); assert.equal('permissions' in p,false);
   ```
   两个不同游标的 `哈` 应是 `哈哈`，重复游标不能追加，完成 item 的全文替换增量文本。
-- [ ] **2. 确认 RED：** `node --test web/test/chat.test.mjs`。
-- [ ] **3. 最小实现：** 项目/会话列表、新建/打开/发送/停止/复制 ID；新线程带最大授权。打开走顺序 resume；快照未返回先缓冲事件，丢弃旧游标并应用新游标，代次变化重同步。每页 20 条，前插旧页保留滚动锚点。按上述验证后的草稿生成原生输入及稳定消息 UUID，活动轮次明确选择 steer 或 queue，不自动重放。同步提交锁和最多 1024 条的 10 分钟近期写入记录（未决写入超额时拒绝新增，不淘汰未决记录）防重；不确定结果等待核对/人工选择。
-- [ ] **4. 安装唯一依赖：** `npm --prefix web install --save-exact markdown-it@15.0.2`。服务端禁用 HTML、验证 URL，立即推文字、100 毫秒合并安全 HTML 更新。添加 CSP、nosniff、安全外链属性与 XSS 断言。原生应答表单按 `v2/item.rs`/`permissions.rs`，拒绝/不支持须可见，每个代次请求只有一个应答者。
-- [ ] **5. 确认 GREEN 与双端：** 跑当前全部测试；浏览器发短回复、额外桌面显示，桌面发送、网页更新，中断临时轮次，复制真实 ID；运行中关闭/重开网页，接受写入后断线不得自动重复。确认原桌面仍运行。
-- [ ] **6. 提交推送：** `feat: add browser conversations with native live updates`，同步双语说明/证据并确认远端。
+- [x] **2. 确认 RED：** `node --test web/test/chat.test.mjs`。
+- [x] **3. 最小实现：** 项目/会话列表、新建/打开/发送/停止/复制 ID；新线程带最大授权。打开走顺序 resume；快照未返回先缓冲事件，丢弃旧游标并应用新游标，代次变化重同步。每页 20 条，前插旧页保留滚动锚点。按上述验证后的草稿生成原生输入及稳定消息 UUID，活动轮次明确选择 steer 或 queue，不自动重放。同步提交锁和最多 1024 条的 10 分钟近期写入记录（未决写入超额时拒绝新增，不淘汰未决记录）防重；不确定结果等待核对/人工选择。
+- [x] **4. 安装唯一依赖：** `npm --prefix web install --save-exact markdown-it@15.0.2`。服务端禁用 HTML、验证 URL，立即推文字、100 毫秒合并安全 HTML 更新。添加 CSP、nosniff、安全外链属性与 XSS 断言。原生应答表单按 `v2/item.rs`/`permissions.rs`，拒绝/不支持须可见，每个代次请求只有一个应答者。
+- [x] **5. 确认 GREEN 与双端：** 跑当前全部测试；浏览器发短回复、额外桌面显示，桌面发送、网页更新，中断临时轮次，复制真实 ID；运行中关闭/重开网页，接受写入后断线不得自动重复。确认原桌面仍运行。
+- [x] **6. 提交推送：** `feat: add browser conversations with native live updates`，同步双语说明/证据并确认远端。
+
+验收裁定：当前环境未启用浏览器/原生界面控制，以真实 HTTPS 和原生协议探针替代自动界面点击；剪贴板、桌面键盘操作及手机视觉验收明确尚未验证。
 
 ## 任务 4：原生工作目录生命周期与安全删除会话
 
