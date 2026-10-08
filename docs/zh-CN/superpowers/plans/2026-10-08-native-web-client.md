@@ -8,7 +8,7 @@
 **Spec:** [已批准设计](../specs/2026-10-07-native-web-client-design.md)，用户于 2026-10-08 批准。
 **English:** [English implementation plan](../../../superpowers/plans/2026-10-08-native-web-client.md)。
 
-状态：书面实现计划待审核；尚未编写产品代码或安装依赖。
+状态：用户于 2026-10-08 通过“继续”批准按推荐的 Native 方式执行；在隔离 `codex/native-web-client` 工作树实现，已完成步骤在下方勾选。
 
 ## Global Constraints / 全局约束
 

@@ -4,10 +4,10 @@
 · [Source investigation](../../codex-source.md)
 · [Verified backend test](../../local-app-server-test.md)
 
-Revised and approved by the user on 2026-10-08. Browser-client implementation has
-not started. This revision replaces the IPC-first design with the verified shared
-app-server route. The [implementation plan](../plans/2026-10-08-native-web-client.md)
-is the next review artifact.
+Revised and approved by the user on 2026-10-08. Native execution of the
+[implementation plan](../plans/2026-10-08-native-web-client.md) is underway in an
+isolated worktree. This revision replaces the IPC-first design with the verified
+shared app-server route; [operator instructions](../../native-web-client.md) track delivery.
 
 ## Goal and scope
 
