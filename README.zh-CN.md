@@ -125,6 +125,8 @@ journalctl --user -u codex-console.service -n 100   # 查看服务日志
 
 ## 开发验证
 
+本仓库不配置 GitHub Actions 自动检查，推送和 PR 不会触发仓库工作流；发布前请手动执行适用的本地验证。
+
 安装运行依赖及 Node.js 20+ 后：
 
 ```bash
