@@ -5,8 +5,8 @@
 Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
 components include shared native transport, HTTPS owner login and live browser
-conversations and native project management. Native files/photos and authenticated downloads are included; model/usage controls
-follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+conversations and native project management. Native files/photos, model selection and usage displays are included. Native
+completion commands and durable installation follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -82,7 +82,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Model/usage controls and deployment are subsequent
+Native completion commands and deployment are subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
@@ -235,3 +235,31 @@ with `--exercise-attachments` to verify the native text/photo inputs and exact
 model-generated download bytes. This passed against the source backend, including
 successful download of an uploaded file after its disposable thread was deleted.
 Browser picker/preview interaction still follows the manual UI acceptance note.
+
+
+## Models and usage
+
+The model menu and reasoning options come from the native catalog. Changes apply
+to future turns through `thread/settings/update` and wait for its matching native
+notification; they preserve the draft and never change a running turn through
+`turn/settings/update`. Queued messages use shared future defaults, so subsequent
+selector changes can affect them. Steering inherits the current turn. The header
+reports native defaults and managed policy; unsupported model/effort/photo
+combinations are rejected with the draft and attachments retained.
+
+Context shows the latest `last.totalTokens`, available native window and the
+native 12,000-token baseline percentage. Accumulated session totals are not used
+as active context; missing windows/usage are explicitly unknown. Compaction and
+model activity refresh this through native notifications. Execution/quota errors
+arriving after an accepted send stay visible in chat.
+
+Seven-day quota selects duration 10080 minutes in either native window, preferring
+`rateLimitsByLimitId` when available. Buckets remain separate; reset seconds are
+converted to local time. Account/model changes invalidate in-flight reads and
+cached displays, including stale failures. No quota amounts or account values
+are committed as test evidence.
+
+Seven focused checks and the full current suite passed. Live
+`web-probe.mjs --exercise-usage` verified two supported efforts, effective next
+turn metadata, native context, compaction context refresh and real weekly
+metadata against the source backend.

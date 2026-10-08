@@ -172,17 +172,17 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 **Files:** Create `web/public/usage.js`, `web/test/usage.test.mjs`; update server/public modules.
 **Interfaces:** `contextUsage(tokenUsage):{tokens,window,remainingPercent,usedPercent}` with nullable values; `weeklyUsage(response):Array<{limitId,usedPercent,remainingPercent,resetsAt}>`. Model options come from native `model/list`, including supported/default effort.
 
-- [ ] **1. Write failing tests** for the fixed native baseline, accumulated-token confusion, null windows, multiple quota buckets, primary-only weekly windows, unsupported efforts, and superseded account reads. Example:
+- [x] **1. Write failing tests** for the fixed native baseline, accumulated-token confusion, null windows, multiple quota buckets, primary-only weekly windows, unsupported efforts, and superseded account reads. Example:
   ```js
   const v = contextUsage({last:{totalTokens:112000},total:{totalTokens:900000},modelContextWindow:200000});
   assert.equal(v.remainingPercent,47); assert.equal(v.tokens,112000);
   assert.equal(contextUsage({last:{totalTokens:5},modelContextWindow:null}).remainingPercent,null);
   ```
   Assert stale account-generation results never repopulate the cleared cache.
-- [ ] **2. Verify RED:** `node --test web/test/usage.test.mjs`.
-- [ ] **3. Implement** next-turn-only model/effort overrides and actual native-policy/model display. A steer inherits the active turn; do not send model/sandbox fields unsupported by `turn/steer`. Before queueing, apply future defaults with native `thread/settings/update` and await its matching settings notification; queued items use those shared future defaults, not invented per-item settings. Display that subsequent setting changes can affect queued work, and never use running-turn `turn/settings/update` for this selector. Context formula: window ≤ 12000 → remaining 0; otherwise round/clamp `100 * max(0,(window-12000)-max(0,last.totalTokens-12000))/(window-12000)`. Unknown window remains null. Merge native quota notifications or refetch; select duration 10080 in either window, separate buckets, compute remaining `max(0,100-usedPercent)`, and convert reset seconds correctly. Account changes invalidate older requests/caches.
-- [ ] **4. Verify GREEN and native settings/usage:** all tests; select two supported efforts, verify the next native turn settings while preserving drafts, trigger compaction in a disposable thread, verify context refresh, and read real weekly metadata without committing its values. UI missing-data tests use explicit null fixtures. Update both docs.
-- [ ] **5. Commit/push:** `feat: expose native models context and weekly usage`; verify remote containment.
+- [x] **2. Verify RED:** `node --test web/test/usage.test.mjs`.
+- [x] **3. Implement** next-turn-only model/effort overrides and actual native-policy/model display. A steer inherits the active turn; do not send model/sandbox fields unsupported by `turn/steer`. Before queueing, apply future defaults with native `thread/settings/update` and await its matching settings notification; queued items use those shared future defaults, not invented per-item settings. Display that subsequent setting changes can affect queued work, and never use running-turn `turn/settings/update` for this selector. Context formula: window ≤ 12000 → remaining 0; otherwise round/clamp `100 * max(0,(window-12000)-max(0,last.totalTokens-12000))/(window-12000)`. Unknown window remains null. Merge native quota notifications or refetch; select duration 10080 in either window, separate buckets, compute remaining `max(0,100-usedPercent)`, and convert reset seconds correctly. Account changes invalidate older requests/caches.
+- [x] **4. Verify GREEN and native settings/usage:** all tests; select two supported efforts, verify the next native turn settings while preserving drafts, trigger compaction in a disposable thread, verify context refresh, and read real weekly metadata without committing its values. UI missing-data tests use explicit null fixtures. Update both docs.
+- [x] **5. Commit/push:** `feat: expose native models context and weekly usage`; verify remote containment.
 
 ## Task 7: Native references, skills and slash actions
 

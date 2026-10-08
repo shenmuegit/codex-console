@@ -1,4 +1,5 @@
 import { displayNativeText, mountAttachments } from './composer.js';
+import { mountUsage } from './usage.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
@@ -25,6 +26,7 @@ export function installSnapshot(state, { snapshot, cursor }) {
   state.settings = { model: snapshot.model, effort: snapshot.reasoningEffort, approvalPolicy: snapshot.approvalPolicy,
     sandbox: snapshot.sandbox, cwd: snapshot.cwd, activePermissionProfile: snapshot.activePermissionProfile };
   state.turns = stampItems(copy(snapshot.initialTurnsPage?.data ?? snapshot.thread.turns ?? []).reverse(), cursor, snapshot.transcript?.items);
+  state.error = state.turns.at(-1)?.error?.message ?? null;
   state.historyCursor = snapshot.initialTurnsPage?.nextCursor ?? null;
   state.cursor = cursor; state.generation = cursor.generation; state.ready = true; state.resync = false;
   state.buffer = []; state.bufferBytes = 0; state.requests.clear();
@@ -89,9 +91,14 @@ export function applyNativeEvent(state, event) {
     const s = p.threadSettings;
     state.settings = { model: s.model, effort: s.effort, approvalPolicy: s.approvalPolicy,
       sandbox: s.sandboxPolicy, cwd: s.cwd, activePermissionProfile: s.activePermissionProfile };
+    state.thread.cwd = s.cwd;
   }
+  if (method === 'error') state.error = `${p.error?.message ?? '原生执行失败。'}${p.willRetry ? '（原生后端将重试）' : ''}`;
   if (method === 'thread/tokenUsage/updated') state.tokenUsage = p.tokenUsage;
   if (['turn/started', 'turn/completed'].includes(method)) {
+    if (method === 'turn/started') state.error = null;
+    if (method === 'turn/completed' && p.turn.status === 'completed' && !p.turn.error) state.error = null;
+    if (p.turn.error?.message) state.error = p.turn.error.message;
     let turn = state.turns.find(t => t.id === p.turn.id);
     if (!turn) state.turns.push(turn = { id: p.turn.id, items: [] });
     const existing = turn.items;
@@ -171,8 +178,10 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
   let editingProject, projectKey, directoryTarget, directoryPath, directoryVersion = 0;
   let presentationPending = false, presentationAgain = false;
+  let shownNativeError;
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft');
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
+  const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   $('#cwd').value = defaultCwd; $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -344,7 +353,9 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     for (const [key, form] of formNodes) if (!state?.requests.has(key)) { form.remove(); formNodes.delete(key); }
     if (stick) feed.scrollTop = feed.scrollHeight;
     if (state) save(state);
+    if (shownNativeError !== state?.error) { shownNativeError = state?.error; $('#chat-error').textContent = state?.error ?? ''; }
     attachments.render(state);
+    usage.render();
   }
   function scheduleDraw() { if (!drawing) { drawing = true; requestAnimationFrame(() => { drawing = false; draw(); }); } }
   async function loadPresentation() {
@@ -455,7 +466,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     try { await api('/api/thread/stop', { viewId, threadId: selected.threadId, turnId: turn.id }); } finally { draw(); } });
   bind($('#retry-uncertain'), 'click', () => { if (selected?.pending?.unknown && window.confirm('请先核对历史。确认重新发送当前草稿？')) { selected.pending = null; save(selected); draw(); } });
   return {
-    async load() { await Promise.all([loadProjects(), loadThreads()]); const requested = new URL(location.href).searchParams.get('thread'); if (requested) await open(requested); },
+    async load() { await Promise.all([loadProjects(), loadThreads(), usage.loadModels()]); const requested = new URL(location.href).searchParams.get('thread'); if (requested) await open(requested); },
     onEvent(event) {
       if (!alive) return;
       if (event.kind === 'status') online = event.native.online;
@@ -472,9 +483,10 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
         clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadThreads().catch(showError), 300);
       }
       scheduleDraw();
+      usage.onEvent(event);
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; abort.abort(); attachments.dispose(); clearTimeout(refreshTimer); $('#project-dialog').close(); $('#directory-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); clearTimeout(refreshTimer); $('#project-dialog').close(); $('#directory-dialog').close(); if (selected) save(selected); },
   };
 }

@@ -46,6 +46,9 @@
           <button id="copy-thread" disabled>复制 ID</button><button id="refresh-chat" disabled>刷新会话</button><button id="delete-thread" disabled>删除会话</button>
         </header>
         <p id="effective-settings" class="muted chat-meta"></p>
+        <div class="model-controls chat-meta"><label for="model">下轮模型</label><select id="model" disabled></select><label for="effort">思考强度</label><select id="effort" disabled></select></div>
+        <p class="muted chat-meta">下轮生效；后续调整也会影响仍在排队的消息。</p>
+        <div class="usage-strip chat-meta"><span id="context-usage">上下文未知</span><meter id="context-meter" min="0" max="100" aria-label="上下文使用比例" hidden></meter><button id="show-usage">七天额度</button></div>
         <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
           <button id="older-history" hidden>加载更早记录</button><div id="messages"></div>
           <p id="chat-empty" class="empty muted">从左侧打开会话，继续你的工作。</p>
@@ -76,6 +79,10 @@
       <p class="muted small">编辑只改变项目名称和根目录绑定；文件及已有会话的实际工作目录保留。</p>
       <p id="project-error" class="error" role="alert"></p><button id="save-project" type="submit" class="primary">保存项目</button>
     </form>
+  </dialog>
+  <dialog id="usage-dialog"><div class="pane-heading"><h2>账号七天额度</h2><button id="close-usage">关闭</button></div>
+    <p class="muted small">同一账号的滚动七天窗口，与本会话的上下文用量分别计算。</p>
+    <div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p><button id="refresh-usage">刷新额度</button>
   </dialog>
   <dialog id="directory-dialog">
     <form id="directory-form" class="dialog-form">

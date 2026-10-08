@@ -11,6 +11,7 @@ import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, ac
 import { renderTranscript } from './transcript.mjs';
 import { createFiles } from './files.mjs';
 import { pipeline } from 'node:stream/promises';
+import { modelChoice } from './public/usage.js';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
@@ -18,6 +19,7 @@ const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
+  ['/usage.js', ['usage.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']]]);
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -181,6 +183,12 @@ export function createWebServer({ config, codex }) {
   const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
   const files = createFiles(config);
+  let accountEpoch = 0;
+  async function nativeModels() {
+    const models = []; let cursor;
+    do { const page = (await codex.rpc('model/list', { limit: 100, ...(cursor ? { cursor } : {}) })).result; models.push(...page.data); cursor = page.nextCursor; } while (cursor);
+    return models;
+  }
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
   const prefsPath = join(config.stateDir, 'preferences.json');
   if (!existsSync(prefsPath)) writeFileSync(prefsPath, JSON.stringify({ archivedProjectIds: [], ui: {} }), { mode: 0o600 });
@@ -324,8 +332,13 @@ export function createWebServer({ config, codex }) {
     if (body.mode !== 'start' && !active) throw error(409, 'TURN_CHANGED', '当前轮次已结束，请选择直接发送。');
     if (body.mode === 'steer' && (body.model != null || body.effort != null)) throw error(400, 'STEER_SETTINGS', '补充输入沿用当前轮次设置。');
     const attached = await files.attachmentInputs(body.draft.uploadIds ?? [], body.threadId);
+    if (body.model || body.effort || attached.some(item => item.type === 'localImage')) {
+      const model = modelChoice(await nativeModels(), body.model || state.settings.model, body.effort);
+      if (attached.some(item => item.type === 'localImage') && !model.inputModalities?.includes('image')) throw error(422, 'MODEL_NO_IMAGES', '所选模型不支持照片，附件和草稿已保留。');
+    }
     // Recheck after file validation: another HTTP request may already own this UUID.
     if (writes.has(key)) return sendOnce(body, view);
+    if (writes.size >= 1024) throw error(429, 'PENDING_LIMIT', '待确认消息过多，请先核对会话。');
     const input = [...(body.draft.text.trim() ? [{ type: 'text', text: body.draft.text, text_elements: [] }] : []), ...attached];
     const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record);
     record.promise = (async () => {
@@ -355,6 +368,8 @@ export function createWebServer({ config, codex }) {
   }
   const off = codex.onEvent(event => {
     checkpoint = event.cursor;
+    if (event.kind === 'status' || event.native?.method === 'account/updated') ++accountEpoch;
+    if (event.native?.method === 'thread/settings/updated' && chats.get(event.native.params.threadId)?.settings.model !== event.native.params.threadSettings.model) ++accountEpoch;
     if (event.kind === 'status') {
       pending.clear();
       for (const state of chats.values()) applyNativeEvent(state, event);
@@ -452,7 +467,9 @@ export function createWebServer({ config, codex }) {
         views.set(viewId, { session, threadId: null, streams: new Set() }); reply(res, 200, { viewId });
       } else if (url.pathname === '/api/rpc') {
         fields(body, ['method', 'params']); validateRead(body.method, body.params);
+        const epoch = accountEpoch;
         const result = await codex.rpc(body.method, body.params);
+        if (body.method === 'account/rateLimits/read' && epoch !== accountEpoch) throw error(409, 'USAGE_SUPERSEDED', '账号或模型已变化，请重新读取额度。');
         if (body.method === 'thread/turns/list') {
           const turns = structuredClone(result.result.data);
           for (const turn of turns) for (const item of turn.items) item._cursor = result.cursor;
@@ -533,6 +550,17 @@ export function createWebServer({ config, codex }) {
         fields(body, ['viewId', 'threadId', 'turnId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId) || !id(body.turnId) || view.threadId !== body.threadId || activeTurn(chats.get(body.threadId) ?? { turns: [] })?.id !== body.turnId) throw error(409, 'TURN_CHANGED', '目标轮次已变化，请刷新会话。');
         reply(res, 200, await codex.rpc('turn/interrupt', { threadId: body.threadId, turnId: body.turnId }));
+      } else if (url.pathname === '/api/thread/settings') {
+        fields(body, ['viewId', 'threadId', 'model', 'effort']); const view = requireView(body.viewId, session);
+        if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        if (!text(body.effort, 16) || !body.effort) throw error(400, 'INVALID_EFFORT', '请选择原生支持的思考强度。');
+        modelChoice(await nativeModels(), body.model, body.effort);
+        await setNextSettings(body.threadId, { model: body.model, effort: body.effort });
+        reply(res, 200, { settings: safe(chats.get(body.threadId).settings) });
+      } else if (url.pathname === '/api/thread/compact') {
+        fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
+        if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        reply(res, 200, await codex.rpc('thread/compact/start', { threadId: body.threadId }));
       } else if (url.pathname === '/api/request/respond') {
         fields(body, ['viewId', 'requestKey', 'answer']); requireView(body.viewId, session);
         const request = pending.get(body.requestKey);

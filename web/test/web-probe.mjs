@@ -9,10 +9,11 @@ import assert from 'node:assert/strict';
 import { createCodexClient } from '../codex.mjs';
 import { createChatState, applyNativeEvent, installSnapshot } from '../public/chat.js';
 import { tinyPng } from './helpers.mjs';
+import { weeklyUsage, contextUsage } from '../public/usage.js';
 
 const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
   'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false },
-  'exercise-attachments': { type: 'boolean', default: false } } });
+  'exercise-attachments': { type: 'boolean', default: false }, 'exercise-usage': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
@@ -74,7 +75,7 @@ try {
     catch (e) { if (e.code !== 'ECONNREFUSED') throw e; await delay(100); }
   }
   assert.ok(reachable, 'HTTPS service became ready.');
-  for (const path of ['/', '/app.js', '/chat.js', '/composer.js', '/styles.css']) {
+  for (const path of ['/', '/app.js', '/chat.js', '/composer.js', '/usage.js', '/styles.css']) {
     const resource = await request(path); assert.equal(resource.status, 200, `UI resource ${path}`);
     assert.match(resource.headers['content-security-policy'], /frame-ancestors 'none'/);
   }
@@ -164,6 +165,29 @@ try {
     await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
     assert.deepEqual((await request(document.href)).bytes, content);
     report.nativeTextAndPhotoInputs = true; report.generatedDownloadExactBytes = true; report.uploadSurvivesThreadDelete = true;
+  }
+  if (values['exercise-usage']) {
+    const quota = await api('/api/rpc', { method: 'account/rateLimits/read', params: {} });
+    report.nativeWeeklyBuckets = weeklyUsage(quota.result).length;
+    const model = models.data.find(m => m.isDefault && m.supportedReasoningEfforts.length >= 2) ?? models.data.find(m => m.supportedReasoningEfforts.length >= 2);
+    assert.ok(model, 'A native model has two supported efforts.');
+    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable native settings probe' });
+    threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
+    for (const option of model.supportedReasoningEfforts.slice(0, 2)) {
+      const result = await api('/api/thread/settings', { viewId, threadId, model: model.model, effort: option.reasoningEffort });
+      assert.equal(result.settings.model, model.model); assert.equal(result.settings.effort, option.reasoningEffort);
+    }
+    const sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text: 'Reply exactly NATIVE_SETTINGS_OK.' } });
+    await waitFor(() => completion(sent.result.turn.id), 'Native settings turn completed.'); assert.equal(completion(sent.result.turn.id).status, 'completed');
+    const metadata = (await api('/api/rpc', { method: 'thread/read', params: { threadId, includeTurns: false } })).result.thread;
+    assert.equal(metadata.model, model.model); assert.equal(metadata.reasoningEffort, model.supportedReasoningEfforts[1].reasoningEffort);
+    await waitFor(() => state.tokenUsage?.last, 'Latest native context notification arrived.');
+    assert.notEqual(contextUsage(state.tokenUsage).tokens, null);
+    const usageUpdates = events.filter(e => e.native?.method === 'thread/tokenUsage/updated' && e.native.params.threadId === threadId).length;
+    await api('/api/thread/compact', { viewId, threadId });
+    await waitFor(() => events.filter(e => e.native?.method === 'thread/tokenUsage/updated' && e.native.params.threadId === threadId).length > usageUpdates, 'Native compaction refreshed context.');
+    await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
+    report.twoNativeEfforts = true; report.nativeContext = true; report.compactionContextRefresh = true;
   }
   await api('/api/logout', {}); report.logout = true;
   console.log(JSON.stringify(report));

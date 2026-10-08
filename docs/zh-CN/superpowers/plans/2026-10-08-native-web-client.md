@@ -172,17 +172,17 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 新建 `web/public/usage.js`、`web/test/usage.test.mjs`，更新服务端/页面。
 **接口：** `contextUsage(tokenUsage):{tokens,window,remainingPercent,usedPercent}`，值可为 null；`weeklyUsage(response):Array<{limitId,usedPercent,remainingPercent,resetsAt}>`。模型/支持和默认强度来自 `model/list`。
 
-- [ ] **1. 写失败测试：** 原生基线、误用累计量、null 窗口、多额度桶、仅 primary 为周窗口、不支持强度和账号切换。示例：
+- [x] **1. 写失败测试：** 原生基线、误用累计量、null 窗口、多额度桶、仅 primary 为周窗口、不支持强度和账号切换。示例：
   ```js
   const v = contextUsage({last:{totalTokens:112000},total:{totalTokens:900000},modelContextWindow:200000});
   assert.equal(v.remainingPercent,47); assert.equal(v.tokens,112000);
   assert.equal(contextUsage({last:{totalTokens:5},modelContextWindow:null}).remainingPercent,null);
   ```
   断言旧账号代次的读取结果不回填已清空缓存。
-- [ ] **2. 确认 RED：** `node --test web/test/usage.test.mjs`。
-- [ ] **3. 最小实现：** 模型/强度只对下一轮生效，显示真实权限/模型。steer 沿用活动轮次，不传 `turn/steer` 不支持的模型/sandbox 字段；入队前通过 `thread/settings/update` 设置未来默认值并等匹配通知，队列使用共享未来默认值，不造逐条设置；提示后续设置变化会影响队列，不用活动轮次的 `turn/settings/update` 实现该选择器。上下文窗口 ≤12000 时剩余 0，否则取整并限定 `100 * max(0,(window-12000)-max(0,last.totalTokens-12000))/(window-12000)`；未知窗口保持 null。合并原生额度通知或重读，在任一窗口找 10080，分桶、剩余 `max(0,100-usedPercent)`，重置秒正确转换。账号变化淘汰旧请求/缓存。
-- [ ] **4. 确认 GREEN 与原生：** 全测试；选两个支持强度、核对下一轮并保留草稿；临时线程压缩验证上下文更新；读真实周额度元数据但不提交其值；缺失场景用 null 样本。更新双语说明。
-- [ ] **5. 提交推送：** `feat: expose native models context and weekly usage`，确认远端包含。
+- [x] **2. 确认 RED：** `node --test web/test/usage.test.mjs`。
+- [x] **3. 最小实现：** 模型/强度只对下一轮生效，显示真实权限/模型。steer 沿用活动轮次，不传 `turn/steer` 不支持的模型/sandbox 字段；入队前通过 `thread/settings/update` 设置未来默认值并等匹配通知，队列使用共享未来默认值，不造逐条设置；提示后续设置变化会影响队列，不用活动轮次的 `turn/settings/update` 实现该选择器。上下文窗口 ≤12000 时剩余 0，否则取整并限定 `100 * max(0,(window-12000)-max(0,last.totalTokens-12000))/(window-12000)`；未知窗口保持 null。合并原生额度通知或重读，在任一窗口找 10080，分桶、剩余 `max(0,100-usedPercent)`，重置秒正确转换。账号变化淘汰旧请求/缓存。
+- [x] **4. 确认 GREEN 与原生：** 全测试；选两个支持强度、核对下一轮并保留草稿；临时线程压缩验证上下文更新；读真实周额度元数据但不提交其值；缺失场景用 null 样本。更新双语说明。
+- [x] **5. 提交推送：** `feat: expose native models context and weekly usage`，确认远端包含。
 
 ## 任务 7：原生引用、技能与斜杠命令
 
