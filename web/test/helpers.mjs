@@ -1,5 +1,12 @@
 import { setImmediate as tick } from 'node:timers/promises';
 import { createCodexClient } from '../codex.mjs';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import https from 'node:https';
+import { createWebServer } from '../server.mjs';
+import { hashPassword } from '../auth.mjs';
 
 export function resumeFixture(id = 'thread-1', turns = []) {
   return {
@@ -86,4 +93,65 @@ export async function connectedFixture() {
     disconnect() { sockets.at(-1).close(); },
   };
   return { client, peer, flush: tick };
+}
+
+export async function httpsFixture() {
+  const native = await connectedFixture();
+  const dir = await mkdtemp(join(tmpdir(), 'codex-web-'));
+  const tlsKey = join(dir, 'key.pem'), tlsCert = join(dir, 'cert.pem');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+    '-nodes', '-keyout', tlsKey, '-out', tlsCert, '-subj', '/CN=127.0.0.1',
+    '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1'], { stdio: 'ignore' });
+  const config = { origin: 'https://127.0.0.1:0', listenHost: '127.0.0.1', port: 0,
+    backendUrl: 'ws://127.0.0.1:4500', tlsKey, tlsCert, stateDir: join(dir, 'state'),
+    passwordHash: await hashPassword('fixture-passphrase'), generatedRoots: [], uploadLimitBytes: 33_554_432 };
+  const server = createWebServer({ config, codex: native.client });
+  const eventResponses = [];
+  server.on('request', (req, res) => { if (req.url.startsWith('/api/events?')) eventResponses.push(res); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  config.origin = `https://127.0.0.1:${server.address().port}`;
+  function request(path, { method = 'GET', body, cookie, origin = config.origin, headers = {} } = {}) {
+    return new Promise((resolve, reject) => {
+      const req = https.request(config.origin + path, { method, rejectUnauthorized: false,
+        headers: { ...(origin === null ? {} : { Origin: origin }), ...(cookie ? { Cookie: cookie } : {}),
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers } }, res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString();
+          let json; try { json = JSON.parse(text); } catch {}
+          resolve({ status: res.statusCode, headers: res.headers, json, text });
+        });
+      });
+      req.on('error', reject);
+      req.end(body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body));
+    });
+  }
+  async function login() {
+    const r = await request('/api/login', { method: 'POST', body: { password: 'fixture-passphrase' } });
+    if (r.status !== 200) throw new Error(`Fixture login failed: ${r.status}`);
+    return r.headers['set-cookie'][0].split(';')[0];
+  }
+  async function view(cookie) {
+    return (await request('/api/view', { method: 'POST', cookie, body: {} })).json.viewId;
+  }
+  function events(cookie, viewId, pause = false) {
+    return new Promise((resolve, reject) => {
+      const req = https.get(config.origin + '/api/events?viewId=' + viewId,
+        { rejectUnauthorized: false, headers: { Cookie: cookie, Origin: config.origin } }, res => {
+          const chunks = [];
+          if (pause) res.pause(); else res.on('data', c => chunks.push(c.toString()));
+          const closed = new Promise(done => res.on('close', done));
+          resolve({ req, res, chunks, closed, text: () => chunks.join('') });
+        });
+      req.on('error', reject);
+    });
+  }
+  return { ...native, config, server, request, login, view, events, eventResponses, dir,
+    async close() {
+      server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+      native.client.close(); await rm(dir, { recursive: true, force: true });
+    },
+    async preferences() { return JSON.parse(await readFile(join(config.stateDir, 'preferences.json'), 'utf8')); },
+  };
 }

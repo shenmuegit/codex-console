@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Codex Console</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main id="login-panel" class="login-panel">
+    <p class="eyebrow">CODEX CONSOLE</p>
+    <h1>回到你的工作</h1>
+    <p class="muted">连接主机上的 Codex。</p>
+    <form id="login-form">
+      <label for="password">访问密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required aria-describedby="login-error">
+      <p id="login-error" class="error" role="alert"></p>
+      <button type="submit" class="primary">登录</button>
+    </form>
+  </main>
+  <main id="workspace" hidden>
+    <header class="topbar"><strong>Codex Console</strong><span id="connection" role="status">正在连接…</span><button id="logout">退出登录</button></header>
+    <section class="empty"><h1>已连接工作主机</h1><p class="muted">原生连接状态会自动更新。</p></section>
+  </main>
+</body>
+</html>

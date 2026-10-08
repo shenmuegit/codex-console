@@ -102,16 +102,16 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 新建 `web/auth.mjs`、`web/server.mjs`、`web/test/auth-server.test.mjs`，扩展测试 helpers；初始 `web/public/index.html`、`app.js`、`styles.css` 仅显示登录、安全连接状态及退出。
 **接口：** 使用任务 1；提供 `createWebServer`、`checkOrigin(actual,expected):void`、`hashPassword(password):Promise<string>`、`createAuth({passwordHash,now?})` 的 `login(password,ip):Promise<{token,expiresAt}>`、`verifySession(token):object|null`、`revoke(token):void`，私有 `preferences.json = {archivedProjectIds:[],ui:{}}`；`httpsFixture()` 提供临时证书/配置/服务器/请求辅助，不用真实凭据。
 
-- [ ] **1. 写失败测试：** 无/过期 Cookie、跨来源登录/写入、Cookie 标志、视图绑定、未知 RPC、令牌过滤和慢 SSE。断言示例：
+- [x] **1. 写失败测试：** 无/过期 Cookie、跨来源登录/写入、Cookie 标志、视图绑定、未知 RPC、令牌过滤和慢 SSE。断言示例：
   ```js
   assert.throws(() => checkOrigin('https://evil.test','https://127.0.0.1:8443'), {code:'ORIGIN_DENIED'});
   assert.doesNotThrow(() => checkOrigin('https://127.0.0.1:8443','https://127.0.0.1:8443'));
   ```
   通过任务 1 的 peer 测 `two_pages_cannot_answer_one_request_twice`、`logout_closes_only_that_sessions_streams`。
-- [ ] **2. 确认 RED：** `node --test web/test/auth-server.test.mjs`。
-- [ ] **3. 最小实现：** 异步原生 scrypt（`scrypt:<saltBase64>:<keyBase64>`，盐 16 字节、键 64 字节、N=16384/r=8/p=1），密码最长 256，随机 32 字节会话令牌，绝对有效期 12 小时；每 IP 每分钟最多五次失败，限速状态有上限且过期清理；JSON 上限 1 MiB。Cookie 为 HttpOnly/Secure/SameSite=Strict/Path=/，无通配 CORS。SSE 每 15 秒心跳，单流积压上限 1 MiB，超限断开要求重同步，新/重连流必须取快照。按方法验证字段，不记录请求体和令牌。
-- [ ] **4. 确认 GREEN 与 HTTPS：** 跑认证/服务器/原生测试，验证 API/SSE 未登录 401、跨来源 403、认证读取成功、慢接收端不拖住其他页面。只发布安全原生请求 schema；账号刷新、attestation、动态工具请求明确回复客户端不支持，绝不伪造凭据。
-- [ ] **5. 提交推送：** `feat: protect browser access and stream native events`，同步双语说明，确认远端包含后进入任务 3。
+- [x] **2. 确认 RED：** `node --test web/test/auth-server.test.mjs`。
+- [x] **3. 最小实现：** 异步原生 scrypt（`scrypt:<saltBase64>:<keyBase64>`，盐 16 字节、键 64 字节、N=16384/r=8/p=1），密码最长 256，随机 32 字节会话令牌，绝对有效期 12 小时；每 IP 每分钟最多五次失败，限速状态有上限且过期清理；JSON 上限 1 MiB。Cookie 为 HttpOnly/Secure/SameSite=Strict/Path=/，无通配 CORS。SSE 每 15 秒心跳，单流积压上限 1 MiB，超限断开要求重同步，新/重连流必须取快照。按方法验证字段，不记录请求体和令牌。
+- [x] **4. 确认 GREEN 与 HTTPS：** 跑认证/服务器/原生测试，验证 API/SSE 未登录 401、跨来源 403、认证读取成功、慢接收端不拖住其他页面。只发布安全原生请求 schema；账号刷新、attestation、动态工具请求明确回复客户端不支持，绝不伪造凭据。
+- [x] **5. 提交推送：** `feat: protect browser access and stream native events`，同步双语说明，确认远端包含后进入任务 3。
 
 ## 任务 3：可用的浏览器聊天闭环
 

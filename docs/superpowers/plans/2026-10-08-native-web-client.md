@@ -102,16 +102,16 @@ Source authority is commit `ff9ab4a`: `app-server-protocol/src/protocol/{common.
 **Files:** Create `web/auth.mjs`, `web/server.mjs`, `web/test/auth-server.test.mjs`; extend `web/test/helpers.mjs`; initial `web/public/index.html`, `app.js`, `styles.css` show only login, safe connection status and logout.
 **Interfaces:** Consume Task 1. Produce `createWebServer`, `checkOrigin(actual,expected):void`, `hashPassword(password):Promise<string>`, `createAuth({passwordHash,now?})` with `login(password,ip):Promise<{token,expiresAt}>`, `verifySession(token):object|null`, `revoke(token):void`; private `preferences.json = {archivedProjectIds:[],ui:{}}`. Test helper `httpsFixture()` supplies temporary cert/config/server/request helpers without real credentials.
 
-- [ ] **1. Write failing tests** for missing/expired cookies, cross-Origin login and mutations, exact cookie flags, session-bound view IDs, unknown RPCs, response-token filtering and slow SSE readers. Assertions include:
+- [x] **1. Write failing tests** for missing/expired cookies, cross-Origin login and mutations, exact cookie flags, session-bound view IDs, unknown RPCs, response-token filtering and slow SSE readers. Assertions include:
   ```js
   assert.throws(() => checkOrigin('https://evil.test','https://127.0.0.1:8443'), {code:'ORIGIN_DENIED'});
   assert.doesNotThrow(() => checkOrigin('https://127.0.0.1:8443','https://127.0.0.1:8443'));
   ```
   Include `two_pages_cannot_answer_one_request_twice` and `logout_closes_only_that_sessions_streams` using Task 1's fake peer.
-- [ ] **2. Verify RED:** `node --test web/test/auth-server.test.mjs`; fail on missing auth/server behavior.
-- [ ] **3. Implement** async native scrypt password hashes (`scrypt:<saltBase64>:<keyBase64>`, 16-byte salt, 64-byte key, N=16384/r=8/p=1), maximum password length 256, and random 32-byte session tokens. Absolute session TTL 12 h; login limit five failures/IP/minute with bounded expiry state; JSON body cap 1 MiB. Cookies are HttpOnly/Secure/SameSite=Strict/Path=/; no CORS wildcard. SSE heartbeat 15 s, per-stream queued-byte cap 1 MiB; overflow closes and demands resync. New/reconnected streams require a snapshot. Routes validate method-specific fields; log neither bodies nor tokens.
-- [ ] **4. Verify GREEN and HTTPS smoke:** run auth/server and native-client tests; confirm unauthenticated API/SSE 401, foreign Origin 403, authenticated fixed status/RPC reads succeed, and a full/stalled reader cannot stall other pages. Only show safe native request schemas; auth refresh/attestation/dynamic-tool requests receive an explicit unsupported-client response, never fabricated credentials.
-- [ ] **5. Commit/push:** `feat: protect browser access and stream native events`; include both operator docs and verify remote containment before Task 3.
+- [x] **2. Verify RED:** `node --test web/test/auth-server.test.mjs`; fail on missing auth/server behavior.
+- [x] **3. Implement** async native scrypt password hashes (`scrypt:<saltBase64>:<keyBase64>`, 16-byte salt, 64-byte key, N=16384/r=8/p=1), maximum password length 256, and random 32-byte session tokens. Absolute session TTL 12 h; login limit five failures/IP/minute with bounded expiry state; JSON body cap 1 MiB. Cookies are HttpOnly/Secure/SameSite=Strict/Path=/; no CORS wildcard. SSE heartbeat 15 s, per-stream queued-byte cap 1 MiB; overflow closes and demands resync. New/reconnected streams require a snapshot. Routes validate method-specific fields; log neither bodies nor tokens.
+- [x] **4. Verify GREEN and HTTPS smoke:** run auth/server and native-client tests; confirm unauthenticated API/SSE 401, foreign Origin 403, authenticated fixed status/RPC reads succeed, and a full/stalled reader cannot stall other pages. Only show safe native request schemas; auth refresh/attestation/dynamic-tool requests receive an explicit unsupported-client response, never fabricated credentials.
+- [x] **5. Commit/push:** `feat: protect browser access and stream native events`; include both operator docs and verify remote containment before Task 3.
 
 ## Task 3: A working browser conversation loop
 

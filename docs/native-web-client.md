@@ -4,8 +4,8 @@
 
 Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
-component is the shared native connection; browser access follows in subsequent
-commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+components are the shared native connection and HTTPS owner login/event stream.
+Conversation controls follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -81,9 +81,41 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Browser HTTPS/login, projects, attachments, usage and deployment are subsequent
+Projects, conversation controls, attachments, usage and deployment are subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
 
 Verified executable SHA-256: app-server `85ef3000722cab4fdb576ab5cfdce0e8e791641641a671a7593e6b23b7334431`; desktop companion `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`. Identify the development build by source commit and hash, not its `0.0.0` version.
+
+
+## HTTPS owner access
+
+`web/server.mjs` serves fixed local assets, accepts only the configured HTTPS
+Host/Origin and uses a 12-hour, absolute `HttpOnly; Secure; SameSite=Strict`
+session cookie. Passwords use async native scrypt (16-byte salt, 64-byte key,
+N=16384/r=8/p=1); login throttles after five failed guesses per IP per minute.
+The password, its hash, TLS files and configuration stay outside Git. No request
+bodies or cookies are logged.
+
+Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
+and raw thread creation are rejected. Native credentials are filtered from reads
+and events. Unsupported credential-refresh/attestation/dynamic-tool requests
+receive an explicit unsupported response. Native approval/input forms have one
+responder; permission grants cannot exceed the corresponding native request.
+
+Each browser page gets a session-bound view ID. Events arrive over authenticated
+SSE with 15-second heartbeats and a 1 MiB per-stream queue cap. A slow reader is
+disconnected; every new/reconnected stream requests an authoritative snapshot.
+Logging out revokes that session and closes its streams without affecting other
+sessions or the persistent native connection.
+
+The isolated HTTPS test unit is `codex-console-native-web-test`, listening only
+on `https://127.0.0.1:8443`. Its temporary integration configuration and private
+owner password are in `~/.config/codex-console-web/integration/`; generated TLS
+files are self-signed for loopback. Durable host-IP setup is delivered in Task 8.
+Run `node --test web/test/auth-server.test.mjs` for the isolated HTTPS/auth suite.
+Nine checks passed, including a paused real TLS/SSE reader while another page
+continued receiving events. A live HTTPS smoke against the source backend also
+passed: unauthenticated 401, foreign Origin 403, four native catalog models,
+snapshot-required SSE and logout. Password values were not printed.
