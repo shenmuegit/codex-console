@@ -37,8 +37,7 @@
       <section class="chat-pane" aria-label="聊天">
         <header class="chat-heading">
           <button class="mobile-back" id="back-threads">会话</button>
-          <div class="thread-title"><h1 id="thread-title">选择或新建一个会话</h1><code id="thread-id"></code></div>
-          <button id="copy-thread" disabled>复制 ID</button><button id="delete-thread" disabled>删除会话</button>
+          <div class="thread-title"><h1 id="thread-title">选择或新建一个会话</h1></div>
         </header>
         <p id="effective-settings" class="muted chat-meta"></p>
         <div class="model-controls chat-meta"><label for="model">下轮模型</label><select id="model" disabled></select><label for="effort">思考强度</label><select id="effort" disabled></select></div>
@@ -71,5 +70,10 @@
     <p class="muted small">同一账号的滚动七天窗口，与本会话的上下文用量分别计算。</p>
     <div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p><button id="refresh-usage">刷新额度</button>
   </dialog>
+  <div id="thread-menu" class="thread-menu" popover role="menu" aria-label="会话选项" hidden>
+    <button id="thread-menu-copy" type="button" role="menuitem">复制线程 ID</button>
+    <button id="thread-menu-archive" type="button" role="menuitem">归档会话</button>
+    <button id="thread-menu-delete" class="danger" type="button" role="menuitem">删除会话</button>
+  </div>
 </body>
 </html>

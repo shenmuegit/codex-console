@@ -179,7 +179,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
-  const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft');
+  const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft'), threadMenu = $('#thread-menu');
+  const busyThreads = new Set(); let menuTarget, menuTrigger;
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
@@ -188,6 +189,39 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
   const bind = (node, type, fn) => node.addEventListener(type, event => { try { Promise.resolve(fn(event)).catch(showError); } catch (e) { showError(e); } }, { signal: abort.signal });
   const read = async (method, params = {}) => (await api('/api/rpc', { method, params })).result;
+  function closeThreadMenu(restoreFocus = false) {
+    const trigger = menuTrigger; menuTarget = null; menuTrigger = null;
+    threadMenu.hidePopover(); threadMenu.hidden = true; trigger?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) trigger?.focus();
+  }
+  function openThreadMenu(item, archived, trigger) {
+    if (menuTarget) closeThreadMenu();
+    menuTarget = { ...item, archived }; menuTrigger = trigger;
+    $('#thread-menu-archive').textContent = archived ? '恢复会话' : '归档会话';
+    $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(item.id);
+    trigger.setAttribute('aria-expanded', 'true'); threadMenu.hidden = false; threadMenu.showPopover();
+    const rect = trigger.getBoundingClientRect();
+    threadMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 232)) + 'px';
+    threadMenu.style.top = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - (threadMenu.offsetHeight || 140) - 8)) + 'px';
+    $('#thread-menu-copy').focus();
+  }
+  async function copyThreadId(threadId) {
+    try { await navigator.clipboard.writeText(threadId); $('#turn-status').textContent = '已复制会话 ID'; }
+    catch { window.prompt('复制会话 ID', threadId); }
+  }
+  bind(threadMenu, 'toggle', event => { if (event.newState === 'closed' && !threadMenu.matches(':popover-open')) {
+    menuTrigger?.setAttribute('aria-expanded', 'false'); menuTarget = null; menuTrigger = null; threadMenu.hidden = true;
+  } });
+  bind(threadMenu, 'keydown', event => {
+    if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') event.preventDefault(); closeThreadMenu(true); return; }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault(); const items = [$('#thread-menu-copy'), $('#thread-menu-archive'), $('#thread-menu-delete')].filter(node => !node.disabled);
+    const index = items.indexOf(document.activeElement), next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length;
+    items[next]?.focus();
+  });
+  bind($('#thread-menu-copy'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return copyThreadId(target.id); });
+  bind($('#thread-menu-archive'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.archived ? restore(target.id) : archiveConversation(target); });
+  bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return deleteConversation(target.id); });
   function save(state) {
     try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
@@ -225,10 +259,15 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const page = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', archived,
       ...(projectId ? { projectId } : {}), ...(more && threadCursor ? { cursor: threadCursor } : {}) });
     if (!alive || version !== threadLoad || project?.id !== projectId) return;
-    if (!more) $('#threads').replaceChildren();
+    if (!more) { if (menuTarget) closeThreadMenu(); $('#threads').replaceChildren(); }
     for (const item of page.data) {
       const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id) : open(item.id));
-      if (archived) button.append(element('small', '点击恢复此会话')); $('#threads').append(button);
+      const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
+      const actions = element('button', null, 'thread-actions'); actions.type = 'button';
+      actions.setAttribute('aria-label', '会话选项：' + (item.name || item.preview || item.id)); actions.setAttribute('aria-haspopup', 'menu'); actions.setAttribute('aria-expanded', 'false'); actions.setAttribute('aria-controls', 'thread-menu');
+      actions.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+      bind(actions, 'click', () => openThreadMenu(item, archived, actions));
+      if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); $('#threads').append(container);
     }
     if (!page.data.length && !more) $('#threads').append(element('p', '这里还没有会话。', 'muted'));
     threadCursor = page.nextCursor; $('#more-threads').hidden = !threadCursor;
@@ -240,7 +279,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   function select(state) {
     if (selected) save(selected);
     selected = state; layout.dataset.level = 'chat'; messageNodes.clear(); formNodes.clear();
-    completions.close();
+    completions.close(); if (menuTarget) closeThreadMenu();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
     const url = new URL(location.href); url.searchParams.set('thread', state.threadId); history.replaceState(null, '', url);
   }
@@ -306,11 +345,10 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function draw() {
     if (!alive) return;
+    if (menuTarget) $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '选择或新建一个会话');
-    $('#thread-id').textContent = state?.threadId ?? ''; $('#copy-thread').disabled = !state;
     $('#older-history').hidden = !state?.historyCursor;
-    $('#delete-thread').disabled = !state || state.deleted || state.deleting || !online;
     $('#effective-settings').textContent = state?.ready ? `${active ? '下轮默认：' : '会话默认：'}${state.settings.model ?? '原生模型'} · ${state.settings.effort ?? '原生思考强度'} · ${permissionText(state.settings)}` : '';
     $('#chat-empty').hidden = Boolean(state?.turns.some(t => t.items?.length));
     draft.disabled = !state?.ready || !online || state.deleting;
@@ -386,7 +424,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     finally { save(state); if (selected === state) draw(); }
   }
   function information(title, text) { $('#info-title').textContent = title; $('#info-body').textContent = text; $('#info-dialog').showModal(); }
-  async function restore(threadId) { await api('/api/thread/unarchive', { viewId, threadId }); $('#show-archived-threads').checked = false; await open(threadId); }
+  async function restore(threadId) { await api('/api/thread/unarchive', { viewId, threadId }); const state = states.get(threadId); if (state) state.archived = false; $('#show-archived-threads').checked = false; await open(threadId); }
   async function runCommand({ command, args }) {
     if (command === 'new') return newThread();
     if (command === 'model') { if (args) { const [model, effort] = args.split(/\s+/); return usage.choose(model, effort); } $('#model').focus(); return; }
@@ -397,20 +435,34 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (!selected?.ready) throw new Error('请先打开会话。');
     if (command === 'compact') { await api('/api/thread/compact', { viewId, threadId: selected.threadId }); selected.tokenUsage = null; return; }
     if (command === 'rename') { const name = args || window.prompt('新会话名称', selected.thread?.name ?? ''); if (!name) return false; await api('/api/thread/rename', { viewId, threadId: selected.threadId, name }); return; }
-    if (command === 'archive') { if (activeTurn(selected) && !window.confirm('归档会停止此会话正在运行的工作，继续？')) return false;
-      await api('/api/thread/archive', { viewId, threadId: selected.threadId, confirmed: true }); layout.dataset.level = 'threads'; await loadThreads(); return; }
-    if (command === 'delete') return deleteCurrent();
+    if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
+    if (command === 'delete') return deleteConversation(selected.threadId);
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
     if (command === 'export') { const link = element('a'); link.href = '/api/thread/export?threadId=' + encodeURIComponent(selected.threadId); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
-  async function deleteCurrent() {
-    const state = selected; if (!state || !window.confirm('删除此会话及其原生子会话记录？目录和已上传文件会保留。')) return false;
-    state.deleting = true; draw();
-    try { await api('/api/thread/delete', { viewId, threadId: state.threadId, confirmed: true });
-      state.deleted = true; state.ready = false; layout.dataset.level = 'threads'; await loadThreads();
-    } finally { state.deleting = false; draw(); }
+  function clearSelectedThread(threadId) {
+    if (selected?.threadId !== threadId) return;
+    ++opening; save(selected); selected = undefined; messageNodes.clear(); formNodes.clear();
+    $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = '';
+    const url = new URL(location.href); url.searchParams.delete('thread'); history.replaceState(null, '', url);
+    layout.dataset.level = 'threads'; draw();
   }
-  bind($('#delete-thread'), 'click', deleteCurrent);
+  async function archiveConversation(item) {
+    if (busyThreads.has(item.id)) return false;
+    if (item.status?.type === 'active' && !window.confirm('归档会停止此会话正在运行的工作，继续？')) return false;
+    busyThreads.add(item.id);
+    try { await api('/api/thread/archive', { viewId, threadId: item.id, confirmed: true });
+      const state = states.get(item.id); if (state) { state.archived = true; state.ready = false; }
+      clearSelectedThread(item.id); await loadThreads();
+    } finally { busyThreads.delete(item.id); }
+  }
+  async function deleteConversation(threadId) {
+    if (busyThreads.has(threadId) || !window.confirm('删除此会话及其原生子会话记录？目录和已上传文件会保留。')) return false;
+    const state = states.get(threadId); busyThreads.add(threadId); if (state) state.deleting = true; draw();
+    try { await api('/api/thread/delete', { viewId, threadId, confirmed: true });
+      if (state) { state.deleted = true; state.ready = false; } clearSelectedThread(threadId); await loadThreads();
+    } finally { busyThreads.delete(threadId); if (state) state.deleting = false; draw(); }
+  }
   async function newThread() {
     if ($('#new-thread').disabled) return false;
     const button = $('#new-thread'); button.disabled = true; $('#chat-error').textContent = '';
@@ -419,7 +471,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     } finally { button.disabled = false; }
   }
   bind($('#new-thread'), 'click', newThread);
-  bind($('#copy-thread'), 'click', async () => { if (!selected) return; try { await navigator.clipboard.writeText(selected.threadId); $('#turn-status').textContent = '已复制会话 ID'; } catch { window.prompt('复制会话 ID', selected.threadId); } });
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
   bind($('#back-projects'), 'click', () => { layout.dataset.level = 'projects'; }); bind($('#back-threads'), 'click', () => { layout.dataset.level = 'threads'; });
@@ -462,6 +513,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); if (selected) save(selected); },
   };
 }

@@ -111,7 +111,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-81 Node checks passed; the production dependency audit reported zero vulnerabilities.
+87 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The fresh whole-branch review's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -338,6 +338,8 @@ Creating a conversation sends the selected native project ID. The gateway reads
 its primary registered root, or uses its configured default when no project is
 selected. Browser-supplied `cwd` overrides are rejected. Existing conversations
 keep the actual working directory reported by their native snapshots.
+
+Each conversation row has a three-line options button with **Copy thread ID**, **Archive/Restore**, and **Delete**. The header no longer displays copy/delete controls. Actions use the clicked row's full native ID and preserve another selected conversation and its draft. Native popovers support arrow keys, Escape/Tab dismissal and focus return; a running archive can be cancelled before interruption.
 
 Conversation deletion still confirms once, reads fresh native active state,
 interrupts its matching turn and waits up to 30 seconds. Refusal, timeout or a

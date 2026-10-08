@@ -123,3 +123,13 @@ dialog::backdrop { background: rgb(0 0 0 / .6); }
   .model-controls label { font-size: 12px; }
   .composer-hint { display: none; }
 }
+
+.conversation-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.conversation-row > .list-row { flex: 1; min-width: 0; }
+.thread-actions { flex: 0 0 32px; width: 32px; min-height: 32px; padding: 6px; border: 0; background: transparent; color: var(--muted); }
+.thread-actions svg { display: block; }
+.thread-menu { position: fixed; inset: auto; margin: 0; width: 224px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 6px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--bg); box-shadow: 0 8px 24px #0002; }
+.thread-menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 12px; border-radius: 6px; }
+.thread-menu button:hover { background: var(--surface); }
+.thread-menu .danger { color: var(--error); }
+@media (pointer: coarse) { .thread-actions { flex-basis: 44px; width: 44px; min-height: 44px; padding: 14px; } }

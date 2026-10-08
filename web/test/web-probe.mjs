@@ -15,13 +15,13 @@ import { execFileSync } from 'node:child_process';
 const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
   'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false },
   'exercise-attachments': { type: 'boolean', default: false }, 'exercise-usage': { type: 'boolean', default: false },
-  'exercise-references': { type: 'boolean', default: false }, 'exercise-restarts': { type: 'boolean', default: false } } });
+  'exercise-thread-menu': { type: 'boolean', default: false }, 'exercise-references': { type: 'boolean', default: false }, 'exercise-restarts': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
 const password = (await readFile(values['password-file'], 'utf8')).trim();
 let cookie, viewId, threadId, projectThreadId, referenceThreadId, forkThreadId, state, actor, stream;
-const events = [];
+const events = [], menuThreads = new Set();
 async function request(path, body, origin = config.origin) {
   return new Promise((resolve, reject) => {
     const req = https.request(config.origin + path, { ca, method: body === undefined ? 'GET' : 'POST',
@@ -107,6 +107,19 @@ try {
       report.nativeProjectRootUsed = true;
     }
     report.projectsReadOnly = true; report.browserCwdOverridesDenied = true;
+  }
+  if (values['exercise-thread-menu']) {
+    const target = (await api('/api/thread/start', { viewId, name: 'Disposable row-menu target' })).snapshot.thread.id; menuThreads.add(target);
+    const current = (await api('/api/thread/start', { viewId, name: 'Disposable row-menu current' })).snapshot.thread.id; menuThreads.add(current);
+    await api('/api/thread/archive', { viewId, threadId: target, confirmed: true });
+    assert.equal((await api('/api/thread/render', { viewId, threadId: current })).native.threadId, current);
+    const archived = (await api('/api/rpc', { method: 'thread/list', params: { limit: 100, archived: true, modelProviders: [] } })).result;
+    assert.ok(archived.data.some(item => item.id === target));
+    await api('/api/thread/unarchive', { viewId, threadId: target });
+    await api('/api/thread/delete', { viewId, threadId: target, confirmed: true }); menuThreads.delete(target);
+    assert.equal((await api('/api/thread/render', { viewId, threadId: current })).native.threadId, current);
+    await api('/api/thread/delete', { viewId, threadId: current, confirmed: true }); menuThreads.delete(current);
+    report.threadMenuTargetScope = true; report.nativeArchiveRestoreDelete = true;
   }
   if (values['exercise-chat']) {
     const created = await api('/api/thread/start', { viewId, name: 'Disposable HTTPS integration probe' });
@@ -268,6 +281,7 @@ try {
   console.log(JSON.stringify(report));
 } finally {
   stream?.destroy();
+  for (const id of menuThreads) if (cookie) await api('/api/thread/delete', { viewId, threadId: id, confirmed: true }).catch(() => {});
   if (projectThreadId && cookie) await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }).catch(() => {});
   for (const id of [forkThreadId, referenceThreadId]) if (id && cookie) await api('/api/thread/delete', { viewId, threadId: id, confirmed: true }).catch(() => {});
   if (threadId && actor?.status().online) {
