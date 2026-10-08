@@ -8,6 +8,21 @@ files/photos, model/usage controls and native `@`/`$`/`/` actions are available.
 The original desktop's backend has not been migrated. Browser/hardware UI
 acceptance is explicitly listed below.
 
+## Codex desktop interface
+
+The shell copies the installed Codex desktop's gray theme tokens, native system
+font and current 290 px sidebar preference. One global sidebar contains native
+projects/conversations; the conversation pane uses the desktop-style rounded
+input surface. Model, effort, permissions and the read-only context indicator
+are inside that surface. Context details retain native token/window values and
+the native 12000-token percentage baseline; no custom context limit is added.
+
+The sidebar footer opens account-wide seven-day usage, including when no
+conversation is selected. Switching conversations does not change its scope.
+The attachment plus opens the existing file/photo pickers. There are no project
+or directory mutation controls, logout control or manual conversation refresh.
+Native row menus require a current browser with Popover API support.
+
 ## Install and operate
 
 Requires Linux with a user systemd manager, Node.js 24+, OpenSSL and the verified
@@ -111,8 +126,8 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-87 Node checks passed; the production dependency audit reported zero vulnerabilities.
-The fresh whole-branch review's six Important findings and three findings
+90 Node checks passed; the production dependency audit reported zero vulnerabilities.
+The initial native web release's review found six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
 reload identity; a real HTTPS/native check also confirms nested Unicode completion.
@@ -125,8 +140,9 @@ Runtime proof files stay outside Git.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 390×844/1280×820 screenshot, real mobile IME/picker/clipboard/download or desktop
-keyboard acceptance is claimed. Those are manual release checks: log in, navigate
-project→thread→chat on a phone, confirm IME Enter, choose/remove/retry files, copy
+keyboard acceptance is claimed. Those are manual release checks: log in, open
+the sidebar and choose a native project/conversation on a phone, confirm IME
+Enter, choose/remove/retry files, copy
 the full ID, download exact bytes, open the same thread in the extra desktop and
 send in both directions. The CSS uses visible focus, native controls, safe areas
 and the visual viewport for the keyboard; physical-device behavior remains unverified.

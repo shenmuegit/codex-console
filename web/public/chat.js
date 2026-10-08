@@ -241,15 +241,17 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function row(title, detail, chosen, fn) {
     const button = element('button', null, 'list-row'); button.type = 'button';
-    button.setAttribute('aria-current', String(chosen)); button.append(element('span', title));
-    if (detail) button.append(element('small', detail)); bind(button, 'click', fn); return button;
+    button.setAttribute('aria-current', String(chosen)); button.append(element('span', title, 'row-label'));
+    if (detail) { button.title = detail; button.append(element('small', detail)); } bind(button, 'click', fn); return button;
   }
   async function loadProjects(more = false) {
     const version = ++projectLoad, page = await read('project/list', { limit: 20, ...(more && projectCursor ? { cursor: projectCursor } : {}) });
     if (!alive || version !== projectLoad) return;
     if (!more) $('#projects').replaceChildren(row('全部会话', null, !project, () => chooseProject(null)));
     for (const item of page.data) {
-      $('#projects').append(row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item)));
+      const button = row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item));
+      const icon = element('span', null, 'project-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>';
+      button.insertBefore(icon, button.children[0]); $('#projects').append(button);
     }
     projectCursor = page.nextCursor; $('#more-projects').hidden = !projectCursor;
   }
@@ -267,6 +269,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       actions.setAttribute('aria-label', '会话选项：' + (item.name || item.preview || item.id)); actions.setAttribute('aria-haspopup', 'menu'); actions.setAttribute('aria-expanded', 'false'); actions.setAttribute('aria-controls', 'thread-menu');
       actions.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
       bind(actions, 'click', () => openThreadMenu(item, archived, actions));
+      if (item.status?.type === 'active') { button.append(element('span', '运行中', 'thread-activity')); button.setAttribute('aria-label', (item.name || item.preview || item.id) + '，运行中'); }
       if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); $('#threads').append(container);
     }
     if (!page.data.length && !more) $('#threads').append(element('p', '这里还没有会话。', 'muted'));
@@ -347,17 +350,19 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (!alive) return;
     if (menuTarget) $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
-    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '选择或新建一个会话');
+    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
+    $('#thread-title').title = state?.thread?.name ?? '';
     $('#older-history').hidden = !state?.historyCursor;
-    $('#effective-settings').textContent = state?.ready ? `${active ? '下轮默认：' : '会话默认：'}${state.settings.model ?? '原生模型'} · ${state.settings.effort ?? '原生思考强度'} · ${permissionText(state.settings)}` : '';
-    $('#chat-empty').hidden = Boolean(state?.turns.some(t => t.items?.length));
+    $('#effective-settings').textContent = state?.ready ? permissionText(state.settings) : '';
+    $('#effective-settings').title = state?.ready ? `${active ? '下轮默认' : '会话默认'}：${state.settings.model ?? '原生模型'} · ${state.settings.effort ?? '原生思考强度'}` : '';
+    const hasMessages = Boolean(state?.turns.some(t => t.items?.length)); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
     $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#send-mode-label').hidden = !active; $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
-    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : state?.ready ? 'Enter 发送 · Shift+Enter 换行' : '';
+    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : state?.ready ? 'Enter 发送 · Shift+Enter 换行' : '';
     const currentIds = new Set();
     let position = 0;
     for (const turn of state?.turns ?? []) for (const item of turn.items ?? []) {
@@ -366,6 +371,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
       if (!entry) {
         const node = element(role === 'tool' ? 'details' : 'article', null, `message message-${role}`), header = element(role === 'tool' ? 'summary' : 'header'), body = element('div', null, 'message-body'), downloads = element('div', null, 'message-files');
+        node.setAttribute('aria-label', role === 'user' ? '你的消息' : role === 'assistant' ? 'Codex 回复' : '工具输出');
         node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
       }
       entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改' }[item.type] ?? '工具' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
@@ -445,7 +451,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     ++opening; save(selected); selected = undefined; messageNodes.clear(); formNodes.clear();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = '';
     const url = new URL(location.href); url.searchParams.delete('thread'); history.replaceState(null, '', url);
-    layout.dataset.level = 'threads'; draw();
+    layout.dataset.sidebarCollapsed = 'false'; layout.dataset.level = 'threads'; draw(); $('#new-thread').focus();
   }
   async function archiveConversation(item) {
     if (busyThreads.has(item.id)) return false;
@@ -473,7 +479,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#new-thread'), 'click', newThread);
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
-  bind($('#back-projects'), 'click', () => { layout.dataset.level = 'projects'; }); bind($('#back-threads'), 'click', () => { layout.dataset.level = 'threads'; });
+  bind($('#back-projects'), 'click', () => { layout.dataset.sidebarCollapsed = 'true'; layout.dataset.level = 'chat'; $('#back-threads').focus(); });
+  bind($('#back-threads'), 'click', () => { layout.dataset.sidebarCollapsed = 'false'; layout.dataset.level = 'threads'; $('#new-thread').focus(); });
   bind($('#older-history'), 'click', async () => {
     const state = selected, button = $('#older-history'); if (!state?.historyCursor) return; button.disabled = true;
     try { const response = await api('/api/rpc', { method: 'thread/turns/list', params: { threadId: state.threadId, cursor: state.historyCursor, limit: 20, sortDirection: 'desc', itemsView: 'full' } });

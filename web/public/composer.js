@@ -192,8 +192,8 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
     notify(state);
   }
   for (const input of [fileInput, photoInput]) input.addEventListener('change', () => { add([...input.files]); input.value = ''; }, { signal: abort.signal });
-  document.querySelector('#choose-files').addEventListener('click', () => fileInput.click(), { signal: abort.signal });
-  document.querySelector('#choose-photos').addEventListener('click', () => photoInput.click(), { signal: abort.signal });
+  document.querySelector('#choose-files').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; fileInput.click(); }, { signal: abort.signal });
+  document.querySelector('#choose-photos').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; photoInput.click(); }, { signal: abort.signal });
   function render(state) {
     container.replaceChildren();
     for (const record of state?.attachments ?? []) {

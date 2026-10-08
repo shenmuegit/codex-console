@@ -4,76 +4,81 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light dark">
-  <title>Codex Console</title>
+  <title>Codex</title>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
   <main id="login-panel" class="login-panel">
-    <p class="eyebrow">CODEX CONSOLE</p>
-    <h1>回到你的工作</h1>
-    <p class="muted">连接主机上的 Codex。</p>
+    <strong class="wordmark">Codex</strong>
+    <h1>连接 Codex</h1>
+    <p class="muted">继续你的工作。</p>
     <form id="login-form">
       <label for="password">访问密码</label>
       <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required aria-describedby="login-error">
       <p id="login-error" class="error" role="alert"></p>
-      <button type="submit" class="primary">登录</button>
+      <button type="submit" class="primary">继续</button>
     </form>
   </main>
   <main id="workspace" hidden>
-    <header class="topbar"><strong>Codex Console</strong><span id="connection" role="status">正在连接…</span></header>
-    <div class="work-layout" data-level="projects">
-      <aside class="projects-pane" aria-label="项目">
-        <div class="pane-heading"><h2>项目</h2></div>
-        <nav id="projects" aria-label="项目列表"></nav>
-        <button id="more-projects" hidden>更多项目</button>
-      </aside>
-      <aside class="threads-pane" aria-label="会话">
-        <div class="pane-heading"><button class="mobile-back" id="back-projects">项目</button><h2 id="project-title">全部会话</h2></div>
-        <div class="toolbar"><button id="new-thread" class="primary">新建会话</button></div>
-        <label class="check-label"><input id="show-archived-threads" type="checkbox">显示归档会话（点击恢复）</label>
-        <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" hidden>更多会话</button>
-      </aside>
-      <section class="chat-pane" aria-label="聊天">
-        <header class="chat-heading">
-          <button class="mobile-back" id="back-threads">会话</button>
-          <div class="thread-title"><h1 id="thread-title">选择或新建一个会话</h1></div>
+    <div class="work-layout" data-level="chat">
+      <aside id="sidebar" class="sidebar" aria-label="全局导航">
+        <header class="sidebar-header">
+          <strong class="wordmark">Codex</strong>
+          <button id="back-projects" class="icon-button" aria-label="收起侧栏" title="收起侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
         </header>
-        <p id="effective-settings" class="muted chat-meta"></p>
-        <div class="model-controls chat-meta"><label for="model">下轮模型</label><select id="model" disabled></select><label for="effort">思考强度</label><select id="effort" disabled></select></div>
-        <p class="muted chat-meta">下轮生效；后续调整也会影响仍在排队的消息。</p>
-        <div class="usage-strip chat-meta"><span id="context-usage">上下文未知</span><meter id="context-meter" min="0" max="100" aria-label="上下文使用比例" hidden></meter><button id="show-usage">七天额度</button></div>
+        <button id="new-thread" class="new-thread"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M16 3l5 5M10 14l-1 4 4-1L22 8l-5-5Z"/></svg><span>新建会话</span></button>
+        <div class="sidebar-scroll">
+          <section class="projects-pane" aria-label="项目">
+            <div class="pane-heading"><h2>项目</h2></div>
+            <nav id="projects" aria-label="项目列表"></nav><button id="more-projects" class="more-button" hidden>更多项目</button>
+          </section>
+          <section class="threads-pane" aria-label="会话">
+            <div class="pane-heading"><h2 id="project-title">全部会话</h2><label class="archive-filter" title="显示归档会话"><input id="show-archived-threads" type="checkbox"><span>已归档</span></label></div>
+            <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" class="more-button" hidden>更多会话</button>
+          </section>
+        </div>
+        <footer class="sidebar-footer">
+          <button id="show-usage" class="global-usage" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+          <span id="connection" class="connection" role="status">正在连接…</span>
+        </footer>
+      </aside>
+      <section id="chat-pane" class="chat-pane" aria-label="聊天" data-empty="true">
+        <header class="chat-heading">
+          <button id="back-threads" class="icon-button sidebar-open" aria-label="打开侧栏" title="打开侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
+          <h1 id="thread-title" class="thread-title" tabindex="-1">新会话</h1>
+        </header>
         <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
-          <button id="older-history" hidden>加载更早记录</button><div id="messages"></div>
-          <p id="chat-empty" class="empty muted">从左侧打开会话，继续你的工作。</p>
+          <button id="older-history" class="more-button" hidden>加载更早记录</button><div id="messages"></div>
+          <div id="chat-empty" class="welcome"><h2>开始构建</h2><p>从侧栏选择或新建会话。</p></div>
         </div>
         <section id="native-requests" aria-label="待回答的原生请求"></section>
-        <div id="chat-error" class="error chat-meta" role="alert"></div>
+        <div id="chat-error" class="error chat-error" role="alert"></div>
         <form id="composer" class="composer">
-          <div id="attachments" aria-label="待发送附件"></div>
-          <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
-          <div id="completion-menu" role="listbox" aria-label="原生补全" hidden></div>
-          <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="3" placeholder="给 Codex 发送消息… 输入 @、$ 或 /" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
-          <p class="muted small composer-hint">@ 文件、目录、会话或应用 · $ 技能 · / 命令；会话引用使用只读的发送时快照。</p>
-          <div class="composer-footer"><span id="turn-status" class="muted" role="status"></span>
-            <button id="choose-files" type="button" disabled>文件</button><button id="choose-photos" type="button" disabled>照片</button>
-            <label id="send-mode-label" hidden>运行中输入<select id="send-mode"><option value="steer">补充当前轮次</option><option value="queue">排队到下一轮</option></select></label>
-            <button id="retry-uncertain" type="button" hidden>核对后重新发送</button>
-            <button id="stop-turn" type="button" hidden>停止</button><button id="send" type="submit" class="primary" disabled>发送</button>
+          <div class="composer-surface">
+            <div id="attachments" aria-label="待发送附件"></div>
+            <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <div id="completion-menu" role="listbox" aria-label="原生补全" hidden></div>
+            <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="2" placeholder="向 Codex 发送消息…" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
+            <div class="composer-footer">
+              <details id="attachment-actions" class="attachment-actions"><summary class="icon-button" aria-label="添加附件" title="添加附件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary><div class="attachment-menu"><button id="choose-files" type="button" disabled>添加文件</button><button id="choose-photos" type="button" disabled>添加照片</button></div></details>
+              <label class="select-control" title="选择模型"><span class="sr-only">模型</span><select id="model" aria-label="选择模型" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
+              <label class="select-control effort-control" title="选择思考强度"><span class="sr-only">思考强度</span><select id="effort" aria-label="选择思考强度" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
+              <span id="effective-settings" class="effective-settings"></span>
+              <span class="composer-spacer"></span>
+              <details id="context-info" class="context-info"><summary id="context-toggle" aria-label="上下文用量"><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-track" cx="10" cy="10" r="7"/><circle id="context-ring" cx="10" cy="10" r="7" pathLength="100"/></svg><span id="context-usage">上下文</span></summary><p id="context-detail"></p><meter id="context-meter" class="sr-only" min="0" max="100" aria-label="上下文使用比例" hidden></meter></details>
+              <label id="send-mode-label" class="send-mode-label" hidden><span class="sr-only">运行中输入</span><select id="send-mode" aria-label="运行中输入"><option value="steer">补充</option><option value="queue">排队</option></select></label>
+              <button id="stop-turn" type="button" class="send-button" aria-label="停止" title="停止" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
+              <button id="send" type="submit" class="send-button" aria-label="发送" title="发送" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+            </div>
           </div>
+          <div class="composer-status"><span id="turn-status" role="status"></span><button id="retry-uncertain" type="button" hidden>核对后重新发送</button></div>
         </form>
       </section>
     </div>
   </main>
-  <dialog id="info-dialog"><div class="pane-heading"><h2 id="info-title">会话信息</h2><button id="close-info">关闭</button></div><pre id="info-body"></pre></dialog>
-  <dialog id="usage-dialog"><div class="pane-heading"><h2>账号七天额度</h2><button id="close-usage">关闭</button></div>
-    <p class="muted small">同一账号的滚动七天窗口，与本会话的上下文用量分别计算。</p>
-    <div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p><button id="refresh-usage">刷新额度</button>
-  </dialog>
-  <div id="thread-menu" class="thread-menu" popover role="menu" aria-label="会话选项" hidden>
-    <button id="thread-menu-copy" type="button" role="menuitem">复制线程 ID</button>
-    <button id="thread-menu-archive" type="button" role="menuitem">归档会话</button>
-    <button id="thread-menu-delete" class="danger" type="button" role="menuitem">删除会话</button>
-  </div>
+  <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
+  <dialog id="usage-dialog"><div class="dialog-heading"><h2>账号用量</h2><button id="close-usage" class="icon-button" aria-label="关闭">×</button></div><p class="muted small">7 天滚动窗口 · 当前账号的全局用量</p><div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p><button id="refresh-usage" class="more-button">更新用量</button></dialog>
+  <div id="thread-menu" class="thread-menu" popover role="menu" aria-label="会话选项" hidden><button id="thread-menu-copy" type="button" role="menuitem">复制线程 ID</button><button id="thread-menu-archive" type="button" role="menuitem">归档会话</button><button id="thread-menu-delete" class="danger" type="button" role="menuitem">删除会话</button></div>
 </body>
 </html>

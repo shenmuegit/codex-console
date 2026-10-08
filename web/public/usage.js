@@ -84,7 +84,12 @@ export function mountUsage({ api, viewId, getState, onChange, onError }) {
     }
     model.disabled = $('#effort').disabled = setting || !state?.ready || !models.length;
     const usage = contextUsage(state?.tokenUsage);
-    $('#context-usage').textContent = usage.tokens == null ? '上下文未知' : `最近上下文 ${usage.tokens.toLocaleString()}${usage.window == null ? ' · 窗口未知' : ' / ' + usage.window.toLocaleString() + ` · 剩余 ${usage.remainingPercent}%`}`;
+    const detail = usage.tokens == null ? '上下文用量未知' : `最近上下文 ${usage.tokens.toLocaleString()}${usage.window == null ? ' · 窗口未知' : ' / ' + usage.window.toLocaleString() + ` · 剩余 ${usage.remainingPercent}%`}`;
+    $('#context-info').hidden = !state?.ready;
+    $('#context-usage').textContent = usage.usedPercent == null ? '上下文' : `${usage.usedPercent}%`;
+    $('#context-toggle').setAttribute('aria-label', detail); $('#context-toggle').title = detail;
+    $('#context-detail').textContent = detail;
+    $('#context-ring').style.strokeDasharray = `${usage.usedPercent ?? 0} 100`;
     $('#context-meter').hidden = usage.usedPercent == null;
     if (usage.usedPercent != null) $('#context-meter').value = usage.usedPercent;
   }
