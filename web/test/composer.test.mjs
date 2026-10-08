@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { encodeComposer, utf8Range, commandAction, COMMANDS, findTrigger, updateSelections } from '../public/composer.js';
+import { encodeComposer, utf8Range, commandAction, COMMANDS, findTrigger, updateSelections, mountCompletions } from '../public/composer.js';
 import { httpsFixture, resumeFixture } from './helpers.mjs';
+import { domFixture } from './dom.mjs';
 
 function selection(text, token, entity) { const start = text.indexOf(token); return { start, end: start + token.length, token, ...entity }; }
 async function waitCall(peer, method, count = 1) { for (let i = 0; i < 100; i++) { if (peer.sent.filter(m => m.method === method).length >= count) return; await delay(5); } assert.fail(`Missing ${method}`); }
@@ -64,6 +65,18 @@ test('slash catalog is exact and commands never activate inside ordinary text or
   assert.deepEqual(COMMANDS, ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export']);
   assert.deepEqual(commandAction('/rename 新标题'), { command: 'rename', args: '新标题' });
   for (const text of ['mail/a@b /new', '`/new`', '    /new', '/home/file', '/unknown']) assert.equal(commandAction(text), null);
+});
+
+test('mounted completion menu leaves Shift+Enter for a newline and accepts plain Enter', async t => {
+  const dom = domFixture(), state = { ready: true, threadId: 't', draft: '/fo', selections: [] }; let menu, changes = 0;
+  t.after(() => { menu?.dispose(); dom.restore(); });
+  const draft = dom.get('draft'); draft.value = state.draft; draft.setSelectionRange(3, 3);
+  menu = mountCompletions({ api: async () => assert.fail('Slash completion is local'), viewId: 'view', getState: () => state, onChange: () => ++changes });
+  await menu.refresh(); assert.equal(dom.get('completion-menu').hidden, false);
+  const newline = dom.event('draft', 'keydown', { key: 'Enter', shiftKey: true });
+  assert.equal(newline.defaultPrevented, false); assert.equal(state.draft, '/fo'); assert.equal(changes, 0);
+  const accept = dom.event('draft', 'keydown', { key: 'Enter' });
+  assert.equal(accept.defaultPrevented, true); assert.equal(state.draft, '/fork '); assert.equal(changes, 1);
 });
 
 test('workspace skills come from native discovery and referenced threads are only read at send time', async t => {

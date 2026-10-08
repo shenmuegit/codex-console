@@ -374,6 +374,8 @@ workspace skills. Picking binds the selected text; editing that token removes
 the binding, while email, code and unselected `$HOME` remain literal text.
 Chinese/emoji ranges use native UTF-8 offsets. IME confirmation never selects or
 submits a completion. Unavailable native catalog entries stay visibly unavailable.
+Shift+Enter keeps its newline behavior while the completion menu is open;
+plain Enter accepts the highlighted choice.
 
 Files/directories use native quoted paths, skills use typed skill inputs and
 apps/plugins use typed mention identities. Thread links use the native escaped

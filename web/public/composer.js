@@ -132,6 +132,7 @@ export function mountCompletions({ api, viewId, getState, onChange }) {
   draft.addEventListener('compositionend', () => { clearTimeout(timer); timer = setTimeout(refresh, 0); }, { signal: abort.signal });
   draft.addEventListener('keydown', event => {
     if (menu.hidden || event.isComposing || getState()?.composing || event.keyCode === 229) return;
+    if (event.key === 'Enter' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return;
     if (event.key === 'Escape') { close(); event.preventDefault(); return; }
     if (['ArrowDown', 'ArrowUp'].includes(event.key) && entries.length) { active = (active + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length; highlight(); event.preventDefault(); }
     if (['Enter', 'Tab'].includes(event.key) && entries[active] && !entries[active].disabled) { event.preventDefault(); event.stopImmediatePropagation(); choose(entries[active]); }
