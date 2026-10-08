@@ -145,7 +145,9 @@ opening and initialization have a 10-second deadline.
 Every native frame receives a generation/sequence cursor. An atomic native
 resume snapshot is published before later deltas or waiting HTTP handlers run.
 Each page obtains its own snapshot; closing the last page only unsubscribes an
-idle thread. Running work stays subscribed until its matching turn completes.
+idle thread. There are no manual project/conversation refresh buttons. Native
+events update the lists, and reconnection rereads both catalogs even when no
+conversation is selected. Running work stays subscribed until its matching turn completes.
 Reconnection restores subscriptions and snapshots, never submitted writes.
 
 A write interrupted after sending has an **unknown** outcome: inspect native

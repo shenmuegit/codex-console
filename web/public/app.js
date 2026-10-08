@@ -20,6 +20,7 @@ async function connected() {
   const status = await api('/api/status');
   const { viewId } = await api('/api/view', {});
   chat?.dispose(); chat = mountChat({ api, viewId, uploadLimitBytes: status.uploadLimitBytes });
+  chat.connection(status.online);
   events?.close(); events = new EventSource('/api/events?viewId=' + encodeURIComponent(viewId));
   events.onmessage = event => {
     const envelope = JSON.parse(event.data);

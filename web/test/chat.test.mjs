@@ -119,6 +119,18 @@ test('new and forked selections update the URL and reload the visible conversati
   }
 });
 
+test('reconnection refreshes native project and conversation lists without a selected chat', async t => {
+  const dom = domFixture(); dom.location.href = 'https://fixture.test/'; let chat; const reads = [];
+  t.after(() => { chat?.dispose(); dom.restore(); });
+  const api = async (path, body) => { assert.equal(path, '/api/rpc'); reads.push(body.method); return { result: { data: [], nextCursor: null } }; };
+  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.load();
+  const before = reads.length;
+  chat.onEvent({ kind: 'status', cursor: cursor(1), native: { online: false } });
+  chat.onEvent({ kind: 'status', cursor: cursor(2), native: { online: true } }); await delay(0);
+  const refreshed = reads.slice(before); assert.ok(refreshed.includes('project/list')); assert.ok(refreshed.includes('thread/list'));
+  assert.equal(chat.getState(), undefined);
+});
+
 test('IME confirmation, mobile Enter and Shift+Enter never send a draft', () => {
   assert.equal(shouldSubmitKey({ key: 'Enter' }, { composing: false, finePointer: true }), true);
   for (const event of [{ key: 'Enter', isComposing: true }, { key: 'Enter', keyCode: 229 }, { key: 'Enter', shiftKey: true }]) {

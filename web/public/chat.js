@@ -309,7 +309,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '选择或新建一个会话');
     $('#thread-id').textContent = state?.threadId ?? ''; $('#copy-thread').disabled = !state;
-    $('#refresh-chat').disabled = !state || !online; $('#older-history').hidden = !state?.historyCursor;
+    $('#older-history').hidden = !state?.historyCursor;
     $('#delete-thread').disabled = !state || state.deleted || state.deleting || !online;
     $('#effective-settings').textContent = state?.ready ? `${active ? '下轮默认：' : '会话默认：'}${state.settings.model ?? '原生模型'} · ${state.settings.effort ?? '原生思考强度'} · ${permissionText(state.settings)}` : '';
     $('#chat-empty').hidden = Boolean(state?.turns.some(t => t.items?.length));
@@ -420,10 +420,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   bind($('#new-thread'), 'click', newThread);
   bind($('#copy-thread'), 'click', async () => { if (!selected) return; try { await navigator.clipboard.writeText(selected.threadId); $('#turn-status').textContent = '已复制会话 ID'; } catch { window.prompt('复制会话 ID', selected.threadId); } });
-  bind($('#refresh-projects'), 'click', () => loadProjects()); bind($('#refresh-threads'), 'click', () => loadThreads());
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
-  bind($('#refresh-chat'), 'click', () => selected && open(selected.threadId));
   bind($('#back-projects'), 'click', () => { layout.dataset.level = 'projects'; }); bind($('#back-threads'), 'click', () => { layout.dataset.level = 'threads'; });
   bind($('#older-history'), 'click', async () => {
     const state = selected, button = $('#older-history'); if (!state?.historyCursor) return; button.disabled = true;
@@ -445,7 +443,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     async load() { await Promise.all([loadProjects(), loadThreads(), usage.loadModels()]); const requested = new URL(location.href).searchParams.get('thread'); if (requested) await open(requested); },
     onEvent(event) {
       if (!alive) return;
+      const reconnected = event.kind === 'status' && event.native.online && !online;
       if (event.kind === 'status') online = event.native.online;
+      if (reconnected) Promise.all([loadProjects(), loadThreads()]).catch(showError);
       if (event.kind === 'renderRequired' && event.native.threadId === selected?.threadId) loadPresentation();
       if (event.native?.method?.startsWith('project/')) loadProjects().catch(showError);
       const threadId = event.kind === 'snapshot' ? event.native.thread.id : event.native?.threadId ?? event.native?.params?.threadId;
