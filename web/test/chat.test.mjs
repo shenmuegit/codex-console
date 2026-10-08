@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createChatState, applyNativeEvent, installSnapshot, prependHistory, beginSend, settleSend, buildTurnParams, permissionText, shouldSubmitKey } from '../public/chat.js';
+import { createChatState, applyNativeEvent, installSnapshot, prependHistory, beginSend, settleSend, buildTurnParams, permissionText, shouldSubmitKey, mountChat } from '../public/chat.js';
 import { renderTranscript } from '../transcript.mjs';
 import { httpsFixture, resumeFixture } from './helpers.mjs';
+import { domFixture } from './dom.mjs';
 
 const cursor = seq => ({ generation: 1, seq });
 const message = (seq, delta) => ({ kind: 'notification', cursor: cursor(seq), native: { method: 'item/agentMessage/delta', params: { threadId: 't', turnId: 'turn', itemId: 'a', delta } } });
@@ -73,6 +74,28 @@ test('submit guards are synchronous; failures and newer drafts survive uncertain
   assert.equal(state.draft, 'edited while sending');
   state.composing = true; const composing = beginSend(state);
   settleSend(state, composing.id, { ok: true }); assert.equal(state.draft, 'edited while sending');
+});
+
+test('mounted slash submission locks synchronously and preserves newer drafts on success or failure', async t => {
+  const dom = domFixture(); let chat, rejectCommand, resolveCommand; const calls = [];
+  t.after(() => { chat?.dispose(); dom.restore(); });
+  const api = async (path, body) => {
+    if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: cursor(1) };
+    if (path === '/api/rpc') return { result: { data: [], nextCursor: null } };
+    calls.push(path); return new Promise((resolve, reject) => { resolveCommand = resolve; rejectCommand = reject; });
+  };
+  chat = mountChat({ api, viewId: 'view', defaultCwd: '/tmp', uploadLimitBytes: 32 }); chat.connection(true); await chat.open('t');
+  const state = chat.getState(); state.draft = '/fork'; dom.get('draft').value = state.draft;
+  dom.event('composer', 'submit'); dom.event('composer', 'submit');
+  assert.deepEqual(calls, ['/api/thread/fork']); assert.equal(dom.get('send').disabled, true);
+  rejectCommand(new Error('native refused')); await delay(0);
+  assert.equal(state.draft, '/fork'); assert.equal(dom.get('send').disabled, false);
+  state.draft = '/compact'; dom.event('composer', 'submit'); dom.event('composer', 'submit');
+  assert.deepEqual(calls, ['/api/thread/fork', '/api/thread/compact']);
+  state.draft = 'newer draft'; resolveCommand({}); await delay(0);
+  assert.equal(state.draft, 'newer draft'); assert.equal(dom.get('send').disabled, false);
+  state.pending = { id: 'message-in-flight' }; state.draft = '/compact'; dom.event('composer', 'submit');
+  assert.equal(calls.length, 2);
 });
 
 test('IME confirmation, mobile Enter and Shift+Enter never send a draft', () => {

@@ -391,6 +391,9 @@ Enable **Show archived conversations** and click one to restore it. Delete keeps
 its existing confirmation. Fork uses full defaults and defers automatic inherited
 goal continuation. Export downloads paginated native history as Markdown without
 writing a host file. There is no invented commands/list or read_thread tool.
+Command submission locks before awaiting native work, so double Enter/click
+cannot create duplicate forks or compactions. Failed commands preserve the draft;
+editing while a command runs preserves the newer text.
 
 Eight focused checks and the full suite passed. Live
 `web-probe.mjs --exercise-references` verified a file, real skill, real plugin,

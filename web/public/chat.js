@@ -3,7 +3,7 @@ import { mountUsage } from './usage.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
-    ready: false, resync: false, buffer: [], bufferBytes: 0, historyCursor: null, draft: '', selections: [], attachments: [], pending: null, requests: new Map() };
+    ready: false, resync: false, buffer: [], bufferBytes: 0, historyCursor: null, draft: '', selections: [], attachments: [], pending: null, commandPending: false, requests: new Map() };
 }
 const copy = value => structuredClone(value);
 const sameCursor = (a, b) => a && b && a.generation === b.generation && a.seq === b.seq;
@@ -324,10 +324,10 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
-    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
+    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#send-mode-label').hidden = !active; $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
-    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : active ? 'Codex 正在工作' : state?.ready ? 'Enter 发送 · Shift+Enter 换行' : '';
+    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : state?.ready ? 'Enter 发送 · Shift+Enter 换行' : '';
     const currentIds = new Set();
     let position = 0;
     for (const turn of state?.turns ?? []) for (const item of turn.items ?? []) {
@@ -374,13 +374,17 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     finally { presentationPending = false; if (presentationAgain) { presentationAgain = false; loadPresentation(); } }
   }
   async function submit() {
-    const action = selected && commandAction(selected.draft);
+    if (!selected?.ready || !online || selected.deleting || selected.pending || selected.commandPending) return;
+    const action = commandAction(selected.draft);
     if (action && !selected.composing) {
-      const state = selected, commandText = state.draft, done = await runCommand(action);
-      if (done !== false && state.draft === commandText) { state.draft = ''; state.selections = []; save(state); if (selected === state) draw(); }
+      const state = selected, commandText = state.draft; state.commandPending = true; draw();
+      try {
+        const done = await runCommand(action);
+        if (done !== false && state.draft === commandText) { state.draft = ''; state.selections = []; }
+      } finally { state.commandPending = false; save(state); if (selected === state) draw(); }
       return;
     }
-    if (!selected?.ready || !online || selected.pending || selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
+    if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state); save(state); draw(); $('#chat-error').textContent = '';
     try {
       await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
