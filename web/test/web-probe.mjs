@@ -10,11 +10,12 @@ import { createCodexClient } from '../codex.mjs';
 import { createChatState, applyNativeEvent, installSnapshot } from '../public/chat.js';
 import { tinyPng } from './helpers.mjs';
 import { weeklyUsage, contextUsage } from '../public/usage.js';
+import { execFileSync } from 'node:child_process';
 
 const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
   'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false },
   'exercise-attachments': { type: 'boolean', default: false }, 'exercise-usage': { type: 'boolean', default: false },
-  'exercise-references': { type: 'boolean', default: false } } });
+  'exercise-references': { type: 'boolean', default: false }, 'exercise-restarts': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
@@ -83,7 +84,9 @@ try {
   assert.equal((await request('/api/login', { password: 'irrelevant' }, 'https://foreign.invalid')).status, 403);
   const login = await request('/api/login', { password }); assert.equal(login.status, 200);
   cookie = login.headers['set-cookie'][0].split(';')[0];
-  const status = await api('/api/status'); assert.equal(status.online, true);
+  let status = await api('/api/status');
+  for (let attempt = 0; !status.online && attempt < 100; attempt++) { await delay(100); status = await api('/api/status'); }
+  assert.equal(status.online, true);
   const models = (await api('/api/rpc', { method: 'model/list', params: {} })).result;
   ({ viewId } = await api('/api/view', {})); stream = await connectEvents();
   const report = { https: true, unauthenticated: 401, foreignOrigin: 403, nativeModels: models.data.length, sseRequiresSnapshot: true };
@@ -235,6 +238,37 @@ try {
     await api('/api/thread/delete', { viewId, threadId: referenceThreadId, confirmed: true }); referenceThreadId = null;
     report.nativeFileReference = true; report.nativeSkill = Boolean(skill); report.nativeApp = Boolean(app); report.nativePlugin = Boolean(plugin);
     report.readonlyThreadContext = true; report.queueSnapshot = true; report.renameForkArchiveExport = true;
+  }
+  if (values['exercise-restarts']) {
+    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable durable restart probe' });
+    threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
+    const messageId = randomUUID(), sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: messageId,
+      draft: { text: 'Use your command tool to run sleep 12, then reply DURABLE_RESTART_OK. This is a disposable service-lifetime test.' } });
+    const turnId = sent.result.turn.id;
+    await waitFor(() => events.some(e => e.native?.params?.turnId === turnId && e.native.params.item?.type === 'commandExecution'), 'Work started before web restart.');
+    const pid = unit => execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8' }).trim();
+    const backendPid = pid('codex-console-native-backend.service'), webPid = pid('codex-console-native-web.service');
+    stream.destroy(); execFileSync('systemctl', ['--user', 'restart', 'codex-console-native-web.service']);
+    let loggedIn;
+    for (let attempt = 0; attempt < 100; attempt++) { try { loggedIn = await request('/api/login', { password }); if (loggedIn.status === 200) break; } catch {} await delay(100); }
+    assert.equal(loggedIn?.status, 200); cookie = loggedIn.headers['set-cookie'][0].split(';')[0];
+    assert.equal(pid('codex-console-native-backend.service'), backendPid); assert.notEqual(pid('codex-console-native-web.service'), webPid);
+    ({ viewId } = await api('/api/view', {})); stream = await connectEvents();
+    installSnapshot(state, await api('/api/thread/open', { viewId, threadId }));
+    await waitFor(() => completion(turnId), 'Accepted native work survived web process restart.');
+    assert.equal(completion(turnId).status, 'completed');
+    let history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    assert.equal(history.data.flatMap(t => t.items).filter(i => i.type === 'userMessage' && i.clientId === messageId).length, 1);
+    const before = (await api('/api/status')).generation;
+    execFileSync('systemctl', ['--user', 'restart', 'codex-console-native-backend.service']);
+    let reconnected = false;
+    for (let attempt = 0; attempt < 100; attempt++) { const status = await api('/api/status'); if (status.online && status.generation > before) { reconnected = true; break; } await delay(100); }
+    assert.ok(reconnected, 'Gateway reinitialized against the restarted configured native backend.');
+    installSnapshot(state, await api('/api/thread/open', { viewId, threadId }));
+    history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    assert.equal(history.data.flatMap(t => t.items).filter(i => i.type === 'userMessage' && i.clientId === messageId).length, 1);
+    await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
+    report.webRestartKeepsWork = true; report.backendRestartResync = true; report.restartDoesNotReplayWrites = true;
   }
   await api('/api/logout', {}); report.logout = true;
   console.log(JSON.stringify(report));

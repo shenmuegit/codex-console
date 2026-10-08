@@ -1,14 +1,19 @@
 const fault = (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra });
 
-/** One native connection; results carry the cursor of their upstream response frame. */
-export function createCodexClient({ url }) {
+export function backendEndpoint(url) {
   let endpoint;
   try {
     endpoint = new URL(url);
     if (endpoint.protocol !== 'ws:' || !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
-        !endpoint.port || endpoint.username || endpoint.password || endpoint.pathname !== '/' ||
+        !endpoint.port || Number(endpoint.port) < 1 || endpoint.username || endpoint.password || endpoint.pathname !== '/' ||
         endpoint.search || endpoint.hash) throw new Error();
   } catch { throw fault('INVALID_BACKEND_URL', 'Configure a loopback ws:// address with an explicit port.'); }
+  return endpoint;
+}
+
+/** One native connection; results carry the cursor of their upstream response frame. */
+export function createCodexClient({ url, expectedHome }) {
+  const endpoint = backendEndpoint(url);
 
   const Socket = globalThis.WebSocket;
   const pending = new Map(), requests = new Map(), threads = new Map(), listeners = new Set();
@@ -109,8 +114,9 @@ export function createCodexClient({ url }) {
     opening = setTimeout(() => connection.close(), 10_000);
     connection.addEventListener('open', async () => {
       try {
-        await send('initialize', { clientInfo: { name: 'codex-console-web', title: 'Codex Console', version: '0.1.0' },
+        const initialized = await send('initialize', { clientInfo: { name: 'codex-console-web', title: 'Codex Console', version: '0.1.0' },
           capabilities: { experimentalApi: true } }, true);
+        if (expectedHome && initialized.result.codexHome !== expectedHome) { connection.close(); return; }
         if (socket !== connection || connection.readyState !== 1 || closed) return;
         connection.send(JSON.stringify({ method: 'initialized', params: {} }));
         clearTimeout(opening); online = true; backoff = 500;

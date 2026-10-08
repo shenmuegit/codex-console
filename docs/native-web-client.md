@@ -2,11 +2,100 @@
 
 [中文](zh-CN/native-web-client.md)
 
-Implementation is in progress on `codex/native-web-client`, following the
-[approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
-components include shared native transport, HTTPS owner login and live browser
-conversations and native project management. Native files/photos, model selection and usage displays are included. Native
-completion commands are included; durable installation follows in the final task. It uses Node.js 24's native WebSocket, with no transport dependency.
+The native client is implemented on `codex/native-web-client` and runs against the
+isolated source-built app-server shared with the extra desktop. Projects, chats,
+files/photos, model/usage controls and native `@`/`$`/`/` actions are available.
+The original desktop's backend has not been migrated. Browser/hardware UI
+acceptance is explicitly listed below.
+
+## Install and operate
+
+Requires Linux with a user systemd manager, Node.js 24+, OpenSSL and the verified
+persistent native executables described below. Install the single package first:
+
+```bash
+npm --prefix web ci
+node web/service.mjs init --origin https://127.0.0.1:8443 \
+  --backend-bin "$HOME/.local/lib/codex-console-web/bin/codex-app-server" \
+  --backend-home "$HOME/.local/state/codex-console-web/native-home" \
+  --workspace "$HOME/.local/state/codex-console-web/workspace"
+node web/service.mjs install
+node web/service.mjs start
+node web/service.mjs status
+node web/service.mjs stop
+```
+
+All commands accept `--config /absolute/private/config.json`; defaults follow
+XDG_CONFIG_HOME/XDG_STATE_HOME. Initialization refuses existing credentials and
+the original Codex home. It copies only an existing file login when needed,
+never conversation/account databases. Password/hash, certificate/key and the
+explicit proxy/TLS environment file are owner-private. API-key/task overrides
+are excluded. The owner password is in `owner-password` beside the config and
+is never printed. `--cert` and `--key` copy an existing pair into private storage;
+otherwise init generates a 30-day self-signed SAN certificate for the origin.
+Trust/import that certificate on the accessing device, or provide a trusted pair.
+Browser security interstitials require the owner to act.
+
+The only managed units are `codex-console-native-backend.service` and
+`codex-console-native-web.service`. Native startup uses the configured persistent
+source executable and isolated home. The web handshake checks that native home;
+there is no fallback engine. Unit paths preserve spaces/Unicode/%/$ without a
+shell. A worktree referenced by an installed unit must stay present.
+
+## Current verified deployment
+
+- Entry: `https://172.16.0.6:8443`, bound on this host; native WS stays loopback
+  `ws://127.0.0.1:4500`.
+- Private config/password/cert/env: `~/.config/codex-console-web/`.
+- Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
+  web preferences/uploads remain under its `web/` child.
+- Code: native managed worktree `/home/desktop/.codex/worktrees/native-web-client/codex-console`.
+- The old recorded transient backend/web units were stopped. The extra desktop
+  remains connected to the durable native service; the original desktop remains running.
+
+172.16.0.6 is a private network address. Same-network HTTPS access was verified;
+external routing/public DNS is not configured by this install. For another host
+or public endpoint, configure its exact HTTPS origin and a matching certificate.
+
+## Restart and rollback
+
+```bash
+systemctl --user restart codex-console-native-web.service
+systemctl --user restart codex-console-native-backend.service
+node web/service.mjs status
+```
+
+Web-only restart preserves native work and requires browser login again because
+owner sessions are in memory. Backend restart uses native persistence and reloads
+authoritative state; active tasks are not promised a seamless transfer and sent
+mutations are never replayed. Stop/restart only these owned units. Moving the
+original desktop to this backend requires a separate migration instruction after
+its active work finishes.
+
+Rollback keeps original processes and all native/upload data intact:
+
+```bash
+node web/service.mjs stop
+systemctl --user disable codex-console-native-web.service codex-console-native-backend.service
+```
+
+## Release verification and UI limits
+
+68 Node checks passed; the production dependency audit reported zero vulnerabilities.
+All opt-in HTTPS/native checks passed against the durable services, including
+projects, two-client chat, interruption, file/photo round trip, exact downloads,
+model/effort/context/compaction, weekly metadata, references and command effects.
+Separate web/backend restart checks proved accepted work survives web restart,
+authoritative resync after backend restart and one native user message per UUID.
+Runtime proof files stay outside Git.
+
+The UI tool reported no enabled browser/native surfaces. No login click,
+390×844/1280×820 screenshot, real mobile IME/picker/clipboard/download or desktop
+keyboard acceptance is claimed. Those are manual release checks: log in, navigate
+project→thread→chat on a phone, confirm IME Enter, choose/remove/retry files, copy
+the full ID, download exact bytes, open the same thread in the extra desktop and
+send in both directions. The CSS uses visible focus, native controls, safe areas
+and the visual viewport for the keyboard; physical-device behavior remains unverified.
 
 ## Native connection
 
@@ -82,8 +171,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Durable deployment is the subsequent
-steps of this same plan; no Xpra connection is used by this client.
+The remaining sections document the implemented components; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
 
@@ -114,7 +202,7 @@ sessions or the persistent native connection.
 The isolated HTTPS test unit is `codex-console-native-web-test`, listening only
 on `https://127.0.0.1:8443`. Its temporary integration configuration and private
 owner password are in `~/.config/codex-console-web/integration/`; generated TLS
-files are self-signed for loopback. Durable host-IP setup is delivered in Task 8.
+files are self-signed for loopback. The durable host-IP deployment is described above.
 Run `node --test web/test/auth-server.test.mjs` for the isolated HTTPS/auth suite.
 Nine checks passed, including a paused real TLS/SSE reader while another page
 continued receiving events. A live HTTPS smoke against the source backend also

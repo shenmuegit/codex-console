@@ -32,7 +32,7 @@ export function resumeFixture(id = 'thread-1', turns = []) {
   };
 }
 
-export async function connectedFixture() {
+export async function connectedFixture({ expectedHome } = {}) {
   const sockets = [];
   class FakeSocket extends EventTarget {
     readyState = 0;
@@ -72,7 +72,7 @@ export async function connectedFixture() {
   let client;
   try {
     globalThis.WebSocket = FakeSocket;
-    client = createCodexClient({ url: 'ws://127.0.0.1:4500' });
+    client = createCodexClient({ url: 'ws://127.0.0.1:4500', expectedHome });
   } finally { globalThis.WebSocket = original; }
   await tick();
   await tick();

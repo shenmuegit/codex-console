@@ -1,6 +1,10 @@
 import { mountChat } from './chat.js';
 const $ = selector => document.querySelector(selector);
 let events, chat;
+if (window.visualViewport) {
+  const viewport = () => document.documentElement.style.setProperty('--app-height', `${window.visualViewport.height}px`);
+  window.visualViewport.addEventListener('resize', viewport); viewport();
+}
 export async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await response.json();

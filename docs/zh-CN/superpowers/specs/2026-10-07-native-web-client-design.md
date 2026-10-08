@@ -4,7 +4,7 @@
 · [源码研究](../../codex-source.md)
 · [后端实测](../../local-app-server-test.md)
 
-2026-10-08 修订并获用户批准，已在隔离工作树按 Native 方式执行
+2026-10-08 修订并获用户批准，已在隔离工作树按 Native 方式完成实现，持久 HTTPS/原生检查通过，界面人工验收仍待完成；对应
 [实现计划](../plans/2026-10-08-native-web-client.md)。本版用已验证的共享
 app-server 路线替换原 IPC 优先方案，交付进度见[操作说明](../../native-web-client.md)。
 

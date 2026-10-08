@@ -14,6 +14,7 @@ import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
 import { encodeComposer, utf8Range } from './public/composer.js';
 import { itemText } from './public/chat.js';
+import { validateConfig } from './service.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
@@ -727,7 +728,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const { values } = parseArgs({ options: { config: { type: 'string' } } });
     if (!values.config) throw error(500, 'CONFIG_REQUIRED', '请指定私有配置文件。');
     const config = JSON.parse(readFileSync(values.config, 'utf8'));
-    const codex = createCodexClient({ url: config.backendUrl });
+    await validateConfig(config, values.config);
+    const codex = createCodexClient({ url: config.backendUrl, expectedHome: config.backendHome });
     const server = createWebServer({ config, codex });
     server.listen(config.port, config.listenHost, () => console.log('Codex browser service ready.'));
     server.on('error', () => { codex.close(); process.exitCode = 1; console.error('Browser service could not listen.'); });

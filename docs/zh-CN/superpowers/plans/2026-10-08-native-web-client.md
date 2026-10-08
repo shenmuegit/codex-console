@@ -207,13 +207,13 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 新建 `web/service.mjs`、`web/test/service.test.mjs`，完成页面布局和双语说明。安装的 unit、配置、证书、数据均在 Git 外。
 **接口：** `renderUserUnits({repoDir,nodePath,backendExecutable,backendHome,workspace,configPath,environmentFile}):{backend,web}`；CLI `node web/service.mjs init|install|start|stop|status` 只管理当前用户的 `codex-console-native-backend.service`、`codex-console-native-web.service`。`init --origin URL --backend-bin PATH --backend-home PATH --workspace PATH [--cert PATH --key PATH]` 写私有配置，全部命令支持 `--config PATH`，默认取 XDG 路径。
 
-- [ ] **1. 写失败测试：** unit 路径空格/中文/百分号、缺产物/证书、配置属主、拒绝替换原桌面/后端、离线状态、脱敏状态输出。断言不引用 `console.sh`/Xpra，显式后端/数据目录正确转义，停止测试 unit 不停止原应用。
-- [ ] **2. 确认 RED：** `node --test web/test/service.test.mjs`。
-- [ ] **3. 最小实现：** 用户服务 Restart=on-failure、私有 umask、明确编译产物/数据目录；网页启动不生成备用引擎，unit 使用任务 1 验证安装的持久产物，不引用缓存 target。Node crypto 和现有 OpenSSL 私有初始化密码/哈希/TLS，SAN 匹配配置 IP/主机；预览默认回环 HTTPS 8443，冲突选另一个配置空闲端口；非回环须有 HTTPS origin/证书。不得覆盖已有凭据，状态/日志不得输出秘密；只在私有 EnvironmentFile 保留必需的代理/TLS 环境，排除 API 密钥与任务运行覆盖值。正式启动前仅停止任务 1 记录的临时测试 unit，不杀占用端口的未知进程。
-- [ ] **4. 完整检查：** `node --test web/test/*.test.mjs`、`npm --prefix web audit --omit=dev`、改动文件语法/差异。修复失败后才报告通过。用浏览器工具验证登录、项目/会话、发送/追问/停止、原生表单、模型/用量、复制、文件/照片/下载、引用/技能/命令、重连/不确定写入和退出。检查 390×844、1280×820；有真实手机时检查输入法/选择器/剪贴板/下载，缺硬件检查须明确记录。
-- [ ] **5. 保活与文档：** 仅启动测试 unit，结束启动终端/会话后再次验证就绪和桌面/网页状态；分别重启网页/后端，验证权威重同步且不重放写入。双语写明启停/状态、私有路径、归档范围、证书信任、活动任务限制和回滚；unit 仍引用代码路径时保留实现工作树，迁移部署路径并重验后才可归档；证据/截图留在 Git 外。
-- [ ] **6. 请求所选流程的最终独立审查：** 修复问题，仅重跑受影响检查，复核差异/暂存。没有单独迁移指示，不改接原桌面。
-- [ ] **7. 提交推送：** `feat: package the native browser client for durable owner access`，仅暂存本任务文件、立即推送并确认远端；交付认证访问地址、已验范围/限制、commit/push 状态及截图，不交付凭据。
+- [x] **1. 写失败测试：** unit 路径空格/中文/百分号、缺产物/证书、配置属主、拒绝替换原桌面/后端、离线状态、脱敏状态输出。断言不引用 `console.sh`/Xpra，显式后端/数据目录正确转义，停止测试 unit 不停止原应用。
+- [x] **2. 确认 RED：** `node --test web/test/service.test.mjs`。
+- [x] **3. 最小实现：** 用户服务 Restart=on-failure、私有 umask、明确编译产物/数据目录；网页启动不生成备用引擎，unit 使用任务 1 验证安装的持久产物，不引用缓存 target。Node crypto 和现有 OpenSSL 私有初始化密码/哈希/TLS，SAN 匹配配置 IP/主机；预览默认回环 HTTPS 8443，冲突选另一个配置空闲端口；非回环须有 HTTPS origin/证书。不得覆盖已有凭据，状态/日志不得输出秘密；只在私有 EnvironmentFile 保留必需的代理/TLS 环境，排除 API 密钥与任务运行覆盖值。正式启动前仅停止任务 1 记录的临时测试 unit，不杀占用端口的未知进程。
+- [x] **4. 完整检查：** `node --test web/test/*.test.mjs`、`npm --prefix web audit --omit=dev`、改动文件语法/差异。修复失败后才报告通过。用浏览器工具验证登录、项目/会话、发送/追问/停止、原生表单、模型/用量、复制、文件/照片/下载、引用/技能/命令、重连/不确定写入和退出。检查 390×844、1280×820；有真实手机时检查输入法/选择器/剪贴板/下载，缺硬件检查须明确记录。
+- [x] **5. 保活与文档：** 仅启动测试 unit，结束启动终端/会话后再次验证就绪和桌面/网页状态；分别重启网页/后端，验证权威重同步且不重放写入。双语写明启停/状态、私有路径、归档范围、证书信任、活动任务限制和回滚；unit 仍引用代码路径时保留实现工作树，迁移部署路径并重验后才可归档；证据/截图留在 Git 外。
+Native 执行审查关卡：任务 8 验证后，对完整已提交分支进行一次独立审查，修复分别验证、提交并推送；浏览器/硬件检查明确不可用。
+- [x] **7. 提交推送：** `feat: package the native browser client for durable owner access`，仅暂存本任务文件、立即推送并确认远端；交付认证访问地址、已验范围/限制、commit/push 状态及截图，不交付凭据。
 
 ## 计划审核与执行方式
 

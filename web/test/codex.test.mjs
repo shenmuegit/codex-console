@@ -7,9 +7,15 @@ import { connectedFixture, resumeFixture } from './helpers.mjs';
 test('only configured loopback WebSocket endpoints can be used', () => {
   for (const url of ['ws://evil.test:4500', 'wss://127.0.0.1:4500',
     'ws://127.0.0.1:4500/path', 'ws://user:secret@127.0.0.1:4500',
-    'ws://127.0.0.1:4500/?token=secret']) {
+    'ws://127.0.0.1:4500/?token=secret', 'ws://127.0.0.1:0']) {
     assert.throws(() => createCodexClient({ url }), { code: 'INVALID_BACKEND_URL' });
   }
+});
+
+test('an unexpected native home is never initialized for actions', async t => {
+  const { client, peer } = await connectedFixture({ expectedHome: '/another-native-home' }); t.after(() => client.close());
+  assert.equal(client.status().online, false); assert.equal(peer.sent.some(message => message.method === 'initialized'), false);
+  await assert.rejects(client.rpc('thread/start', {}), { outcome: 'not-sent' });
 });
 
 test('native initialization precedes calls and out-of-order replies remain correlated', async t => {

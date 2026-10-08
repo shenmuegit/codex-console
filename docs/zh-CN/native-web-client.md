@@ -2,9 +2,79 @@
 
 [English](../native-web-client.md)
 
-按照[已批准的计划](superpowers/plans/2026-10-08-native-web-client.md)，在
-`codex/native-web-client` 分支实现。已实现共享原生连接、HTTPS 登录、事件推送、浏览器聊天及原生项目管理，已包含原生文件/照片及认证下载，已包含模型和用量设置，已包含原生补全命令，最后交付持久安装。
-使用 Node.js 24 自带 WebSocket，无需传输依赖。
+原生客户端已在 `codex/native-web-client` 实现，连接与额外桌面共享的独立源码后端。
+项目、聊天、文件/照片、模型/用量及原生 `@`/`$`/`/` 操作均已接入。
+原桌面的后端未迁移；界面及硬件验收范围在下方明确说明。
+
+## 安装和操作
+
+需要 Linux 用户 systemd、Node.js 24+、OpenSSL，以及下文的持久原生程序。先安装唯一包：
+
+```bash
+npm --prefix web ci
+node web/service.mjs init --origin https://127.0.0.1:8443 \
+  --backend-bin "$HOME/.local/lib/codex-console-web/bin/codex-app-server" \
+  --backend-home "$HOME/.local/state/codex-console-web/native-home" \
+  --workspace "$HOME/.local/state/codex-console-web/workspace"
+node web/service.mjs install
+node web/service.mjs start
+node web/service.mjs status
+node web/service.mjs stop
+```
+
+所有命令支持 `--config /绝对/私有/config.json`，默认遵循 XDG_CONFIG_HOME/XDG_STATE_HOME。
+初始化拒绝覆盖已有凭据，也拒绝原 Codex 数据目录；需要时只复制已有文件登录，不复制聊天
+或账号数据库。密码/哈希、证书/私钥及按明确变量名保存的代理/证书环境文件均仅所有者可读，
+不传入 API-key 或任务运行时覆盖变量。访问密码保存在配置旁 `owner-password`，不输出到日志。
+可用 `--cert`、`--key` 将已有证书对复制到私有存储；默认生成匹配入口 SAN 的 30 天自签名
+证书。访问设备需信任/导入该证书，或提供受信任证书；浏览器安全提示由所有者操作。
+
+只管理 `codex-console-native-backend.service`、`codex-console-native-web.service`。
+原生服务使用明确的持久源码程序和独立数据目录；网页握手核对原生数据目录，不启动备用引擎。
+服务路径支持空格、Unicode、% 和 $，不经过 shell。服务引用的工作树必须保留。
+
+## 当前已验证部署
+
+- 入口 `https://172.16.0.6:8443`，监听本机；原生 WS 仅回环 `ws://127.0.0.1:4500`。
+- 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
+- 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
+  网页偏好及上传继续保留在其 `web/` 子目录。
+- 代码位于托管工作树 `/home/desktop/.codex/worktrees/native-web-client/codex-console`。
+- 已停止此前记录的临时后端/网页服务；额外桌面已连接长期后端，原桌面继续运行。
+
+172.16.0.6 为内网地址，已验证同网络 HTTPS；本次安装未配置公网路由或公共 DNS。
+使用其他主机/公网入口时，需要配置准确 HTTPS 来源和匹配证书。
+
+## 重启与回退
+
+```bash
+systemctl --user restart codex-console-native-web.service
+systemctl --user restart codex-console-native-backend.service
+node web/service.mjs status
+```
+
+只重启网页不会中断原生工作，但登录会话在内存中，需要重新登录。后端重启依赖原生持久化
+并重新加载权威状态，不承诺活动任务无缝转移，也不重发已经发送的操作。仅操作上述自有服务；
+原桌面改接此后端需等活动工作结束后另行迁移。
+
+回退保留原进程、原生数据及上传文件：
+
+```bash
+node web/service.mjs stop
+systemctl --user disable codex-console-native-web.service codex-console-native-backend.service
+```
+
+## 发布检查与界面限制
+
+68 项 Node 检查通过，生产依赖审计零漏洞。长期服务的完整 HTTPS/原生检查通过，包含项目、
+双客户端聊天、打断、文件/照片、精确下载、模型/强度/上下文/压缩、周额度、引用及命令效果。
+分别重启网页和后端，验证已接受工作继续、重新同步和同一 UUID 对应一条原生消息。
+运行证明保存在仓库外。
+
+界面工具没有已启用的浏览器或原生界面，因此不宣称完成登录点击、390×844/1280×820 截图、
+真实手机输入法/选择器/剪贴板/下载或桌面键盘验收。人工检查应登录，在手机按项目→会话→聊天
+导航，确认输入法 Enter，选择/移除/重试文件，复制完整 ID、下载核对字节，并在额外桌面打开
+相同会话双向发送。CSS 已采用可见焦点、原生控件、安全区域和键盘可视视口；实机行为待验证。
 
 ## 原生连接
 
@@ -68,7 +138,7 @@ node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
 新建空原生会话后，先命名再恢复。原生 `thread/name/set` 会持久化空会话的分页历史，
 否则立即恢复可能返回“no rollout found”；这沿用官方测试流程。
 
-持久部署在同一计划最后一步实现，客户端不使用 Xpra 连接。
+下文记录已实现组件；客户端不使用 Xpra 连接。
 
 本轮实测：源码 app-server 编译退出码 0，耗时 11m 13s；10 项原生连接检查和原项目隔离检查通过。原生目录读取返回 4 个模型，隔离项目/会话均为 0，已有登录可用；额外桌面的 WebSocket 连接已初始化。真实文件探针通过：原生工具写入的字节完全一致，一次性测试会话已删除；桌面官方组件与本次工具调用兼容。
 
@@ -94,7 +164,7 @@ node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
 隔离 HTTPS 测试服务为 `codex-console-native-web-test`，仅监听
 `https://127.0.0.1:8443`。临时集成配置及私有访问密码位于
 `~/.config/codex-console-web/integration/`，TLS 证书为回环地址的自签名证书。
-主机 IP 的持久部署在任务 8 交付。
+持久主机 IP 部署见上文。
 运行 `node --test web/test/auth-server.test.mjs` 可执行隔离 HTTPS/认证检查。
 九项检查通过，包含真实 TLS/SSE 慢速页面暂停读取时，另一页面继续接收事件。
 连接源码后端的 HTTPS 实测也通过：未登录 401、其他来源 403、读取四个原生模型、
