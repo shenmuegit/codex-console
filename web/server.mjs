@@ -12,6 +12,8 @@ import { renderTranscript } from './transcript.mjs';
 import { createFiles } from './files.mjs';
 import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
+import { encodeComposer, utf8Range } from './public/composer.js';
+import { itemText } from './public/chat.js';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
@@ -51,6 +53,13 @@ function validateRead(method, p) {
   } else if (method === 'account/read') {
     fields(p, ['refreshToken']);
     if (p.refreshToken !== undefined && p.refreshToken !== false) throw error(400, 'INVALID_PARAMS', '网页登录不读取或刷新原生凭据。');
+  } else if (['skills/list', 'plugin/installed'].includes(method)) {
+    fields(p, ['cwds']); if (!Array.isArray(p.cwds) || p.cwds.length > 8 || p.cwds.some(path => !absolutePath(path))) throw error(400, 'INVALID_PARAMS', '工作目录参数不正确。');
+  } else if (['app/list', 'app/installed'].includes(method)) {
+    fields(p, method === 'app/list' ? ['threadId', 'limit', 'cursor'] : ['threadId']);
+    if ((p.threadId != null && !id(p.threadId)) || (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100)) || (p.cursor != null && !text(p.cursor))) throw error(400, 'INVALID_PARAMS', '应用目录参数不正确。');
+  } else if (method === 'thread/queue/list') {
+    fields(p, ['threadId']); if (!id(p.threadId)) throw error(400, 'INVALID_PARAMS', '会话 ID 不正确。');
   } else if (['fs/readDirectory', 'fs/getMetadata'].includes(method)) {
     fields(p, ['path']); if (!absolutePath(p.path)) throw error(400, 'INVALID_PATH', '请选择绝对主机路径，不能包含上级跳转。');
   } else if (method === 'account/rateLimits/read') fields(p, []);
@@ -81,6 +90,9 @@ export async function saveProject(codex, { projectId, name, rootPath, idempotenc
 }
 
 export async function deleteThread(codex, { threadId, confirmed }) {
+  return removeThread(codex, { threadId, confirmed }, 'thread/delete');
+}
+async function removeThread(codex, { threadId, confirmed }, method) {
   if (!id(threadId) || confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认删除会话记录。');
   const watcher = `delete:${randomBytes(16).toString('hex')}`;
   let timer, currentTurnId, expected, completed;
@@ -107,7 +119,7 @@ export async function deleteThread(codex, { threadId, confirmed }) {
       await Promise.all([codex.rpc('turn/interrupt', { threadId, turnId: expected }), completion]);
       if (currentTurnId) throw error(409, 'TURN_CHANGED', '其他客户端已启动新轮次，会话未删除。');
     }
-    await codex.rpc('thread/delete', { threadId });
+    await codex.rpc(method, { threadId });
   } finally { clearTimeout(timer); off?.(); await codex.releaseThread(threadId, watcher).catch(() => {}); }
 }
 
@@ -188,6 +200,88 @@ export function createWebServer({ config, codex }) {
     const models = []; let cursor;
     do { const page = (await codex.rpc('model/list', { limit: 100, ...(cursor ? { cursor } : {}) })).result; models.push(...page.data); cursor = page.nextCursor; } while (cursor);
     return models;
+  }
+  const nativeRead = async (method, params) => (await codex.rpc(method, params)).result;
+  async function skillsAt(cwd) { return (await nativeRead('skills/list', { cwds: [cwd] })).data.flatMap(entry => entry.skills); }
+  async function pluginsAt(cwd) { return (await nativeRead('plugin/installed', { cwds: [cwd] })).marketplaces.flatMap(market => market.plugins); }
+  async function appsAt(threadId) {
+    const [catalog, runtime] = await Promise.all([nativeRead('app/list', { threadId, limit: 100 }), nativeRead('app/installed', { threadId })]);
+    const installed = new Map(runtime.apps.map(app => [app.id, app]));
+    return catalog.data.map(app => ({ ...app, callable: Boolean(installed.get(app.id)?.callable && installed.get(app.id)?.enabled && app.isAccessible && app.isEnabled) }));
+  }
+  async function referenceSnapshot(threadId) {
+    const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
+    const pieces = []; let cursor, length = 0, truncated = false;
+    do {
+      const page = await nativeRead('thread/turns/list', { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full', ...(cursor ? { cursor } : {}) });
+      for (const turn of page.data) for (const item of [...turn.items].reverse()) {
+        const value = `${item.type}: ${itemText(item)}\n`, bytes = Buffer.from(value), left = 8192 - length;
+        if (bytes.length > left) { pieces.push(bytes.subarray(0, left).toString('utf8')); truncated = true; length = 8192; break; }
+        pieces.push(value); length += bytes.length;
+      }
+      cursor = page.nextCursor;
+      if (length >= 8192) { if (cursor) truncated = true; break; }
+    } while (cursor);
+    return { name: thread.name || thread.preview || threadId, snapshot: pieces.reverse().join(''), truncated };
+  }
+  async function resolveSelections(draft, state) {
+    const selections = draft.selections ?? [];
+    if (!Array.isArray(selections) || selections.length > 256) throw error(400, 'INVALID_SELECTIONS', '引用数量不正确。');
+    const resolved = [], contexts = new Map(); let skills, plugins, apps;
+    for (const selection of selections) {
+      fields(selection, ['kind', 'id', 'path', 'start', 'end', 'token']); utf8Range(draft.text, selection.start, selection.end);
+      if (draft.text.slice(selection.start, selection.end) !== selection.token) throw error(400, 'STALE_SELECTION', '引用文本已变化，请重新选择。');
+      let entity;
+      if (['file', 'directory'].includes(selection.kind)) {
+        if (!absolutePath(selection.path)) throw error(400, 'INVALID_PATH', '引用路径不正确。');
+        const cwd = await realpath(state.thread.cwd), path = await realpath(selection.path);
+        if (path !== cwd && !path.startsWith(cwd === '/' ? '/' : cwd + '/')) throw error(403, 'REFERENCE_SCOPE', '文件引用须在会话实际工作目录中。');
+        const metadata = await nativeRead('fs/getMetadata', { path });
+        if (selection.kind === 'file' ? !metadata.isFile : !metadata.isDirectory) throw error(409, 'REFERENCE_CHANGED', '引用文件或目录已变化。');
+        entity = { path, name: path.split('/').at(-1) };
+      } else if (selection.kind === 'skill') {
+        skills ??= await skillsAt(state.thread.cwd); const skill = skills.find(skill => skill.enabled && skill.path === selection.path);
+        if (!skill) throw error(422, 'SKILL_UNAVAILABLE', '技能不在当前工作目录的原生目录中。'); entity = { name: skill.name, path: skill.path };
+      } else if (selection.kind === 'plugin') {
+        plugins ??= await pluginsAt(state.thread.cwd); const plugin = plugins.find(plugin => plugin.id === selection.id && plugin.installed && plugin.enabled && plugin.availability !== 'DISABLED_BY_ADMIN');
+        if (!plugin) throw error(422, 'PLUGIN_UNAVAILABLE', '原生插件不可用。'); entity = { id: plugin.id, name: plugin.name };
+      } else if (selection.kind === 'app') {
+        apps ??= await appsAt(state.threadId); const app = apps.find(app => app.id === selection.id && app.callable);
+        if (!app) throw error(422, 'APP_UNAVAILABLE', '原生应用工具不可用。'); entity = { id: app.id, name: app.name };
+      } else if (selection.kind === 'thread') {
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(selection.id)) throw error(400, 'INVALID_THREAD_REFERENCE', '会话引用 ID 不正确。');
+        if (selection.id === state.threadId) entity = { id: selection.id, name: state.thread.name ?? '' };
+        else {
+          if (!contexts.has(selection.id)) {
+            if (contexts.size >= 16 || [...contexts.keys(), selection.id].join('').length > 768) throw error(400, 'TOO_MANY_REFERENCES', '会话引用超过原生上限。');
+            contexts.set(selection.id, await referenceSnapshot(selection.id));
+          }
+          entity = { id: selection.id, ...contexts.get(selection.id) };
+        }
+      } else throw error(400, 'INVALID_SELECTION', '引用类型不受支持。');
+      resolved.push({ ...selection, ...entity });
+    }
+    return resolved;
+  }
+  async function completions(state, sigil, query) {
+    if (!['@', '$'].includes(sigil) || !text(query, 256)) throw error(400, 'INVALID_COMPLETION', '补全查询不正确。');
+    const match = name => name.toLocaleLowerCase().includes(query.toLocaleLowerCase()), items = [], unavailable = [];
+    if (sigil === '$') {
+      for (const skill of await skillsAt(state.thread.cwd)) if (match(skill.name)) items.push({ kind: 'skill', path: skill.path, name: skill.name, label: '$' + skill.name, disabled: !skill.enabled });
+      return { items, unavailable };
+    }
+    const cwd = state.thread.cwd, slash = query.lastIndexOf('/');
+    const path = slash < 0 ? cwd : resolve(cwd, query.slice(0, slash + 1)), needle = slash < 0 ? query : query.slice(slash + 1);
+    const calls = await Promise.allSettled([
+      path === cwd || path.startsWith(cwd === '/' ? '/' : cwd + '/') ? nativeRead('fs/readDirectory', { path }) : Promise.reject(new Error('目录不在当前工作区。')),
+      nativeRead('thread/list', { limit: 20, modelProviders: [], ...(query ? { searchTerm: query } : {}) }), appsAt(state.threadId), pluginsAt(cwd),
+    ]);
+    for (let index = 0; index < calls.length; index++) if (calls[index].status === 'rejected') unavailable.push({ kind: ['文件', '会话', '应用', '插件'][index], message: calls[index].reason.message });
+    if (calls[0].status === 'fulfilled') for (const entry of calls[0].value.entries) if (entry.fileName.toLocaleLowerCase().includes(needle.toLocaleLowerCase())) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: join(path, entry.fileName), name: entry.fileName, label: '@' + entry.fileName });
+    if (calls[1].status === 'fulfilled') for (const thread of calls[1].value.data) if (thread.id !== state.threadId) items.push({ kind: 'thread', id: thread.id, name: [...(thread.name || thread.preview || thread.id)].slice(0, 160).join(''), label: '@' + (thread.name || thread.preview || thread.id) });
+    if (calls[2].status === 'fulfilled') for (const app of calls[2].value) if (match(app.name)) items.push({ kind: 'app', id: app.id, name: app.name, label: '@' + app.name, disabled: !app.callable });
+    if (calls[3].status === 'fulfilled') for (const plugin of calls[3].value) if (match(plugin.name)) items.push({ kind: 'plugin', id: plugin.id, name: plugin.name, label: '@' + plugin.name, disabled: !plugin.installed || !plugin.enabled || plugin.availability === 'DISABLED_BY_ADMIN' });
+    return { items: items.slice(0, 100), unavailable };
   }
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
   const prefsPath = join(config.stateDir, 'preferences.json');
@@ -312,7 +406,6 @@ export function createWebServer({ config, codex }) {
     if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在删除。');
     fields(body.draft, ['text', 'selections', 'uploadIds']);
     if (!text(body.draft.text, 500_000) || (!body.draft.text.trim() && !body.draft.uploadIds?.length) ||
-        (body.draft.selections?.length ?? 0) ||
         !['start', 'steer', 'queue'].includes(body.mode) ||
         (body.model != null && !text(body.model, 128)) || (body.effort != null && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(body.effort))) throw error(400, 'INVALID_DRAFT', '消息或发送选项不正确。');
     const key = `${body.threadId}:${body.clientUserMessageId}`;
@@ -331,7 +424,11 @@ export function createWebServer({ config, codex }) {
     if (body.mode === 'start' && active) throw error(409, 'ACTIVE_TURN', '会话正在运行，请选择补充或排队。');
     if (body.mode !== 'start' && !active) throw error(409, 'TURN_CHANGED', '当前轮次已结束，请选择直接发送。');
     if (body.mode === 'steer' && (body.model != null || body.effort != null)) throw error(400, 'STEER_SETTINGS', '补充输入沿用当前轮次设置。');
-    const attached = await files.attachmentInputs(body.draft.uploadIds ?? [], body.threadId);
+    let attached, encoded;
+    try {
+      attached = await files.attachmentInputs(body.draft.uploadIds ?? [], body.threadId);
+      encoded = encodeComposer({ text: body.draft.text, selections: await resolveSelections(body.draft, state), uploads: attached, threadId: body.threadId, mode: body.mode });
+    } catch (e) { if (e.outcome) e.outcome = 'not-sent'; throw e; }
     if (body.model || body.effort || attached.some(item => item.type === 'localImage')) {
       const model = modelChoice(await nativeModels(), body.model || state.settings.model, body.effort);
       if (attached.some(item => item.type === 'localImage') && !model.inputModalities?.includes('image')) throw error(422, 'MODEL_NO_IMAGES', '所选模型不支持照片，附件和草稿已保留。');
@@ -339,7 +436,7 @@ export function createWebServer({ config, codex }) {
     // Recheck after file validation: another HTTP request may already own this UUID.
     if (writes.has(key)) return sendOnce(body, view);
     if (writes.size >= 1024) throw error(429, 'PENDING_LIMIT', '待确认消息过多，请先核对会话。');
-    const input = [...(body.draft.text.trim() ? [{ type: 'text', text: body.draft.text, text_elements: [] }] : []), ...attached];
+    const input = encoded.input;
     const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record);
     record.promise = (async () => {
       try {
@@ -354,8 +451,9 @@ export function createWebServer({ config, codex }) {
         }
         const method = { start: 'turn/start', steer: 'turn/steer', queue: 'thread/queue/add' }[body.mode];
         let params = buildTurnParams({ threadId: body.threadId, input, model: body.model, effort: body.effort, clientUserMessageId: body.clientUserMessageId });
+        if (encoded.additionalContext) params.additionalContext = encoded.additionalContext;
         if (body.mode !== 'start') params = { threadId: body.threadId, input, clientUserMessageId: body.clientUserMessageId,
-          ...(body.mode === 'steer' ? { expectedTurnId: active.id } : {}) };
+          ...(body.mode === 'steer' ? { expectedTurnId: active.id, ...(encoded.additionalContext ? { additionalContext: encoded.additionalContext } : {}) } : {}) };
         const response = await codex.rpc(method, params);
         record.state = 'done'; record.result = { ...response, result: safe(response.result), effectiveSettings: safe(state.settings) };
         return record.result;
@@ -417,6 +515,30 @@ export function createWebServer({ config, codex }) {
       if (!session) throw error(401, 'LOGIN_REQUIRED', '请先登录。');
       if (req.method === 'GET' && url.pathname === '/api/status') { reply(res, 200, publicStatus()); return; }
       if (req.method === 'GET' && url.pathname === '/api/preferences') { reply(res, 200, safe(preferences)); return; }
+      if (req.method === 'GET' && url.pathname === '/api/thread/export') {
+        const threadId = url.searchParams.get('threadId'); if (!id(threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
+        const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
+        res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="conversation.md"; filename*=UTF-8''${encodeURIComponent(threadId + '.md')}` });
+        res.write(`# ${(thread.name || threadId).replace(/[\r\n]/g, ' ')}\n\nThread: ${threadId}\n\n`);
+        let cursor;
+        do {
+          const page = await nativeRead('thread/turns/list', { threadId, limit: 20, sortDirection: 'asc', itemsView: 'full', ...(cursor ? { cursor } : {}) });
+          for (const turn of page.data) {
+            let chunk = `## Turn ${turn.id} · ${turn.status}\n\n`;
+            for (const item of turn.items) {
+              const value = itemText(item), fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map(value => value.length + 1)));
+              chunk += `### ${item.type}\n\n${fence}\n${value}\n${fence}\n\n`;
+            }
+            if (!res.write(chunk)) await new Promise((resolve, reject) => {
+              const cleanup = () => { res.off('drain', drained); res.off('close', closed); };
+              const drained = () => { cleanup(); resolve(); }, closed = () => { cleanup(); reject(error(400, 'ABORTED', '导出已取消。')); };
+              res.once('drain', drained); res.once('close', closed);
+            });
+          }
+          cursor = page.nextCursor;
+        } while (cursor && !res.destroyed);
+        res.end(); return;
+      }
       const download = url.pathname.match(/^\/api\/(files|images)\/([A-Za-z0-9_-]{20,64})$/);
       if (req.method === 'GET' && download) {
         const file = await files.openReference(download[2]);
@@ -465,6 +587,10 @@ export function createWebServer({ config, codex }) {
         if (views.size >= 1024) throw error(429, 'TOO_MANY_VIEWS', '页面数量过多，请退出后重新登录。');
         const viewId = randomBytes(24).toString('base64url');
         views.set(viewId, { session, threadId: null, streams: new Set() }); reply(res, 200, { viewId });
+      } else if (url.pathname === '/api/completions') {
+        fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        reply(res, 200, await completions(state, body.sigil, body.query));
       } else if (url.pathname === '/api/rpc') {
         fields(body, ['method', 'params']); validateRead(body.method, body.params);
         const epoch = accountEpoch;
@@ -561,6 +687,23 @@ export function createWebServer({ config, codex }) {
         fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
         reply(res, 200, await codex.rpc('thread/compact/start', { threadId: body.threadId }));
+      } else if (url.pathname === '/api/thread/rename') {
+        fields(body, ['viewId', 'threadId', 'name']); const view = requireView(body.viewId, session);
+        if (view.threadId !== body.threadId || !text(body.name, 160) || !body.name.trim()) throw error(400, 'INVALID_NAME', '会话名称须为 1–160 个字符。');
+        reply(res, 200, await codex.rpc('thread/name/set', { threadId: body.threadId, name: body.name.trim() }));
+      } else if (url.pathname === '/api/thread/archive') {
+        fields(body, ['viewId', 'threadId', 'confirmed']); requireView(body.viewId, session);
+        if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在归档或删除。'); deleting.add(body.threadId);
+        try { await removeThread(codex, body, 'thread/archive'); reply(res, 200, {}); } finally { deleting.delete(body.threadId); }
+      } else if (url.pathname === '/api/thread/unarchive') {
+        fields(body, ['viewId', 'threadId']); requireView(body.viewId, session); if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
+        reply(res, 200, await codex.rpc('thread/unarchive', { threadId: body.threadId }));
+      } else if (url.pathname === '/api/thread/fork') {
+        fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
+        if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        const result = await codex.rpc('thread/fork', { threadId: body.threadId, excludeTurns: true, deferGoalContinuation: true, approvalPolicy: 'never', sandbox: 'danger-full-access' });
+        await codex.rpc('thread/name/set', { threadId: result.result.thread.id, name: [...(result.result.thread.name || '新会话')].slice(0, 150).join('') + ' · 分支' });
+        reply(res, 200, await openThread(body.viewId, view, result.result.thread.id));
       } else if (url.pathname === '/api/request/respond') {
         fields(body, ['viewId', 'requestKey', 'answer']); requireView(body.viewId, session);
         const request = pending.get(body.requestKey);

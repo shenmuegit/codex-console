@@ -1,9 +1,9 @@
-import { displayNativeText, mountAttachments } from './composer.js';
+import { displayNativeText, mountAttachments, mountCompletions, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
-    ready: false, resync: false, buffer: [], bufferBytes: 0, historyCursor: null, draft: '', attachments: [], pending: null, requests: new Map() };
+    ready: false, resync: false, buffer: [], bufferBytes: 0, historyCursor: null, draft: '', selections: [], attachments: [], pending: null, requests: new Map() };
 }
 const copy = value => structuredClone(value);
 const sameCursor = (a, b) => a && b && a.generation === b.generation && a.seq === b.seq;
@@ -87,6 +87,7 @@ export function applyNativeEvent(state, event) {
   if (method === 'thread/name/updated') state.thread.name = p.threadName ?? p.name;
   if (method === 'thread/status/changed') state.thread.status = p.status;
   if (method === 'thread/deleted') { state.ready = false; state.deleted = true; state.turns = []; state.requests.clear(); return state; }
+  if (method === 'thread/archived') { state.ready = false; state.archived = true; state.requests.clear(); return state; }
   if (method === 'thread/settings/updated') {
     const s = p.threadSettings;
     state.settings = { model: s.model, effort: s.effort, approvalPolicy: s.approvalPolicy,
@@ -135,12 +136,12 @@ export function applyNativeEvent(state, event) {
 
 export function beginSend(state) {
   if (state.pending) throw Object.assign(new Error('上一条消息尚未确认，请先查看会话。'), { code: 'SEND_PENDING' });
-  return state.pending = { id: crypto.randomUUID(), text: state.draft, uploadIds: state.attachments.filter(a => a.status === 'complete').map(a => a.id), unknown: false };
+  return state.pending = { id: crypto.randomUUID(), text: state.draft, selections: structuredClone(state.selections), uploadIds: state.attachments.filter(a => a.status === 'complete').map(a => a.id), unknown: false };
 }
 export function settleSend(state, id, { ok, unknown = false }) {
   if (state.pending?.id !== id) return;
   if (unknown) { state.pending.unknown = true; return; }
-  if (ok && !state.composing && state.draft === state.pending.text) state.draft = '';
+  if (ok && !state.composing && state.draft === state.pending.text) { state.draft = ''; state.selections = []; }
   if (ok) state.attachments = state.attachments.filter(item => !state.pending.uploadIds?.includes(item.id));
   state.pending = null;
 }
@@ -182,13 +183,14 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft');
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
+  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
   $('#cwd').value = defaultCwd; $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
   const bind = (node, type, fn) => node.addEventListener(type, event => { try { Promise.resolve(fn(event)).catch(showError); } catch (e) { showError(e); } }, { signal: abort.signal });
   const read = async (method, params = {}) => (await api('/api/rpc', { method, params })).result;
   function save(state) {
-    try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, pending: state.pending ? { ...state.pending, unknown: true } : null,
+    try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
   function stateFor(threadId) {
@@ -197,6 +199,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
       states.set(threadId, state = createChatState(threadId));
       try { const saved = JSON.parse(sessionStorage.getItem(`codex-draft:${threadId}`));
         if (typeof saved?.text === 'string') state.draft = saved.text;
+        if (Array.isArray(saved?.selections)) state.selections = saved.selections;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
         if (Array.isArray(saved?.attachments)) state.attachments = saved.attachments.filter(a => typeof a.id === 'string' && typeof a.name === 'string').map(a => ({ ...a, status: 'complete' }));
       } catch {}
@@ -220,12 +223,15 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   }
   async function loadThreads(more = false) {
     const version = ++threadLoad, projectId = project?.id;
-    const page = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at',
+    const archived = $('#show-archived-threads').checked;
+    const page = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', archived,
       ...(projectId ? { projectId } : {}), ...(more && threadCursor ? { cursor: threadCursor } : {}) });
     if (!alive || version !== threadLoad || project?.id !== projectId) return;
     if (!more) $('#threads').replaceChildren();
-    for (const item of page.data) $('#threads').append(row(item.name || item.preview || '未命名会话',
-      `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => open(item.id)));
+    for (const item of page.data) {
+      const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id) : open(item.id));
+      if (archived) button.append(element('small', '点击恢复此会话')); $('#threads').append(button);
+    }
     if (!page.data.length && !more) $('#threads').append(element('p', '这里还没有会话。', 'muted'));
     threadCursor = page.nextCursor; $('#more-threads').hidden = !threadCursor;
   }
@@ -242,6 +248,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   function select(state) {
     if (selected) save(selected);
     selected = state; layout.dataset.level = 'chat'; messageNodes.clear(); formNodes.clear();
+    completions.close();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
   }
   async function open(threadId) {
@@ -367,14 +374,38 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     finally { presentationPending = false; if (presentationAgain) { presentationAgain = false; loadPresentation(); } }
   }
   async function submit() {
+    const action = selected && commandAction(selected.draft);
+    if (action && !selected.composing) {
+      const state = selected, commandText = state.draft, done = await runCommand(action);
+      if (done !== false && state.draft === commandText) { state.draft = ''; state.selections = []; save(state); if (selected === state) draw(); }
+      return;
+    }
     if (!selected?.ready || !online || selected.pending || selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state); save(state); draw(); $('#chat-error').textContent = '';
     try {
-      await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, uploadIds: submission.uploadIds },
+      await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
         mode: activeTurn(state) ? $('#send-mode').value : 'start', clientUserMessageId: submission.id });
       settleSend(state, submission.id, { ok: true });
     } catch (e) { settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
     finally { save(state); if (selected === state) draw(); }
+  }
+  function information(title, text) { $('#info-title').textContent = title; $('#info-body').textContent = text; $('#info-dialog').showModal(); }
+  async function restore(threadId) { await api('/api/thread/unarchive', { viewId, threadId }); $('#show-archived-threads').checked = false; await open(threadId); }
+  async function runCommand({ command, args }) {
+    if (command === 'new') return newThread();
+    if (command === 'model') { if (args) { const [model, effort] = args.split(/\s+/); return usage.choose(model, effort); } $('#model').focus(); return; }
+    if (command === 'permissions') { information('原生权限', permissionText(selected.settings) + '\n新会话及下轮发送默认完全访问，原生托管限制优先。'); return; }
+    if (command === 'status') { const status = await api('/api/status'); information('会话状态', `连接：${status.online ? '在线' : '离线'}\n会话 ID：${selected.threadId}\n模型：${selected.settings.model ?? '未知'}\n思考强度：${selected.settings.effort ?? '原生默认'}\n${permissionText(selected.settings)}`); return; }
+    if (command === 'usage') { $('#show-usage').click(); return; }
+    if (command === 'skills') { selected.draft = '$'; selected.selections = []; draft.value = '$'; draft.focus(); draft.setSelectionRange(1, 1); completions.refresh(); return false; }
+    if (!selected?.ready) throw new Error('请先打开会话。');
+    if (command === 'compact') { await api('/api/thread/compact', { viewId, threadId: selected.threadId }); selected.tokenUsage = null; return; }
+    if (command === 'rename') { const name = args || window.prompt('新会话名称', selected.thread?.name ?? ''); if (!name) return false; await api('/api/thread/rename', { viewId, threadId: selected.threadId, name }); return; }
+    if (command === 'archive') { if (activeTurn(selected) && !window.confirm('归档会停止此会话正在运行的工作，继续？')) return false;
+      await api('/api/thread/archive', { viewId, threadId: selected.threadId, confirmed: true }); layout.dataset.level = 'threads'; await loadThreads(); return; }
+    if (command === 'delete') return deleteCurrent();
+    if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
+    if (command === 'export') { const link = element('a'); link.href = '/api/thread/export?threadId=' + encodeURIComponent(selected.threadId); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
   function projectEditor(item) {
     editingProject = item; projectKey = crypto.randomUUID(); $('#project-editor-title').textContent = item ? '编辑项目' : '新建项目';
@@ -431,21 +462,25 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   });
   $('#directory-form').addEventListener('submit', event => { event.preventDefault(); if (!directoryPath) return;
     directoryTarget.value = directoryPath; $('#directory-dialog').close(); }, { signal: abort.signal });
-  bind($('#delete-thread'), 'click', async () => {
-    const state = selected; if (!state || !window.confirm('删除此会话及其原生子会话记录？目录和已上传文件会保留。')) return;
+  async function deleteCurrent() {
+    const state = selected; if (!state || !window.confirm('删除此会话及其原生子会话记录？目录和已上传文件会保留。')) return false;
     state.deleting = true; draw();
     try { await api('/api/thread/delete', { viewId, threadId: state.threadId, confirmed: true });
       state.deleted = true; state.ready = false; layout.dataset.level = 'threads'; await loadThreads();
     } finally { state.deleting = false; draw(); }
-  });
-  bind($('#new-thread'), 'click', async () => {
+  }
+  bind($('#delete-thread'), 'click', deleteCurrent);
+  async function newThread() {
+    if ($('#new-thread').disabled) return false;
     const button = $('#new-thread'); button.disabled = true; $('#chat-error').textContent = '';
     try { const result = await api('/api/thread/start', { viewId, cwd: $('#cwd').value, ...(project ? { projectId: project.id } : {}) });
       const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads();
     } finally { button.disabled = false; }
-  });
+  }
+  bind($('#new-thread'), 'click', newThread);
   bind($('#copy-thread'), 'click', async () => { if (!selected) return; try { await navigator.clipboard.writeText(selected.threadId); $('#turn-status').textContent = '已复制会话 ID'; } catch { window.prompt('复制会话 ID', selected.threadId); } });
   bind($('#refresh-projects'), 'click', () => loadProjects()); bind($('#refresh-threads'), 'click', () => loadThreads());
+  bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
   bind($('#refresh-chat'), 'click', () => selected && open(selected.threadId));
   bind($('#back-projects'), 'click', () => { layout.dataset.level = 'projects'; }); bind($('#back-threads'), 'click', () => { layout.dataset.level = 'threads'; });
@@ -458,9 +493,9 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   });
   // Submit prevention must run synchronously, before the async action wrapper yields.
   $('#composer').addEventListener('submit', event => { event.preventDefault(); submit().catch(showError); }, { signal: abort.signal });
-  draft.addEventListener('input', () => { if (selected) { selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
+  draft.addEventListener('input', () => { if (selected) { selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
   draft.addEventListener('compositionstart', () => { if (selected) selected.composing = true; }, { signal: abort.signal });
-  draft.addEventListener('compositionend', () => { if (selected) { selected.composing = false; selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
+  draft.addEventListener('compositionend', () => { if (selected) { selected.composing = false; selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
   draft.addEventListener('keydown', event => { if (shouldSubmitKey(event, { composing: selected?.composing, finePointer: matchMedia('(pointer: fine)').matches })) { event.preventDefault(); $('#composer').requestSubmit(); } }, { signal: abort.signal });
   bind($('#stop-turn'), 'click', async () => { const turn = selected && activeTurn(selected); if (!turn) return; $('#stop-turn').disabled = true;
     try { await api('/api/thread/stop', { viewId, threadId: selected.threadId, turnId: turn.id }); } finally { draw(); } });
@@ -487,6 +522,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); clearTimeout(refreshTimer); $('#project-dialog').close(); $('#directory-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#project-dialog').close(); $('#directory-dialog').close(); $('#info-dialog').close(); if (selected) save(selected); },
   };
 }

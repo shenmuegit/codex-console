@@ -6,7 +6,7 @@ Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
 components include shared native transport, HTTPS owner login and live browser
 conversations and native project management. Native files/photos, model selection and usage displays are included. Native
-completion commands and durable installation follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+completion commands are included; durable installation follows in the final task. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -82,7 +82,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Native completion commands and deployment are subsequent
+Durable deployment is the subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
@@ -263,3 +263,38 @@ Seven focused checks and the full current suite passed. Live
 `web-probe.mjs --exercise-usage` verified two supported efforts, effective next
 turn metadata, native context, compaction context refresh and real weekly
 metadata against the source backend.
+
+
+## Native @, $ and / actions
+
+Type `@` to choose a file/directory in the conversation's actual workspace,
+another conversation, or an available native app/plugin. Type `$` for enabled
+workspace skills. Picking binds the selected text; editing that token removes
+the binding, while email, code and unselected `$HOME` remain literal text.
+Chinese/emoji ranges use native UTF-8 offsets. IME confirmation never selects or
+submits a completion. Unavailable native catalog entries stay visibly unavailable.
+
+Files/directories use native quoted paths, skills use typed skill inputs and
+apps/plugins use typed mention identities. Thread links use the native escaped
+format, with self/duplicate context excluded, at most 16 IDs and 768 ID bytes.
+At send time only the selected threads are read. Snapshots are JSON-quoted,
+marked untrusted and capped at 8 KiB each/32 KiB total. Queue mode uses a separate
+quoted untrusted text input because native queue/add has no additionalContext
+field. This is a send-time snapshot; it does not message the referenced thread.
+
+Supported commands: `/new`, `/model [model effort]`, `/permissions`, `/status`,
+`/usage`, `/skills`, `/compact`, `/rename [name]`, `/archive`, `/delete`, `/fork`,
+`/export`. The first group opens existing UI/native controls. Rename/compact use
+native actions; archive stops active work only after confirmation/interruption.
+Enable **Show archived conversations** and click one to restore it. Delete keeps
+its existing confirmation. Fork uses full defaults and defers automatic inherited
+goal continuation. Export downloads paginated native history as Markdown without
+writing a host file. There is no invented commands/list or read_thread tool.
+
+Eight focused checks and the full suite passed. Live
+`web-probe.mjs --exercise-references` verified a file, real skill, real plugin,
+read-only thread snapshot reaching the model, native queued snapshot data,
+rename/fork/archive/restore/export and disposable cleanup. No callable native app
+was available in this account/runtime, so that catalog remains unavailable;
+its typed representation is covered by fixtures. UI clicks remain in the manual
+acceptance scope stated above.

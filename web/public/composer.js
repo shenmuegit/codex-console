@@ -13,6 +13,132 @@ export function displayNativeText(part) {
   return decoder.decode(bytes.subarray(0, end)) + result;
 }
 
+export const COMMANDS = ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export'];
+export function commandAction(text) {
+  const match = text.trimEnd().match(/^\/([a-z]+)(?:\s+([\s\S]*))?$/);
+  return match && COMMANDS.includes(match[1]) ? { command: match[1], args: match[2]?.trim() ?? '' } : null;
+}
+export function utf8Range(text, start, end) {
+  const split = offset => offset > 0 && offset < text.length && /[\uD800-\uDBFF]/.test(text[offset - 1]) && /[\uDC00-\uDFFF]/.test(text[offset]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > text.length || split(start) || split(end)) {
+    throw Object.assign(new Error('引用位置已变化，请重新选择。'), { status: 400, code: 'INVALID_SELECTION_RANGE' });
+  }
+  const encode = new TextEncoder(); return { start: encode.encode(text.slice(0, start)).length, end: encode.encode(text.slice(0, end)).length };
+}
+export function findTrigger(text, caret, { composing = false } = {}) {
+  if (composing) return null;
+  const prefix = text.slice(0, caret);
+  if ((prefix.match(/```/g)?.length ?? 0) % 2 || (prefix.split('\n').at(-1).match(/(?<!\\)`/g)?.length ?? 0) % 2) return null;
+  const slash = prefix.match(/^\/([a-z]*)$/);
+  if (slash) return { sigil: '/', query: slash[1], start: 0, end: caret };
+  const match = prefix.match(/(?:^|\s)([@$])([^\s@$]*)$/);
+  return match ? { sigil: match[1], query: match[2], start: caret - match[2].length - 1, end: caret } : null;
+}
+export function updateSelections(previous, next, selections = []) {
+  let start = 0, tail = 0;
+  while (start < previous.length && start < next.length && previous[start] === next[start]) ++start;
+  while (tail < previous.length - start && tail < next.length - start && previous[previous.length - 1 - tail] === next[next.length - 1 - tail]) ++tail;
+  const oldEnd = previous.length - tail, delta = next.length - previous.length;
+  return selections.flatMap(item => item.end <= start ? [item] : item.start >= oldEnd ? [{ ...item, start: item.start + delta, end: item.end + delta }] : []);
+}
+function snapshotValue(selection, budget) {
+  const title = [...(selection.name ?? '')].slice(0, 160).join(''), content = String(selection.snapshot ?? '');
+  const quote = (snapshot, truncated) => JSON.stringify({ threadId: selection.id, title, snapshot, truncated }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const encode = new TextEncoder(), full = quote(content, Boolean(selection.truncated));
+  if (encode.encode(full).length <= budget) return full;
+  const chars = [...content]; let lo = 0, hi = chars.length;
+  while (lo < hi) { const middle = Math.ceil((lo + hi) / 2); if (encode.encode(quote(chars.slice(0, middle).join(''), true)).length <= budget) lo = middle; else hi = middle - 1; }
+  return quote(chars.slice(0, lo).join(''), true);
+}
+export function encodeComposer({ text, selections = [], uploads = [], threadId, mode }) {
+  const ordered = [...selections].sort((a, b) => a.start - b.start), references = new Map();
+  let previous = 0, idBytes = 0;
+  for (const item of ordered) {
+    utf8Range(text, item.start, item.end);
+    if (item.start < previous || text.slice(item.start, item.end) !== item.token) throw Object.assign(new Error('引用文本已改变，请重新选择。'), { status: 400, code: 'STALE_SELECTION' });
+    previous = item.end;
+    if (item.kind === 'thread' && item.id !== threadId && !references.has(item.id)) {
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(item.id)) throw Object.assign(new Error('会话引用 ID 不正确。'), { status: 400, code: 'INVALID_THREAD_REFERENCE' });
+      if (references.size >= 16 || idBytes + item.id.length > 768) throw Object.assign(new Error('会话引用超过原生数量或长度上限。'), { status: 400, code: 'TOO_MANY_REFERENCES' });
+      references.set(item.id, item); idBytes += item.id.length;
+    }
+  }
+  let encoded = '', offset = 0; const elements = [], typed = [], seen = new Set();
+  for (const item of ordered) {
+    encoded += text.slice(offset, item.start); let replacement = item.token;
+    if (['file', 'directory'].includes(item.kind)) replacement = formatNativePath(item.path);
+    else if (item.kind === 'thread' && references.has(item.id)) {
+      const title = [...(item.name ?? '')].slice(0, 160).join('').replace(/\\/g, '\\\\').replace(/\]\(/g, ']\\(').replace(/\]/g, '\\]');
+      replacement = `[@${title}](thread://${item.id})`;
+    }
+    const start = new TextEncoder().encode(encoded).length; encoded += replacement;
+    elements.push({ byteRange: { start, end: new TextEncoder().encode(encoded).length }, placeholder: item.token });
+    const key = `${item.kind}:${item.path ?? item.id}`;
+    if (!seen.has(key)) {
+      if (item.kind === 'skill') typed.push({ type: 'skill', name: item.name, path: item.path });
+      if (['app', 'plugin'].includes(item.kind)) typed.push({ type: 'mention', name: item.name, path: `${item.kind}://${item.id}` });
+      seen.add(key);
+    }
+    offset = item.end;
+  }
+  encoded += text.slice(offset);
+  const input = [...(encoded ? [{ type: 'text', text: encoded, text_elements: elements }] : []), ...typed, ...uploads];
+  if (!references.size) return { input };
+  const budget = Math.min(8192, Math.floor((32768 - 256) / references.size));
+  const additionalContext = Object.fromEntries([...references].map(([id, selection]) => [`web_thread_${id}`, { kind: 'untrusted', value: snapshotValue(selection, budget) }]));
+  if (mode === 'queue') return { input: [...input, { type: 'text', text: '<untrusted_text>\n[' + Object.values(additionalContext).map(v => v.value).join(',') + ']\n</untrusted_text>', text_elements: [] }] };
+  return { input, additionalContext };
+}
+
+export function mountCompletions({ api, viewId, getState, onChange }) {
+  const draft = document.querySelector('#draft'), menu = document.querySelector('#completion-menu'), abort = new AbortController();
+  let timer, revision = 0, trigger, entries = [], active = 0, alive = true;
+  const close = () => { menu.hidden = true; draft.setAttribute('aria-expanded', 'false'); draft.removeAttribute('aria-activedescendant'); };
+  function choose(item) {
+    if (!trigger || item.disabled) return;
+    const state = getState(), original = draft.value, token = item.kind === 'command' ? '/' + item.command : (item.kind === 'skill' ? '$' : '@') + item.name;
+    const next = original.slice(0, trigger.start) + token + ' ' + original.slice(trigger.end);
+    state.selections = updateSelections(original, next, state.selections);
+    if (item.kind !== 'command') state.selections.push({ kind: item.kind, ...(item.id ? { id: item.id } : {}), ...(item.path ? { path: item.path } : {}), start: trigger.start, end: trigger.start + token.length, token });
+    state.draft = next; draft.value = next; draft.focus(); draft.setSelectionRange(trigger.start + token.length + 1, trigger.start + token.length + 1); close(); onChange(state);
+  }
+  function highlight() {
+    for (let i = 0; i < entries.length; i++) document.querySelector('#completion-' + i)?.setAttribute('aria-selected', String(i === active));
+    if (entries[active]) draft.setAttribute('aria-activedescendant', 'completion-' + active);
+  }
+  function show(result) {
+    entries = result.items; active = 0; menu.replaceChildren();
+    for (let i = 0; i < entries.length; i++) {
+      const item = entries[i], button = document.createElement('button'); button.type = 'button'; button.role = 'option'; button.id = 'completion-' + i;
+      button.textContent = `${item.label} · ${item.kind}${item.disabled ? '（原生不可用）' : item.kind === 'thread' ? '（发送时快照）' : ''}`;
+      button.disabled = Boolean(item.disabled); button.onclick = () => choose(item); menu.append(button);
+    }
+    for (const issue of result.unavailable ?? []) { const line = document.createElement('p'); line.className = 'muted small'; line.textContent = `${issue.kind}：${issue.message}`; menu.append(line); }
+    if (!entries.length && !result.unavailable?.length) { const line = document.createElement('p'); line.textContent = '没有匹配的原生条目。'; menu.append(line); }
+    menu.hidden = false; draft.setAttribute('aria-expanded', 'true'); highlight();
+  }
+  async function refresh() {
+    const state = getState(); trigger = findTrigger(draft.value, draft.selectionStart, { composing: state?.composing });
+    const version = ++revision;
+    if (!state?.ready || !trigger) { close(); return; }
+    if (trigger.sigil === '/') { show({ items: COMMANDS.filter(command => command.startsWith(trigger.query)).map(command => ({ kind: 'command', command, label: '/' + command })) }); return; }
+    try {
+      const result = await api('/api/completions', { viewId, threadId: state.threadId, sigil: trigger.sigil, query: trigger.query });
+      if (alive && version === revision && getState() === state) show(result);
+    } catch (e) { if (alive && version === revision) show({ items: [], unavailable: [{ kind: '补全', message: e.message }] }); }
+  }
+  draft.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); }, { signal: abort.signal });
+  draft.addEventListener('compositionstart', close, { signal: abort.signal });
+  draft.addEventListener('compositionend', () => { clearTimeout(timer); timer = setTimeout(refresh, 0); }, { signal: abort.signal });
+  draft.addEventListener('keydown', event => {
+    if (menu.hidden || event.isComposing || getState()?.composing || event.keyCode === 229) return;
+    if (event.key === 'Escape') { close(); event.preventDefault(); return; }
+    if (['ArrowDown', 'ArrowUp'].includes(event.key) && entries.length) { active = (active + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length; highlight(); event.preventDefault(); }
+    if (['Enter', 'Tab'].includes(event.key) && entries[active] && !entries[active].disabled) { event.preventDefault(); event.stopImmediatePropagation(); choose(entries[active]); }
+  }, { signal: abort.signal });
+  return { refresh, close, dispose() { alive = false; ++revision; abort.abort(); clearTimeout(timer); close(); } };
+}
+
 export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes }) {
   const fileInput = document.querySelector('#file-input'), photoInput = document.querySelector('#photo-input');
   const container = document.querySelector('#attachments'), abort = new AbortController(), records = new Set();

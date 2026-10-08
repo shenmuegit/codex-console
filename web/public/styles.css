@@ -101,6 +101,12 @@ dialog::backdrop { background: rgb(0 0 0 / .6); }
 .usage-strip button { font-size: 12px; padding: 6px 10px; }
 #weekly-usage section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 #weekly-usage h3 { margin: 0; font-size: 15px; }
+#completion-menu { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin-bottom: 8px; }
+#completion-menu button { display: block; width: 100%; border: 0; text-align: left; background: transparent; border-radius: 0; overflow-wrap: anywhere; }
+#completion-menu button[aria-selected="true"] { background: var(--bg); outline: 2px solid var(--focus); outline-offset: -2px; }
+#completion-menu p { padding: 8px 12px; margin: 0; }
+.composer-hint { margin: 6px 0 0; }
+#info-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 @media (max-width: 1100px) and (min-width: 761px) { .work-layout { grid-template-columns: 180px 230px minmax(0, 1fr); } .chat-heading, .chat-feed { padding-inline: 16px; } .composer { padding-inline: 16px; } }
 @media (max-width: 760px) {
   .topbar { padding: max(8px, env(safe-area-inset-top)) 16px 8px; flex-wrap: nowrap; }

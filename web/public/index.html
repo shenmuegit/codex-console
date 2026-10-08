@@ -37,6 +37,7 @@
         <label for="cwd">新会话工作目录</label><input id="cwd" placeholder="/主机上的目录" autocomplete="off" spellcheck="false">
         <select id="cwd-roots" aria-label="项目根目录" hidden></select><button id="pick-cwd">选择主机目录</button>
         <div class="toolbar"><button id="new-thread" class="primary">新建会话</button><button id="refresh-threads">刷新</button></div>
+        <label class="check-label"><input id="show-archived-threads" type="checkbox">显示归档会话（点击恢复）</label>
         <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" hidden>更多会话</button>
       </aside>
       <section class="chat-pane" aria-label="聊天">
@@ -58,7 +59,9 @@
         <form id="composer" class="composer">
           <div id="attachments" aria-label="待发送附件"></div>
           <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
-          <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="3" placeholder="给 Codex 发送消息…" disabled></textarea>
+          <div id="completion-menu" role="listbox" aria-label="原生补全" hidden></div>
+          <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="3" placeholder="给 Codex 发送消息… 输入 @、$ 或 /" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
+          <p class="muted small composer-hint">@ 文件、目录、会话或应用 · $ 技能 · / 命令；会话引用使用只读的发送时快照。</p>
           <div class="composer-footer"><span id="turn-status" class="muted" role="status"></span>
             <button id="choose-files" type="button" disabled>文件</button><button id="choose-photos" type="button" disabled>照片</button>
             <label id="send-mode-label" hidden>运行中输入<select id="send-mode"><option value="steer">补充当前轮次</option><option value="queue">排队到下一轮</option></select></label>
@@ -69,6 +72,7 @@
       </section>
     </div>
   </main>
+  <dialog id="info-dialog"><div class="pane-heading"><h2 id="info-title">会话信息</h2><button id="close-info">关闭</button></div><pre id="info-body"></pre></dialog>
   <dialog id="project-dialog">
     <form id="project-form" class="dialog-form">
       <div class="pane-heading"><h2 id="project-editor-title">新建项目</h2><button id="close-project-editor" type="button">关闭</button></div>

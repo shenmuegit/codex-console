@@ -7,6 +7,7 @@ markdown.validateLink = value => !/^(javascript:|vbscript:|data:)/i.test(value);
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
   const href = tokens[index].attrGet('href'), ref = env.files?.find(file => file.target === href);
   env.links ??= [];
+  if (/^thread:\/\/[A-Za-z0-9_-]{1,64}$/.test(href)) { env.links.push(true); tokens[index].attrSet('href', '/?thread=' + encodeURIComponent(href.slice(9))); return renderer.renderToken(tokens, index, options); }
   if (!/^(https?:\/\/|mailto:)/i.test(href)) {
     env.links.push(Boolean(ref));
     if (!ref) return '<span>';

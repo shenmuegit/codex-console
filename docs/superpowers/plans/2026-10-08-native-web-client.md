@@ -189,18 +189,18 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 **Files:** Update composer/server/transcript/public modules; create `web/test/composer.test.mjs`.
 **Interfaces:** `encodeComposer({text,selections,uploads,threadId,mode}):{input,additionalContext?}`, `utf8Range(text,start,end):{start,end}`, `commandAction(text):{command,args}|null`. These functions use native encodings, not a generic mention or command RPC.
 
-- [ ] **1. Write failing tests** for Chinese/emoji offsets, composition confirmation, literal code/email/`$HOME`, paths with spaces, typed skill/plugin/app inputs, self/duplicate thread references, invalid split-surrogate ranges, and slash mappings. Example:
+- [x] **1. Write failing tests** for Chinese/emoji offsets, composition confirmation, literal code/email/`$HOME`, paths with spaces, typed skill/plugin/app inputs, self/duplicate thread references, invalid split-surrogate ranges, and slash mappings. Example:
   ```js
   assert.deepEqual(utf8Range('中😀x',1,3), {start:3,end:7});
   assert.equal(commandAction('mail/a@b /new'),null);
   ```
   Also pin `text_elements` (snake case) containing `{byteRange:{start,end},placeholder}` (camel case inside), not `textElements`.
-- [ ] **2. Verify RED:** `node --test web/test/composer.test.mjs`.
-- [ ] **3. Implement** skill discovery (`skills/list`, workspace scoped), native `{type:'skill',name,path}`, app/plugin catalogs and `{type:'mention',name,path:'app://…'|'plugin://…'}`. Files/directories insert native quoted text paths. Thread references use escaped `[@title](thread://id)` and UTF-8 TextElements; exclude self/duplicates, max 16 references and 768 ID bytes, native title cap 160 characters.
-- [ ] **4. Add bounded read-only referenced context:** read only selected native threads at send time; max 8 KiB UTF-8 per thread and 32 KiB total, mark truncation. Start/steer use native `additionalContext` entries `{kind:'untrusted',value:quotedSnapshot}`. Queue/add has no such field: use a separate native text item with a JSON-quoted `<untrusted_text>` snapshot and label this as a send-time snapshot. Do not inject a nonexistent `read_thread` tool/instruction or send messages to referenced threads.
-- [ ] **5. Implement the exact slash catalog** from the spec: new/model/permissions/status/usage/skills UI actions; compact/name-set/archive/delete native actions and dedicated `/api/thread/fork` with full defaults; `/export` streams a paginated Markdown export. Use existing confirmation rules, no `commands/list`. IME Enter never submits/selects; Enter sends, Shift+Enter inserts newline; changing model/menu retains drafts.
-- [ ] **6. Verify GREEN and real references:** all tests; on disposable threads select a real skill, file, app/plugin if available, and another thread; inspect native input/history and context, including queue mode. Execute each supported slash action and compare effects. Unsupported native catalog entries are visibly unavailable, not fabricated. Update both docs.
-- [ ] **7. Commit/push:** `feat: add native mentions skills and slash actions`; verify remote containment.
+- [x] **2. Verify RED:** `node --test web/test/composer.test.mjs`.
+- [x] **3. Implement** skill discovery (`skills/list`, workspace scoped), native `{type:'skill',name,path}`, app/plugin catalogs and `{type:'mention',name,path:'app://…'|'plugin://…'}`. Files/directories insert native quoted text paths. Thread references use escaped `[@title](thread://id)` and UTF-8 TextElements; exclude self/duplicates, max 16 references and 768 ID bytes, native title cap 160 characters.
+- [x] **4. Add bounded read-only referenced context:** read only selected native threads at send time; max 8 KiB UTF-8 per thread and 32 KiB total, mark truncation. Start/steer use native `additionalContext` entries `{kind:'untrusted',value:quotedSnapshot}`. Queue/add has no such field: use a separate native text item with a JSON-quoted `<untrusted_text>` snapshot and label this as a send-time snapshot. Do not inject a nonexistent `read_thread` tool/instruction or send messages to referenced threads.
+- [x] **5. Implement the exact slash catalog** from the spec: new/model/permissions/status/usage/skills UI actions; compact/name-set/archive/delete native actions and dedicated `/api/thread/fork` with full defaults; `/export` streams a paginated Markdown export. Use existing confirmation rules, no `commands/list`. IME Enter never submits/selects; Enter sends, Shift+Enter inserts newline; changing model/menu retains drafts.
+- [x] **6. Verify GREEN and real references:** all tests; on disposable threads select a real skill, file, app/plugin if available, and another thread; inspect native input/history and context, including queue mode. Execute each supported slash action and compare effects. Unsupported native catalog entries are visibly unavailable, not fabricated. Update both docs.
+- [x] **7. Commit/push:** `feat: add native mentions skills and slash actions`; verify remote containment.
 
 ## Task 8: Durable startup, mobile acceptance and release review
 

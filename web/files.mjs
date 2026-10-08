@@ -158,7 +158,14 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
         const candidates = collectTargets(item);
         if (item.type === 'userMessage') for (const part of item.content ?? []) {
           if (part.type === 'localImage') candidates.push({ target: part.path, encoded: false });
-          if (part.type === 'text') { const path = part.text.startsWith('"') && part.text.endsWith('"') ? part.text.slice(1, -1) : part.text; if (byPath.has(path)) candidates.push({ target: path, encoded: false }); }
+          if (part.type === 'text') {
+            const path = part.text.startsWith('"') && part.text.endsWith('"') ? part.text.slice(1, -1) : part.text; if (byPath.has(path)) candidates.push({ target: path, encoded: false });
+            for (const element of part.text_elements ?? []) {
+              const raw = Buffer.from(part.text).subarray(element.byteRange.start, element.byteRange.end).toString('utf8');
+              const path = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+              if (path.startsWith('/')) candidates.push({ target: path, encoded: false });
+            }
+          }
         }
         const issued = [], seen = new Set();
         for (const candidate of candidates) {

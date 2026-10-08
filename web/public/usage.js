@@ -91,8 +91,8 @@ export function mountUsage({ api, viewId, getState, onChange, onError }) {
   async function apply() {
     const state = getState(); if (!state?.ready || setting) return; setting = true; $('#model').disabled = $('#effort').disabled = true;
     try { const result = await api('/api/thread/settings', { viewId, threadId: state.threadId, model: $('#model').value, effort: $('#effort').value });
-      state.settings = result.settings; if (getState() === state) onChange();
-    } catch (e) { onError(e); }
+      state.settings = result.settings; if (getState() === state) onChange(); return true;
+    } catch (e) { onError(e); return false; }
     finally { setting = false; render(); }
   }
   $('#model').addEventListener('change', () => { const chosen = models.find(item => item.model === $('#model').value); effortOptions(chosen, $('#effort').value); apply(); }, { signal: abort.signal });
@@ -102,6 +102,7 @@ export function mountUsage({ api, viewId, getState, onChange, onError }) {
   $('#refresh-usage').addEventListener('click', refreshQuota, { signal: abort.signal });
   return {
     render, loadModels, refreshQuota,
+    async choose(model, effort) { const choice = modelChoice(models, model, effort); $('#model').value = model; effortOptions(choice, effort ?? choice.defaultReasoningEffort); return apply(); },
     onEvent(event) {
       const method = event.native?.method;
       if (method === 'account/updated' || (event.kind === 'status' && event.native.online)) {

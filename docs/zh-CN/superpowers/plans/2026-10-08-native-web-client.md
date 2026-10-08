@@ -189,18 +189,18 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 更新输入/服务端/聊天/页面，新建 `web/test/composer.test.mjs`。
 **接口：** `encodeComposer({text,selections,uploads,threadId,mode}):{input,additionalContext?}`、`utf8Range(text,start,end):{start,end}`、`commandAction(text):{command,args}|null`，不造通用 mention 或命令 RPC。
 
-- [ ] **1. 写失败测试：** 中文/emoji 范围、输入法确认、代码/邮箱/`$HOME` 原文、带空格路径、原生 skill/plugin/app、引用自身/重复会话、拆开代理对的无效范围、斜杠映射。示例：
+- [x] **1. 写失败测试：** 中文/emoji 范围、输入法确认、代码/邮箱/`$HOME` 原文、带空格路径、原生 skill/plugin/app、引用自身/重复会话、拆开代理对的无效范围、斜杠映射。示例：
   ```js
   assert.deepEqual(utf8Range('中😀x',1,3), {start:3,end:7});
   assert.equal(commandAction('mail/a@b /new'),null);
   ```
   固定外层 `text_elements` 为下划线，内层 `{byteRange:{start,end},placeholder}` 为驼峰，不写成 `textElements`。
-- [ ] **2. 确认 RED：** `node --test web/test/composer.test.mjs`。
-- [ ] **3. 最小实现：** 工作目录 `skills/list` 与 `{type:'skill',name,path}`；应用/插件目录与 `{type:'mention',name,path:'app://…'|'plugin://…'}`；文件/目录插原生引用文本。会话为转义 `[@title](thread://id)`、UTF-8 TextElement，排除自身/重复，最多 16 条、ID 总计 768 字节、标题原生上限 160 字符。
-- [ ] **4. 只读引用上下文：** 发送时仅读选择的原生会话，每条最多 8 KiB UTF-8、总计 32 KiB，标出截断。start/steer 使用原生 `additionalContext` 的 `{kind:'untrusted',value:quotedSnapshot}`；queue/add 没有该字段，单独原生文本项承载 JSON 引用的 `<untrusted_text>` 快照，界面标明发送时快照。不注入不存在的 `read_thread` 工具/指令，不向引用线程发消息。
-- [ ] **5. 精确命令表：** new/model/permissions/status/usage/skills 为界面动作；compact/name-set/archive/delete 为原生动作，fork 走携带最大授权的专用 `/api/thread/fork`；`/export` 分页流式 Markdown 导出。复用确认规则，无 `commands/list`。输入法 Enter 不发送/选择，Enter 发送、Shift+Enter 换行，换模型/菜单保留草稿。
-- [ ] **6. 确认 GREEN 与引用：** 全测试；临时线程选真实技能、文件、可用应用/插件、其他会话，检查原生输入/历史/上下文，覆盖 queue；逐个核对命令效果。原生目录不可用时明确显示，不伪造。更新双语说明。
-- [ ] **7. 提交推送：** `feat: add native mentions skills and slash actions`，确认远端包含。
+- [x] **2. 确认 RED：** `node --test web/test/composer.test.mjs`。
+- [x] **3. 最小实现：** 工作目录 `skills/list` 与 `{type:'skill',name,path}`；应用/插件目录与 `{type:'mention',name,path:'app://…'|'plugin://…'}`；文件/目录插原生引用文本。会话为转义 `[@title](thread://id)`、UTF-8 TextElement，排除自身/重复，最多 16 条、ID 总计 768 字节、标题原生上限 160 字符。
+- [x] **4. 只读引用上下文：** 发送时仅读选择的原生会话，每条最多 8 KiB UTF-8、总计 32 KiB，标出截断。start/steer 使用原生 `additionalContext` 的 `{kind:'untrusted',value:quotedSnapshot}`；queue/add 没有该字段，单独原生文本项承载 JSON 引用的 `<untrusted_text>` 快照，界面标明发送时快照。不注入不存在的 `read_thread` 工具/指令，不向引用线程发消息。
+- [x] **5. 精确命令表：** new/model/permissions/status/usage/skills 为界面动作；compact/name-set/archive/delete 为原生动作，fork 走携带最大授权的专用 `/api/thread/fork`；`/export` 分页流式 Markdown 导出。复用确认规则，无 `commands/list`。输入法 Enter 不发送/选择，Enter 发送、Shift+Enter 换行，换模型/菜单保留草稿。
+- [x] **6. 确认 GREEN 与引用：** 全测试；临时线程选真实技能、文件、可用应用/插件、其他会话，检查原生输入/历史/上下文，覆盖 queue；逐个核对命令效果。原生目录不可用时明确显示，不伪造。更新双语说明。
+- [x] **7. 提交推送：** `feat: add native mentions skills and slash actions`，确认远端包含。
 
 ## 任务 8：长期运行、手机验收与最终审查
 

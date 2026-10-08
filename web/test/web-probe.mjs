@@ -13,12 +13,13 @@ import { weeklyUsage, contextUsage } from '../public/usage.js';
 
 const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
   'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false },
-  'exercise-attachments': { type: 'boolean', default: false }, 'exercise-usage': { type: 'boolean', default: false } } });
+  'exercise-attachments': { type: 'boolean', default: false }, 'exercise-usage': { type: 'boolean', default: false },
+  'exercise-references': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
 const password = (await readFile(values['password-file'], 'utf8')).trim();
-let cookie, viewId, threadId, projectThreadId, state, actor, stream;
+let cookie, viewId, threadId, projectThreadId, referenceThreadId, forkThreadId, state, actor, stream;
 const events = [];
 async function request(path, body, origin = config.origin) {
   return new Promise((resolve, reject) => {
@@ -189,11 +190,58 @@ try {
     await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
     report.twoNativeEfforts = true; report.nativeContext = true; report.compactionContextRefresh = true;
   }
+  if (values['exercise-references']) {
+    const cwd = config.workspace ?? config.generatedRoots[0], marker = 'REF_' + randomUUID();
+    const referenced = await api('/api/thread/start', { viewId, cwd, name: 'Disposable referenced conversation' });
+    referenceThreadId = referenced.snapshot.thread.id; state = createChatState(referenceThreadId); installSnapshot(state, referenced);
+    const seeded = await api('/api/thread/send', { viewId, threadId: referenceThreadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text: `The reference marker is ${marker}. Reply exactly that marker.` } });
+    await waitFor(() => completion(seeded.result.turn.id), 'Referenced conversation seeded.'); assert.equal(completion(seeded.result.turn.id).status, 'completed');
+    const created = await api('/api/thread/start', { viewId, cwd, name: 'Disposable composer probe' });
+    threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
+    const path = join(cwd, 'reference 文件-' + randomUUID() + '.txt'); await writeFile(path, 'REFERENCE_FILE\n', { mode: 0o600 });
+    const choices = await api('/api/completions', { viewId, threadId, sigil: '@', query: '' });
+    const skills = await api('/api/completions', { viewId, threadId, sigil: '$', query: '' });
+    const skill = skills.items.find(item => !item.disabled), app = choices.items.find(item => item.kind === 'app' && !item.disabled), plugin = choices.items.find(item => item.kind === 'plugin' && !item.disabled);
+    let text = 'Return exactly the marker from the referenced conversation. These references are validation inputs; do not change files or contact external services. @file @ref';
+    const selected = [{ kind: 'file', path, token: '@file' }, { kind: 'thread', id: referenceThreadId, token: '@ref' }];
+    for (const [entry, token] of [[skill, '$skill'], [app, '@app'], [plugin, '@plugin']]) if (entry) { text += ' ' + token; selected.push({ kind: entry.kind, ...(entry.id ? { id: entry.id } : {}), ...(entry.path ? { path: entry.path } : {}), token }); }
+    const selections = selected.map(item => ({ ...item, start: text.indexOf(item.token), end: text.indexOf(item.token) + item.token.length }));
+    const sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text, selections } });
+    await waitFor(() => completion(sent.result.turn.id), 'Native composer turn completed.'); assert.equal(completion(sent.result.turn.id).status, 'completed');
+    assert.ok(state.turns.flatMap(t => t.items).some(i => i.type === 'agentMessage' && i.text.includes(marker)));
+    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    const user = history.data.flatMap(t => t.items).find(i => i.type === 'userMessage');
+    assert.ok(user.content.some(p => p.type === 'text' && p.text.includes('thread://' + referenceThreadId)));
+    if (skill) assert.ok(user.content.some(p => p.type === 'skill' && p.path === skill.path));
+    if (app) assert.ok(user.content.some(p => p.type === 'mention' && p.path === 'app://' + app.id));
+    if (plugin) assert.ok(user.content.some(p => p.type === 'mention' && p.path === 'plugin://' + plugin.id));
+    const long = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text: 'Run sleep 15 using your command tool, then reply DONE.' } });
+    await waitFor(() => events.some(e => e.native?.params?.turnId === long.result.turn.id && e.native.params.item?.type === 'commandExecution'), 'Disposable command started before queueing.');
+    const queued = await api('/api/thread/send', { viewId, threadId, mode: 'queue', clientUserMessageId: randomUUID(), draft: { text: '@ref', selections: [{ kind: 'thread', id: referenceThreadId, start: 0, end: 4, token: '@ref' }] } });
+    const queue = (await api('/api/rpc', { method: 'thread/queue/list', params: { threadId } })).result;
+    assert.ok(queue.data.some(item => item.id === queued.result.queuedSubmission.id && item.input.some(input => input.type === 'text' && input.text.includes('<untrusted_text>'))));
+    actor ??= createCodexClient({ url: config.backendUrl }); await waitFor(() => actor.status().online, 'Native cleanup client online.', 10_000);
+    await actor.rpc('thread/queue/delete', { threadId, queuedSubmissionId: queued.result.queuedSubmission.id });
+    await api('/api/thread/stop', { viewId, threadId, turnId: long.result.turn.id }); await waitFor(() => completion(long.result.turn.id), 'Disposable queue test interrupted.');
+    await api('/api/thread/rename', { viewId, threadId, name: 'Renamed composer probe' });
+    const exported = await request('/api/thread/export?threadId=' + threadId); assert.equal(exported.status, 200); assert.match(exported.headers['content-type'], /text\/markdown/); assert.ok(exported.data.includes('Renamed composer probe'));
+    const fork = await api('/api/thread/fork', { viewId, threadId }); forkThreadId = fork.snapshot.thread.id;
+    assert.equal(fork.snapshot.approvalPolicy, 'never'); assert.equal(fork.snapshot.sandbox.type, 'dangerFullAccess');
+    await api('/api/thread/delete', { viewId, threadId: forkThreadId, confirmed: true }); forkThreadId = null;
+    installSnapshot(state, await api('/api/thread/open', { viewId, threadId }));
+    await api('/api/thread/archive', { viewId, threadId, confirmed: true });
+    await api('/api/thread/unarchive', { viewId, threadId });
+    await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
+    await api('/api/thread/delete', { viewId, threadId: referenceThreadId, confirmed: true }); referenceThreadId = null;
+    report.nativeFileReference = true; report.nativeSkill = Boolean(skill); report.nativeApp = Boolean(app); report.nativePlugin = Boolean(plugin);
+    report.readonlyThreadContext = true; report.queueSnapshot = true; report.renameForkArchiveExport = true;
+  }
   await api('/api/logout', {}); report.logout = true;
   console.log(JSON.stringify(report));
 } finally {
   stream?.destroy();
   if (projectThreadId && cookie) await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }).catch(() => {});
+  for (const id of [forkThreadId, referenceThreadId]) if (id && cookie) await api('/api/thread/delete', { viewId, threadId: id, confirmed: true }).catch(() => {});
   if (threadId && actor?.status().online) {
     const active = state?.turns.findLast(t => t.status === 'inProgress');
     if (active) await actor.rpc('turn/interrupt', { threadId, turnId: active.id }).catch(() => {});
