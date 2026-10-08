@@ -1,6 +1,6 @@
 import https from 'node:https';
 import { readFileSync, mkdirSync, writeFileSync, existsSync, chmodSync, renameSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { parseArgs, isDeepStrictEqual } from 'node:util';

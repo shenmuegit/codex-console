@@ -368,7 +368,8 @@ metadata against the source backend.
 ## Native @, $ and / actions
 
 Type `@` to choose a file/directory in the conversation's actual workspace,
-another conversation, or an available native app/plugin. Type `$` for enabled
+another conversation, or an available native app/plugin. Nested paths such as
+`@src/` resolve from that conversation's directory. Type `$` for enabled
 workspace skills. Picking binds the selected text; editing that token removes
 the binding, while email, code and unselected `$HOME` remain literal text.
 Chinese/emoji ranges use native UTF-8 offsets. IME confirmation never selects or

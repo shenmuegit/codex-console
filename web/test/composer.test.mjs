@@ -84,6 +84,21 @@ test('workspace skills come from native discovery and referenced threads are onl
   assert.equal(f.peer.sent.some(m => ['turn/start', 'turn/steer', 'thread/queue/add'].includes(m.method) && m.params.threadId === 'ref'), false); stream.req.destroy();
 });
 
+test('nested @path completion resolves under the actual thread directory', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
+  const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
+  await waitCall(f.peer, 'thread/resume'); const snapshot = resumeFixture('t'); snapshot.cwd = f.dir; snapshot.thread.cwd = f.dir;
+  f.peer.replyTo('thread/resume', snapshot); await opening;
+  const results = { 'fs/readDirectory': { entries: [{ fileName: 'index.mjs', isDirectory: false }] }, 'thread/list': { data: [], nextCursor: null },
+    'app/list': { data: [], nextCursor: null }, 'app/installed': { apps: [] }, 'plugin/installed': { marketplaces: [] } }, answered = new Set();
+  const timer = setInterval(() => { for (const call of f.peer.sent) if (results[call.method] && !answered.has(call.id)) {
+    answered.add(call.id); f.peer.emit({ id: call.id, result: results[call.method] });
+  } }, 5); t.after(() => clearInterval(timer));
+  const response = await f.request('/api/completions', { method: 'POST', cookie, body: { viewId, threadId: 't', sigil: '@', query: 'src/in' } });
+  assert.equal(response.status, 200); assert.equal(f.peer.sent.find(call => call.method === 'fs/readDirectory').params.path, f.dir + '/src');
+  assert.equal(response.json.items[0].path, f.dir + '/src/index.mjs'); stream.req.destroy();
+});
+
 test('dedicated rename/fork/export actions preserve full defaults and paginate native Markdown', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
