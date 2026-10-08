@@ -96,7 +96,11 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-68 Node checks passed; the production dependency audit reported zero vulnerabilities.
+80 Node checks passed; the production dependency audit reported zero vulnerabilities.
+The fresh whole-branch review's six Important findings and three findings
+promoted from Minor were fixed in nine independently verified and pushed commits.
+Mounted event checks cover duplicate commands, modified Enter and conversation
+reload identity; a real HTTPS/native check also confirms nested Unicode completion.
 All opt-in HTTPS/native checks passed against the durable services, including
 projects, two-client chat, interruption, file/photo round trip, exact downloads,
 model/effort/context/compaction, weekly metadata, references and command effects.
@@ -111,6 +115,10 @@ project→thread→chat on a phone, confirm IME Enter, choose/remove/retry files
 the full ID, download exact bytes, open the same thread in the extra desktop and
 send in both directions. The CSS uses visible focus, native controls, safe areas
 and the visual viewport for the keyboard; physical-device behavior remains unverified.
+
+Known presentation limit: another page opening the same conversation can reset
+already loaded older pages to the latest 20-turn snapshot. Use **Load earlier
+history** again; the native history remains intact. This review minor is deferred.
 
 ## Native connection
 
@@ -188,7 +196,7 @@ resume can fail with “no rollout found”. This is the upstream test's own flo
 
 The remaining sections document the implemented components; no Xpra connection is used by this client.
 
-Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
+Task 1 verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
 
 Verified executable SHA-256: app-server `85ef3000722cab4fdb576ab5cfdce0e8e791641641a671a7593e6b23b7334431`; desktop companion `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`. Identify the development build by source commit and hash, not its `0.0.0` version.
 
@@ -402,7 +410,7 @@ editing while a command runs preserves the newer text.
 Opening, creating or forking a conversation updates its thread ID in the page
 address, so refresh reopens the conversation currently selected.
 
-Eight focused checks and the full suite passed. Live
+Task 7's eight focused checks and the full suite passed. Live
 `web-probe.mjs --exercise-references` verified a file, real skill, real plugin,
 read-only thread snapshot reaching the model, native queued snapshot data,
 rename/fork/archive/restore/export and disposable cleanup. No callable native app
