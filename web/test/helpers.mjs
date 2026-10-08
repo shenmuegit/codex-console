@@ -1,6 +1,6 @@
 import { setImmediate as tick } from 'node:timers/promises';
 import { createCodexClient } from '../codex.mjs';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -105,7 +105,7 @@ export async function httpsFixture() {
     '-nodes', '-keyout', tlsKey, '-out', tlsCert, '-subj', '/CN=127.0.0.1',
     '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1'], { stdio: 'ignore' });
   const config = { origin: 'https://127.0.0.1:0', listenHost: '127.0.0.1', port: 0,
-    backendUrl: 'ws://127.0.0.1:4500', tlsKey, tlsCert, stateDir: join(dir, 'state'),
+    backendUrl: 'ws://127.0.0.1:4500', workspace: dir, tlsKey, tlsCert, stateDir: join(dir, 'state'),
     passwordHash: await hashPassword('fixture-passphrase'), generatedRoots: [], uploadLimitBytes: 33_554_432 };
   const server = createWebServer({ config, codex: native.client });
   const eventResponses = [];
@@ -166,7 +166,6 @@ export async function httpsFixture() {
       server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
       native.client.close(); await rm(dir, { recursive: true, force: true });
     },
-    async preferences() { return JSON.parse(await readFile(join(config.stateDir, 'preferences.json'), 'utf8')); },
   };
 }
 

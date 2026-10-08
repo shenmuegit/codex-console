@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
+import { stat } from 'node:fs/promises';
 import { createAuth, checkOrigin, hashPassword } from '../auth.mjs';
 import { httpsFixture } from './helpers.mjs';
 import { writeEvent } from '../server.mjs';
@@ -38,7 +39,7 @@ test('HTTPS rejects unauthenticated APIs, cross-Origin requests, oversized bodie
   assert.equal(f.peer.sent.some(m => m.method === 'process/exec'), false);
   assert.equal((await f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'thread/start', params: {} } })).status, 403);
   assert.equal((await f.request('/api/view', { method: 'POST', cookie, origin: 'https://evil.test', body: {} })).status, 403);
-  assert.deepEqual(await f.preferences(), { archivedProjectIds: [], ui: {} });
+  assert.equal((await stat(f.config.stateDir)).mode & 0o077, 0);
 });
 
 test('login sets an absolute secure cookie and views belong to one session', async t => {

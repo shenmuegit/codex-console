@@ -140,7 +140,7 @@ test('new browser threads use full defaults and are named before their atomic re
   const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const invalid = await f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, cwd: f.dir + '/missing-directory' } });
   assert.equal(invalid.status, 400); assert.equal(f.peer.sent.some(m => m.method === 'thread/start'), false);
-  const pending = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, cwd: f.dir } });
+  const pending = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId } });
   await waitCall(f.peer, 'thread/start');
   const start = f.peer.sent.find(m => m.method === 'thread/start');
   assert.equal(start.params.approvalPolicy, 'never'); assert.equal(start.params.sandbox, 'danger-full-access');

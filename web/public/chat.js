@@ -172,19 +172,18 @@ export function shouldSubmitKey(event, { composing, finePointer }) {
 export { activeTurn };
 
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
-export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
+export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), formNodes = new Map();
   let selected, project, projectCursor, threadCursor, online = false, alive = true;
   let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
-  let editingProject, projectKey, directoryTarget, directoryPath, directoryVersion = 0;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft');
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
-  $('#cwd').value = defaultCwd; $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
+  $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
   const bind = (node, type, fn) => node.addEventListener(type, event => { try { Promise.resolve(fn(event)).catch(showError); } catch (e) { showError(e); } }, { signal: abort.signal });
@@ -216,8 +215,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     if (!alive || version !== projectLoad) return;
     if (!more) $('#projects').replaceChildren(row('全部会话', null, !project, () => chooseProject(null)));
     for (const item of page.data) {
-      if (item.webArchived && !$('#show-archived-projects').checked) continue;
-      $('#projects').append(row(item.name + (item.webArchived ? ' · 网页归档' : ''), item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item)));
+      $('#projects').append(row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item)));
     }
     projectCursor = page.nextCursor; $('#more-projects').hidden = !projectCursor;
   }
@@ -237,12 +235,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   }
   async function chooseProject(item) {
     project = item; $('#project-title').textContent = item?.name ?? '全部会话';
-    $('#cwd').value = item?.roots?.[0]?.path ?? defaultCwd; $('#cwd').readOnly = Boolean(item);
-    $('#pick-cwd').hidden = Boolean(item); $('#cwd-roots').replaceChildren();
-    for (const root of item?.roots ?? []) { const option = element('option', root.path); option.value = root.path; $('#cwd-roots').append(option); }
-    $('#cwd-roots').hidden = !item || item.roots.length < 2;
-    $('#edit-project').disabled = !item; $('#archive-project').disabled = !item;
-    $('#archive-project').textContent = item?.webArchived ? '恢复项目（网页）' : '归档（仅网页）';
     layout.dataset.level = 'threads'; await Promise.all([loadProjects(), loadThreads()]);
   }
   function select(state) {
@@ -411,61 +403,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
     if (command === 'export') { const link = element('a'); link.href = '/api/thread/export?threadId=' + encodeURIComponent(selected.threadId); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
-  function projectEditor(item) {
-    editingProject = item; projectKey = crypto.randomUUID(); $('#project-editor-title').textContent = item ? '编辑项目' : '新建项目';
-    $('#project-name').value = item?.name ?? ''; $('#project-root').value = item?.roots?.[0]?.path ?? ($('#cwd').value || defaultCwd);
-    $('#secondary-roots').textContent = item?.roots.length > 1 ? '保留其他根目录：\n' + item.roots.slice(1).map(r => r.path).join('\n') : '';
-    $('#project-error').textContent = ''; $('#project-dialog').showModal();
-  }
-  async function loadDirectory(path) {
-    const version = ++directoryVersion; directoryPath = null; $('#directory-choose').disabled = true; $('#directory-error').textContent = '';
-    try {
-      const result = await read('fs/readDirectory', { path }); if (version !== directoryVersion || !alive) return;
-      directoryPath = path; $('#directory-path').value = path; $('#directory-list').replaceChildren();
-      $('#directory-choose').disabled = false;
-      for (const entry of result.entries.filter(entry => entry.isDirectory).sort((a, b) => a.fileName.localeCompare(b.fileName))) {
-        $('#directory-list').append(row(entry.fileName, null, false, () => loadDirectory((path === '/' ? '' : path.replace(/\/$/, '')) + '/' + entry.fileName)));
-      }
-      if (!$('#directory-list').children.length) $('#directory-list').append(element('p', '此目录没有子文件夹。', 'muted'));
-    } catch (e) { $('#directory-error').textContent = e.message; }
-  }
-  function directoryPicker(target) {
-    directoryTarget = target; $('#directory-name').value = ''; $('#directory-dialog').showModal();
-    return loadDirectory(target.value || defaultCwd || '/');
-  }
-  bind($('#new-project'), 'click', () => projectEditor(null)); bind($('#edit-project'), 'click', () => project && projectEditor(project));
-  bind($('#close-project-editor'), 'click', () => $('#project-dialog').close());
-  bind($('#pick-project-root'), 'click', () => directoryPicker($('#project-root'))); bind($('#pick-cwd'), 'click', () => directoryPicker($('#cwd')));
-  bind($('#show-archived-projects'), 'change', () => loadProjects());
-  bind($('#cwd-roots'), 'change', () => { $('#cwd').value = $('#cwd-roots').value; });
-  bind($('#archive-project'), 'click', async () => {
-    if (!project) return; const item = project, archived = !item.webArchived; $('#archive-project').disabled = true;
-    try { await api('/api/project/archive', { viewId, projectId: item.id, archived });
-      await chooseProject(archived ? null : { ...item, webArchived: false });
-    } finally { $('#archive-project').disabled = !project; }
-  });
-  $('#project-form').addEventListener('submit', async event => {
-    event.preventDefault(); const button = $('#save-project'); if (button.disabled) return; button.disabled = true; $('#project-error').textContent = '';
-    try {
-      const result = await api('/api/project/save', { viewId, ...(editingProject ? { projectId: editingProject.id } : {}),
-        name: $('#project-name').value, rootPath: $('#project-root').value, idempotencyKey: projectKey });
-      $('#project-dialog').close(); await chooseProject(result.project);
-    } catch (e) { $('#project-error').textContent = e.message; }
-    finally { button.disabled = false; }
-  }, { signal: abort.signal });
-  bind($('#close-directory'), 'click', () => $('#directory-dialog').close());
-  bind($('#directory-go'), 'click', () => loadDirectory($('#directory-path').value));
-  bind($('#directory-parent'), 'click', () => loadDirectory((directoryPath || '/').replace(/\/?[^/]+\/?$/, '') || '/'));
-  bind($('#directory-create'), 'click', async () => {
-    if (!directoryPath) { $('#directory-error').textContent = '请先打开一个有效目录。'; return; }
-    const name = $('#directory-name').value.trim(); if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\0')) { $('#directory-error').textContent = '请输入单个文件夹名称。'; return; }
-    const button = $('#directory-create'); if (button.disabled) return; button.disabled = true;
-    try { const path = (directoryPath === '/' ? '' : directoryPath.replace(/\/$/, '')) + '/' + name;
-      await api('/api/directory/create', { viewId, path }); $('#directory-name').value = ''; await loadDirectory(path);
-    } catch (e) { $('#directory-error').textContent = e.message; } finally { button.disabled = false; }
-  });
-  $('#directory-form').addEventListener('submit', event => { event.preventDefault(); if (!directoryPath) return;
-    directoryTarget.value = directoryPath; $('#directory-dialog').close(); }, { signal: abort.signal });
   async function deleteCurrent() {
     const state = selected; if (!state || !window.confirm('删除此会话及其原生子会话记录？目录和已上传文件会保留。')) return false;
     state.deleting = true; draw();
@@ -477,7 +414,7 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
   async function newThread() {
     if ($('#new-thread').disabled) return false;
     const button = $('#new-thread'); button.disabled = true; $('#chat-error').textContent = '';
-    try { const result = await api('/api/thread/start', { viewId, cwd: $('#cwd').value, ...(project ? { projectId: project.id } : {}) });
+    try { const result = await api('/api/thread/start', { viewId, ...(project ? { projectId: project.id } : {}) });
       const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads();
     } finally { button.disabled = false; }
   }
@@ -510,7 +447,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
       if (!alive) return;
       if (event.kind === 'status') online = event.native.online;
       if (event.kind === 'renderRequired' && event.native.threadId === selected?.threadId) loadPresentation();
-      if (event.kind === 'preferences') { if (project) { project.webArchived = event.native.archivedProjectIds.includes(project.id); $('#archive-project').textContent = project.webArchived ? '恢复项目（网页）' : '归档（仅网页）'; } loadProjects().catch(showError); }
       if (event.native?.method?.startsWith('project/')) loadProjects().catch(showError);
       const threadId = event.kind === 'snapshot' ? event.native.thread.id : event.native?.threadId ?? event.native?.params?.threadId;
       if (event.kind === 'snapshot' || (threadId && states.has(threadId))) applyNativeEvent(stateFor(threadId), event);
@@ -526,6 +462,6 @@ export function mountChat({ api, viewId, defaultCwd, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#project-dialog').close(); $('#directory-dialog').close(); $('#info-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); if (selected) save(selected); },
   };
 }

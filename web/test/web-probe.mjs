@@ -91,31 +91,25 @@ try {
   ({ viewId } = await api('/api/view', {})); stream = await connectEvents();
   const report = { https: true, unauthenticated: 401, foreignOrigin: 403, nativeModels: models.data.length, sseRequiresSnapshot: true };
   if (values['exercise-projects']) {
-    const root = join(config.workspace ?? config.generatedRoots[0], 'project-probe-' + randomUUID());
-    for (const path of [root, join(root, 'old'), join(root, 'new')]) await api('/api/directory/create', { viewId, path });
-    const old = join(root, 'old'), next = join(root, 'new'), marker = join(old, 'keep.txt');
-    await writeFile(marker, 'PROJECT_FILES_PRESERVED\n', { mode: 0o600 });
-    const body = { viewId, name: 'Disposable project probe', rootPath: old, idempotencyKey: randomUUID() };
-    const { project } = await api('/api/project/save', body);
-    assert.equal((await api('/api/project/save', body)).project.id, project.id);
-    const created = await api('/api/thread/start', { viewId, projectId: project.id, cwd: old, name: 'Disposable project member' });
-    projectThreadId = created.snapshot.thread.id;
-    assert.equal(created.snapshot.thread.projectId, project.id);
-    await api('/api/project/save', { viewId, projectId: project.id, name: 'Rebound disposable project', rootPath: next });
-    const reopened = await api('/api/thread/open', { viewId, threadId: projectThreadId });
-    assert.equal(reopened.snapshot.thread.cwd, old); assert.equal(reopened.snapshot.cwd, old);
-    await api('/api/project/archive', { viewId, projectId: project.id, archived: true });
-    assert.ok((await api('/api/preferences')).archivedProjectIds.includes(project.id));
-    assert.equal((await api('/api/rpc', { method: 'project/read', params: { projectId: project.id } })).result.project.roots[0].path, next);
-    await api('/api/project/archive', { viewId, projectId: project.id, archived: false });
-    assert.equal((await api('/api/preferences')).archivedProjectIds.includes(project.id), false);
-    await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }); projectThreadId = null;
-    assert.equal(await readFile(marker, 'utf8'), 'PROJECT_FILES_PRESERVED\n');
-    await api('/api/project/archive', { viewId, projectId: project.id, archived: true });
-    report.projectLifecycle = true; report.projectCreateIdempotent = true; report.oldThreadCwdPreserved = true; report.projectFilesPreserved = true;
+    const projects = (await api('/api/rpc', { method: 'project/list', params: { limit: 100 } })).result;
+    for (const [path, body] of [
+      ['/api/project/save', { name: 'Forbidden browser mutation', rootPath: config.workspace, idempotencyKey: randomUUID() }],
+      ['/api/project/archive', { projectId: projects.data[0]?.id ?? 'not-created', archived: true }],
+      ['/api/directory/create', { path: join(config.workspace, 'must-not-be-created') }],
+    ]) assert.equal((await request(path, { viewId, ...body })).status, 403);
+    assert.equal((await request('/api/thread/start', { viewId, cwd: config.workspace })).status, 400);
+    const project = projects.data.find(item => item.roots?.[0]?.path);
+    if (project) {
+      const created = await api('/api/thread/start', { viewId, projectId: project.id, name: 'Disposable read-only project probe' });
+      projectThreadId = created.snapshot.thread.id;
+      assert.equal(created.snapshot.thread.projectId, project.id); assert.equal(created.snapshot.thread.cwd, project.roots[0].path);
+      await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }); projectThreadId = null;
+      report.nativeProjectRootUsed = true;
+    }
+    report.projectsReadOnly = true; report.browserCwdOverridesDenied = true;
   }
   if (values['exercise-chat']) {
-    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable HTTPS integration probe' });
+    const created = await api('/api/thread/start', { viewId, name: 'Disposable HTTPS integration probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
     actor = createCodexClient({ url: config.backendUrl });
     await waitFor(() => actor.status().online, 'Second native protocol client initialized.', 10_000);
@@ -148,7 +142,7 @@ try {
     await actor.rpc('thread/delete', { threadId }); threadId = null; report.disposableThreadDeleted = true;
   }
   if (values['exercise-attachments']) {
-    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable native attachment probe' });
+    const created = await api('/api/thread/start', { viewId, name: 'Disposable native attachment probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
     const content = Buffer.from(`NATIVE_ATTACHMENT:${randomUUID()}\n真实文件字节\n`), photo = tinyPng();
     const document = await upload('附件 测试\'%.txt', content, 'text/plain'), image = await upload('照片 测试.png', photo, 'image/png');
@@ -175,7 +169,7 @@ try {
     report.nativeWeeklyBuckets = weeklyUsage(quota.result).length;
     const model = models.data.find(m => m.isDefault && m.supportedReasoningEfforts.length >= 2) ?? models.data.find(m => m.supportedReasoningEfforts.length >= 2);
     assert.ok(model, 'A native model has two supported efforts.');
-    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable native settings probe' });
+    const created = await api('/api/thread/start', { viewId, name: 'Disposable native settings probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
     for (const option of model.supportedReasoningEfforts.slice(0, 2)) {
       const result = await api('/api/thread/settings', { viewId, threadId, model: model.model, effort: option.reasoningEffort });
@@ -195,11 +189,11 @@ try {
   }
   if (values['exercise-references']) {
     const cwd = config.workspace ?? config.generatedRoots[0], marker = 'REF_' + randomUUID();
-    const referenced = await api('/api/thread/start', { viewId, cwd, name: 'Disposable referenced conversation' });
+    const referenced = await api('/api/thread/start', { viewId, name: 'Disposable referenced conversation' });
     referenceThreadId = referenced.snapshot.thread.id; state = createChatState(referenceThreadId); installSnapshot(state, referenced);
     const seeded = await api('/api/thread/send', { viewId, threadId: referenceThreadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text: `The reference marker is ${marker}. Reply exactly that marker.` } });
     await waitFor(() => completion(seeded.result.turn.id), 'Referenced conversation seeded.'); assert.equal(completion(seeded.result.turn.id).status, 'completed');
-    const created = await api('/api/thread/start', { viewId, cwd, name: 'Disposable composer probe' });
+    const created = await api('/api/thread/start', { viewId, name: 'Disposable composer probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
     const path = join(cwd, 'reference 文件-' + randomUUID() + '.txt'); await writeFile(path, 'REFERENCE_FILE\n', { mode: 0o600 });
     const choices = await api('/api/completions', { viewId, threadId, sigil: '@', query: '' });
@@ -240,7 +234,7 @@ try {
     report.readonlyThreadContext = true; report.queueSnapshot = true; report.renameForkArchiveExport = true;
   }
   if (values['exercise-restarts']) {
-    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable durable restart probe' });
+    const created = await api('/api/thread/start', { viewId, name: 'Disposable durable restart probe' });
     threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
     const messageId = randomUUID(), sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: messageId,
       draft: { text: 'Use your command tool to run sleep 12, then reply DURABLE_RESTART_OK. This is a disposable service-lifetime test.' } });

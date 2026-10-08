@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { saveProject, deleteThread } from '../server.mjs';
+import { deleteThread } from '../server.mjs';
 import { httpsFixture, resumeFixture } from './helpers.mjs';
 
 async function waitCall(peer, method, count = 1) {
@@ -11,56 +11,50 @@ async function waitCall(peer, method, count = 1) {
   assert.fail(`Missing ${method}`);
 }
 const project = (roots, name = 'Project') => ({ id: 'p', name, roots: roots.map(path => ({ path })), metadata: { unrelated: 'preserve' }, position: 0, createdAt: 1, updatedAt: 1 });
-async function fixtureArchive(f, cookie, viewId, archived) {
+test('browser project and folder mutations are denied without native side effects', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
   const before = f.peer.sent.length;
-  const response = await f.request('/api/project/archive', { method: 'POST', cookie, body: { viewId, projectId: 'p', archived } });
-  assert.equal(response.status, 200);
-  return { archivedProjectIds: (await f.preferences()).archivedProjectIds, nativeCalls: f.peer.sent.slice(before) };
-}
-
-test('host picking validates absolute paths; creation uses the native filesystem without removing files', async t => {
-  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
-  const list = f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'fs/readDirectory', params: { path: f.dir } } });
-  await waitCall(f.peer, 'fs/readDirectory'); f.peer.replyTo('fs/readDirectory', { entries: [{ fileName: 'folder', isDirectory: true, isFile: false }] });
-  assert.equal((await list).json.result.entries[0].fileName, 'folder');
-  for (const path of ['relative', f.dir + '/../escape', f.dir + '/\0bad']) assert.equal((await f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'fs/readDirectory', params: { path } } })).status, 400);
-  const create = f.request('/api/directory/create', { method: 'POST', cookie, body: { viewId, path: join(f.dir, 'new folder') } });
-  await waitCall(f.peer, 'fs/getMetadata'); f.peer.replyTo('fs/getMetadata', { isDirectory: true, isFile: false, isSymlink: false });
-  await waitCall(f.peer, 'fs/createDirectory'); assert.deepEqual(f.peer.sent.at(-1).params, { path: join(f.dir, 'new folder'), recursive: false });
-  f.peer.replyTo('fs/createDirectory', {}); assert.equal((await create).status, 200);
-  assert.equal(f.peer.sent.some(m => ['fs/remove', 'fs/writeFile', 'project/delete'].includes(m.method)), false);
+  for (const [path, body] of [
+    ['/api/project/archive', { projectId: 'p', archived: true }],
+    ['/api/project/save', { name: 'Forbidden', rootPath: f.dir, idempotencyKey: 'forbidden' }],
+    ['/api/directory/create', { path: join(f.dir, 'forbidden') }],
+  ]) {
+    const response = await f.request(path, { method: 'POST', cookie, body: { viewId, ...body } });
+    assert.equal(response.status, 403); assert.equal(response.json.error.code, 'WORKSPACE_MANAGED_BY_CODEX');
+  }
+  assert.deepEqual(f.peer.sent.slice(before), []);
+  for (const method of ['project/create', 'project/update', 'fs/createDirectory']) assert.equal((await f.request('/api/rpc', { method: 'POST', cookie, body: { method, params: {} } })).status, 403);
 });
 
-test('project creation forwards a stable native idempotency key, editing preserves secondary roots and metadata', async t => {
-  const f = await httpsFixture(); t.after(() => f.close());
-  const old = join(f.dir, 'old'), next = join(f.dir, 'next'), secondary = join(f.dir, 'second');
-  await Promise.all([mkdir(old), mkdir(next), mkdir(secondary)]);
-  const created = saveProject(f.client, { name: 'New', rootPath: old, idempotencyKey: 'create-key' });
-  await waitCall(f.peer, 'fs/getMetadata'); f.peer.replyTo('fs/getMetadata', { isDirectory: true });
-  await waitCall(f.peer, 'project/create'); assert.deepEqual(f.peer.sent.at(-1).params, { name: 'New', roots: [{ path: old }], idempotencyKey: 'create-key' });
-  f.peer.replyTo('project/create', { project: project([old, secondary], 'New') }); assert.equal((await created).id, 'p');
-  const edited = saveProject(f.client, { projectId: 'p', name: 'Edited', rootPath: next, idempotencyKey: 'unused-update-key' });
-  await waitCall(f.peer, 'fs/getMetadata', 2); f.peer.replyTo('fs/getMetadata', { isDirectory: true });
-  await waitCall(f.peer, 'project/read'); f.peer.replyTo('project/read', { project: project([old, secondary], 'New') });
-  await waitCall(f.peer, 'project/update'); assert.deepEqual(f.peer.sent.at(-1).params, { projectId: 'p', name: 'Edited', roots: [{ path: next }, { path: secondary }] });
-  f.peer.replyTo('project/update', { project: project([next, secondary], 'Edited') });
-  assert.deepEqual((await edited).metadata, { unrelated: 'preserve' });
-  assert.equal(f.peer.sent.some(m => m.method === 'thread/settings/update'), false);
+test('browser cwd overrides are rejected and new chats use the configured native workspace', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
+  const overriding = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, cwd: f.dir } }); overriding.catch(() => {});
+  await delay(20); assert.equal(f.peer.sent.some(call => call.method === 'thread/start'), false);
+  assert.equal((await overriding).status, 400);
+  const created = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId } });
+  await waitCall(f.peer, 'thread/start'); assert.equal(f.peer.sent.at(-1).params.cwd, f.dir); f.peer.replyTo('thread/start', resumeFixture('new'));
+  await waitCall(f.peer, 'thread/name/set'); f.peer.replyTo('thread/name/set', {});
+  await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', resumeFixture('new'));
+  assert.equal((await created).status, 200); stream.req.destroy();
 });
 
-test('web archive/restore is atomic preference-only; native pagination remains opaque', async t => {
-  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
-  assert.deepEqual(await fixtureArchive(f, cookie, viewId, true), { archivedProjectIds: ['p'], nativeCalls: [] });
+test('a new project chat derives its working directory from the native primary root', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
+  const primary = join(f.dir, 'primary'), secondary = join(f.dir, 'secondary'); await mkdir(primary); await mkdir(secondary);
+  const created = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, projectId: 'p' } });
+  await waitCall(f.peer, 'project/read'); f.peer.replyTo('project/read', { project: project([primary, secondary]) });
+  await waitCall(f.peer, 'thread/start'); assert.equal(f.peer.sent.at(-1).params.cwd, primary); assert.equal(f.peer.sent.at(-1).params.projectId, 'p'); f.peer.replyTo('thread/start', resumeFixture('new'));
+  await waitCall(f.peer, 'thread/name/set'); f.peer.replyTo('thread/name/set', {});
+  await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', resumeFixture('new'));
+  assert.equal((await created).status, 200); stream.req.destroy();
+});
+
+test('project pagination reads native records without web archive overrides', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login();
   const listing = f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'project/list', params: { limit: 20, cursor: 'opaque-native-cursor' } } });
   await waitCall(f.peer, 'project/list'); assert.equal(f.peer.sent.at(-1).params.cursor, 'opaque-native-cursor');
-  f.peer.replyTo('project/list', { data: [project([f.dir])], nextCursor: 'next-opaque' });
-  const result = (await listing).json.result; assert.equal(result.nextCursor, 'next-opaque'); assert.equal(result.data[0].webArchived, true);
-  const editing = f.request('/api/project/save', { method: 'POST', cookie, body: { viewId, projectId: 'p', name: 'Archived edit', rootPath: f.dir } });
-  await waitCall(f.peer, 'fs/getMetadata'); f.peer.replyTo('fs/getMetadata', { isDirectory: true });
-  await waitCall(f.peer, 'project/read'); f.peer.replyTo('project/read', { project: project([f.dir]) });
-  await waitCall(f.peer, 'project/update'); f.peer.replyTo('project/update', { project: project([f.dir], 'Archived edit') });
-  assert.equal((await editing).json.project.webArchived, true);
-  assert.deepEqual(await fixtureArchive(f, cookie, viewId, false), { archivedProjectIds: [], nativeCalls: [] });
+  const data = [project([f.dir])]; f.peer.replyTo('project/list', { data, nextCursor: 'next-opaque' });
+  assert.deepEqual((await listing).json.result, { data, nextCursor: 'next-opaque' });
 });
 
 test('old conversation cwd survives project rebinding and deletion keeps workspace files', async t => {

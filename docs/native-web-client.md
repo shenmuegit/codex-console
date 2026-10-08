@@ -111,7 +111,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-80 Node checks passed; the production dependency audit reported zero vulnerabilities.
+81 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The fresh whole-branch review's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -324,37 +324,23 @@ visual layout await manual acceptance. Use the extra desktop to open the same
 real thread ID, send in both directions, then verify mobile navigation and copy.
 
 
-## Projects and host directories
+## Native projects and working directories
 
-Create a project by browsing an existing host directory or creating a child
-folder in the native directory picker. Paths are absolute host paths; traversal
-segments are rejected. A project has one editable primary root; additional
-native roots and metadata survive editing. Choose among registered roots when
-creating a member conversation. Rebinding changes the project registration,
-not files or existing threads' actual `cwd`.
+Projects and roots are read from Codex and shown without web archive overrides.
+The browser has no project creation, editing, folder creation or directory picker.
+Retired project/folder mutation routes return `WORKSPACE_MANAGED_BY_CODEX` before
+any native write. The raw browser RPC allowlist also excludes those mutations.
 
-**Archive (web only)** hides a project from the web list. Enable **Show web
-archived projects** to restore it. Native projects, files and conversations stay
-intact; the extra desktop can still show that project. Visibility lives only in
-the private atomic web-preferences file, and is preserved when editing a hidden
-project. Native project deletion is not exposed.
+Creating a conversation sends the selected native project ID. The gateway reads
+its primary registered root, or uses its configured default when no project is
+selected. Browser-supplied `cwd` overrides are rejected. Existing conversations
+keep the actual working directory reported by their native snapshots.
 
-Conversation deletion asks for one confirmation, covering the native thread and
-its native descendants. It obtains fresh atomic active state, interrupts the
-matching turn, waits up to 30 seconds and then calls native deletion. A refusal,
-timeout or newly observed different active turn prevents deletion. Workspace
-files and completed uploads are retained. Browser sends to a thread being
-removed are rejected instead of racing deletion.
-
-`web/test/projects.test.mjs` passed seven checks, including the real 30-second
-interruption deadline and a turn starting immediately after the history
-checkpoint. The full suite passed 38 checks. The opt-in `web-probe.mjs
---exercise-projects` passed against the source backend: native folder/project
-creation, create-key idempotency, member-thread creation, rebinding with original
-thread cwd intact, web archive/restore and thread deletion with exact workspace
-file bytes preserved. Its disposable project is left web-archived in the private
-test environment; no host directory or native project is deleted.
-
+Conversation deletion still confirms once, reads fresh native active state,
+interrupts its matching turn and waits up to 30 seconds. Refusal, timeout or a
+new different turn prevents deletion; workspace files and uploads are retained.
+The project checks cover read-only boundaries, authoritative roots, opaque
+pagination and the existing interruption/deletion regressions.
 
 ## Files, photos and downloads
 

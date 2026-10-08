@@ -1,5 +1,5 @@
 import https from 'node:https';
-import { readFileSync, mkdirSync, writeFileSync, existsSync, chmodSync, renameSync } from 'node:fs';
+import { readFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -73,21 +73,6 @@ function validateRead(method, p) {
         (p.sortDirection != null && !['asc', 'desc'].includes(p.sortDirection)) ||
         (p.itemsView != null && p.itemsView !== 'full')) throw error(400, 'INVALID_PARAMS', '会话参数不正确。');
   } else throw error(403, 'RPC_DENIED', '浏览器不能调用这个原生接口。');
-}
-
-export async function saveProject(codex, { projectId, name, rootPath, idempotencyKey }) {
-  if ((projectId != null && !id(projectId)) || !text(name, 160) || !name.trim() || !absolutePath(rootPath) ||
-      (!projectId && !id(idempotencyKey))) throw error(400, 'INVALID_PROJECT', '项目名称、目录或操作标识不正确。');
-  const metadata = (await codex.rpc('fs/getMetadata', { path: rootPath })).result;
-  if (!metadata.isDirectory) throw error(400, 'INVALID_DIRECTORY', '项目根目录必须是可访问的目录。');
-  let canonical;
-  try { canonical = await realpath(rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '无法访问项目根目录。'); }
-  if (projectId) {
-    const { project } = (await codex.rpc('project/read', { projectId })).result;
-    // Native owns metadata and additional roots; editing one primary root must not erase them.
-    return (await codex.rpc('project/update', { projectId, name: name.trim(), roots: [{ path: canonical }, ...project.roots.slice(1)] })).result.project;
-  }
-  return (await codex.rpc('project/create', { name: name.trim(), roots: [{ path: canonical }], idempotencyKey })).result.project;
 }
 
 export async function deleteThread(codex, { threadId, confirmed }) {
@@ -285,23 +270,12 @@ export function createWebServer({ config, codex }) {
     return { items: items.slice(0, 100), unavailable };
   }
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
-  const prefsPath = join(config.stateDir, 'preferences.json');
-  if (!existsSync(prefsPath)) writeFileSync(prefsPath, JSON.stringify({ archivedProjectIds: [], ui: {} }), { mode: 0o600 });
-  chmodSync(prefsPath, 0o600);
-  let preferences = JSON.parse(readFileSync(prefsPath, 'utf8'));
-  if (!Array.isArray(preferences.archivedProjectIds) || preferences.archivedProjectIds.some(value => !id(value))) throw error(500, 'INVALID_PREFERENCES', '网页偏好文件无效。');
-  async function setProjectArchived(projectId, archived) {
-    if (!id(projectId) || typeof archived !== 'boolean') throw error(400, 'INVALID_PROJECT', '归档参数不正确。');
-    const ids = new Set(preferences.archivedProjectIds); if (archived) ids.add(projectId); else ids.delete(projectId);
-    const next = { ...preferences, archivedProjectIds: [...ids] }, temp = prefsPath + '.' + randomBytes(8).toString('hex');
-    writeFileSync(temp, JSON.stringify(next), { mode: 0o600, flag: 'wx' }); renameSync(temp, prefsPath); preferences = next;
-  }
   let checkpoint = { generation: codex.status().generation, seq: 0 };
   const reply = (res, status, value, headers = {}) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(value));
   };
   const publicStatus = () => ({ online: codex.status().online, generation: codex.status().generation,
-    defaultCwd: config.workspace ?? config.generatedRoots?.[0] ?? '', uploadLimitBytes: config.uploadLimitBytes ?? 33_554_432 });
+    uploadLimitBytes: config.uploadLimitBytes ?? 33_554_432 });
   const cookieToken = req => (req.headers.cookie ?? '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
   const cookie = (token, age) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
   function requireView(viewId, session) {
@@ -515,7 +489,6 @@ export function createWebServer({ config, codex }) {
       const token = cookieToken(req), session = auth.verifySession(token);
       if (!session) throw error(401, 'LOGIN_REQUIRED', '请先登录。');
       if (req.method === 'GET' && url.pathname === '/api/status') { reply(res, 200, publicStatus()); return; }
-      if (req.method === 'GET' && url.pathname === '/api/preferences') { reply(res, 200, safe(preferences)); return; }
       if (req.method === 'GET' && url.pathname === '/api/thread/export') {
         const threadId = url.searchParams.get('threadId'); if (!id(threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
         const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
@@ -578,6 +551,7 @@ export function createWebServer({ config, codex }) {
       }
       if (req.method !== 'POST') throw error(404, 'NOT_FOUND', '没有这个页面。');
       const body = await readJson(req);
+      if (['/api/project/save', '/api/project/archive', '/api/directory/create'].includes(url.pathname)) throw error(403, 'WORKSPACE_MANAGED_BY_CODEX', '项目和工作目录由 Codex 管理。');
       if (url.pathname === '/api/logout') {
         auth.revoke(token);
         for (const [key, view] of views) if (view.session === session) releaseView(key, view);
@@ -603,27 +577,12 @@ export function createWebServer({ config, codex }) {
           const thread = chats.get(body.params.threadId)?.thread ?? (await codex.rpc('thread/read', { threadId: body.params.threadId, includeTurns: false })).result.thread;
           const references = await files.issueTranscriptRefs(thread, turns);
           reply(res, 200, { ...result, result: { ...safe(result.result), transcript: renderTranscript(thread, turns, references) } });
-        } else if (body.method === 'project/list') reply(res, 200, { ...result, result: { ...safe(result.result),
-          data: result.result.data.map(project => ({ ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) })) } });
-        else reply(res, 200, { ...result, result: safe(result.result) });
-      } else if (url.pathname === '/api/project/save') {
-        fields(body, ['viewId', 'projectId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
-        const project = await saveProject(codex, body);
-        reply(res, 200, { project: { ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) } });
+        } else reply(res, 200, { ...result, result: safe(result.result) });
       } else if (url.pathname === '/api/uploads') {
         fields(body, ['viewId', 'threadId', 'name', 'size', 'mime']); const view = requireView(body.viewId, session);
         if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '附件所属会话不正确。');
         if (view.threadId !== body.threadId || !chats.get(body.threadId)?.ready) await codex.rpc('thread/read', { threadId: body.threadId, includeTurns: false });
         reply(res, 201, await files.beginUpload(body));
-      } else if (url.pathname === '/api/project/archive') {
-        fields(body, ['viewId', 'projectId', 'archived']); requireView(body.viewId, session);
-        await setProjectArchived(body.projectId, body.archived); reply(res, 200, { archivedProjectIds: preferences.archivedProjectIds });
-        broadcast({ kind: 'preferences', cursor: checkpoint, native: { archivedProjectIds: preferences.archivedProjectIds } });
-      } else if (url.pathname === '/api/directory/create') {
-        fields(body, ['viewId', 'path']); requireView(body.viewId, session);
-        if (!absolutePath(body.path) || body.path === '/') throw error(400, 'INVALID_DIRECTORY', '请输入有效目录路径。');
-        if (!(await codex.rpc('fs/getMetadata', { path: dirname(body.path) })).result.isDirectory) throw error(400, 'INVALID_DIRECTORY', '父目录不存在。');
-        reply(res, 200, await codex.rpc('fs/createDirectory', { path: body.path, recursive: false }));
       } else if (url.pathname === '/api/thread/delete') {
         fields(body, ['viewId', 'threadId', 'confirmed']); requireView(body.viewId, session);
         if (!id(body.threadId) || body.confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认删除会话记录。');
@@ -645,17 +604,17 @@ export function createWebServer({ config, codex }) {
         const references = await files.issueTranscriptRefs(thread, turns);
         reply(res, 200, { kind: 'render', cursor, native: { threadId: body.threadId, items: renderTranscript(thread, turns, references).items } });
       } else if (url.pathname === '/api/thread/start') {
-        fields(body, ['viewId', 'projectId', 'cwd', 'name']); const view = requireView(body.viewId, session);
-        if (!text(body.cwd) || !body.cwd.startsWith('/') || (body.projectId != null && !id(body.projectId)) ||
-            (body.name != null && (!text(body.name, 160) || !body.name.trim()))) throw error(400, 'INVALID_THREAD', '会话目录或名称不正确。');
-        let cwd;
-        try { cwd = await realpath(body.cwd); if (!(await stat(cwd)).isDirectory()) throw new Error(); }
-        catch { throw error(400, 'INVALID_DIRECTORY', '请选择存在且可访问的主机目录。'); }
+        fields(body, ['viewId', 'projectId', 'name']); const view = requireView(body.viewId, session);
+        if ((body.projectId != null && !id(body.projectId)) ||
+            (body.name != null && (!text(body.name, 160) || !body.name.trim()))) throw error(400, 'INVALID_THREAD', '项目或会话名称不正确。');
+        let rootPath = config.workspace ?? config.generatedRoots?.[0];
         if (body.projectId) {
           const { project } = (await codex.rpc('project/read', { projectId: body.projectId })).result;
-          const roots = await Promise.all(project.roots.map(root => realpath(root.path).catch(() => null)));
-          if (!roots.includes(cwd)) throw error(400, 'PROJECT_ROOT_MISMATCH', '请选择该项目已登记的根目录。');
+          rootPath = project.roots?.[0]?.path;
         }
+        let cwd;
+        try { if (!text(rootPath) || !rootPath.startsWith('/')) throw new Error(); cwd = await realpath(rootPath); if (!(await stat(cwd)).isDirectory()) throw new Error(); }
+        catch { throw error(400, 'INVALID_DIRECTORY', 'Codex 项目或默认工作目录不可用。'); }
         const fingerprint = JSON.stringify([cwd, body.projectId, body.name]);
         if (view.creation?.fingerprint !== fingerprint && view.creation) throw error(409, 'CREATE_PENDING', '上一会话尚未确认，请先核对列表。');
         if (view.creation?.unknown) throw Object.assign(error(409, 'OUTCOME_UNKNOWN', '创建状态未知，请先核对会话列表。'), { outcome: 'unknown' });
