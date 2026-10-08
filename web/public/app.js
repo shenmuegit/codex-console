@@ -15,7 +15,7 @@ async function connected() {
   $('#login-panel').hidden = true; $('#workspace').hidden = false;
   const status = await api('/api/status');
   const { viewId } = await api('/api/view', {});
-  chat?.dispose(); chat = mountChat({ api, viewId, defaultCwd: status.defaultCwd ?? '' });
+  chat?.dispose(); chat = mountChat({ api, viewId, defaultCwd: status.defaultCwd ?? '', uploadLimitBytes: status.uploadLimitBytes });
   events?.close(); events = new EventSource('/api/events?viewId=' + encodeURIComponent(viewId));
   events.onmessage = event => {
     const envelope = JSON.parse(event.data);

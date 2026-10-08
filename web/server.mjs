@@ -9,12 +9,15 @@ import { createCodexClient } from './codex.mjs';
 import { realpath, stat } from 'node:fs/promises';
 import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, activeTurn } from './public/chat.js';
 import { renderTranscript } from './transcript.mjs';
+import { createFiles } from './files.mjs';
+import { pipeline } from 'node:stream/promises';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
+  ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']]]);
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -147,19 +150,21 @@ async function readJson(req) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw error(415, 'JSON_REQUIRED', '请发送 JSON。');
   return new Promise((resolve, reject) => {
     let size = 0, failed = false; const chunks = [];
+    const timer = setTimeout(() => { failed = true; chunks.length = 0; reject(error(408, 'BODY_TIMEOUT', '请求接收超时。')); }, 30_000);
     req.on('data', chunk => {
       if (failed) return;
       size += chunk.length;
-      if (size > BODY_LIMIT) { failed = true; chunks.length = 0; reject(error(413, 'BODY_TOO_LARGE', '请求内容过大。')); return; }
+      if (size > BODY_LIMIT) { failed = true; clearTimeout(timer); chunks.length = 0; reject(error(413, 'BODY_TOO_LARGE', '请求内容过大。')); return; }
       chunks.push(chunk);
     });
     req.on('end', () => {
+      clearTimeout(timer);
       if (failed) return;
       try { const value = JSON.parse(Buffer.concat(chunks).toString()); if (!object(value)) throw new Error(); resolve(value); }
       catch { reject(error(400, 'INVALID_JSON', 'JSON 格式不正确。')); }
     });
-    req.on('error', reject);
-    req.on('aborted', () => reject(error(400, 'ABORTED', '请求已取消。')));
+    req.on('error', e => { clearTimeout(timer); reject(e); });
+    req.on('aborted', () => { clearTimeout(timer); reject(error(400, 'ABORTED', '请求已取消。')); });
   });
 }
 
@@ -175,6 +180,7 @@ export function createWebServer({ config, codex }) {
   if (origin.protocol !== 'https:' || origin.origin !== config.origin) throw error(500, 'INVALID_ORIGIN', '配置须包含完整 HTTPS 来源地址。');
   const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
+  const files = createFiles(config);
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
   const prefsPath = join(config.stateDir, 'preferences.json');
   if (!existsSync(prefsPath)) writeFileSync(prefsPath, JSON.stringify({ archivedProjectIds: [], ui: {} }), { mode: 0o600 });
@@ -192,7 +198,7 @@ export function createWebServer({ config, codex }) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(value));
   };
   const publicStatus = () => ({ online: codex.status().online, generation: codex.status().generation,
-    defaultCwd: config.workspace ?? config.generatedRoots?.[0] ?? '' });
+    defaultCwd: config.workspace ?? config.generatedRoots?.[0] ?? '', uploadLimitBytes: config.uploadLimitBytes ?? 33_554_432 });
   const cookieToken = req => (req.headers.cookie ?? '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
   const cookie = (token, age) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
   function requireView(viewId, session) {
@@ -207,6 +213,11 @@ export function createWebServer({ config, codex }) {
     discardIdle(view.threadId);
   }
   function broadcast(event) {
+    if (Buffer.byteLength(JSON.stringify(event)) + 64 > STREAM_LIMIT) {
+      const threadId = event.threadId ?? event.native?.thread?.id ?? event.native?.threadId ?? event.native?.params?.threadId;
+      event = { cursor: event.cursor, kind: event.kind === 'snapshot' ? 'checkpoint' : event.kind === 'render' ? 'renderRequired' : 'resync',
+        native: { threadId, reason: 'large-event-use-https' } };
+    }
     for (const view of views.values()) for (const res of view.streams) writeEvent(res, event);
   }
   function discardIdle(threadId) {
@@ -234,12 +245,13 @@ export function createWebServer({ config, codex }) {
     let pending = renderTimers.get(threadId);
     if (!pending) {
       pending = { ids: new Set() };
-      pending.timer = setTimeout(() => {
+      pending.timer = setTimeout(async () => {
         renderTimers.delete(threadId);
         const state = chats.get(threadId);
         if (!state?.ready) return;
-        const turns = state.turns.map(t => ({ ...t, items: t.items.filter(i => pending.ids.has(i.id)) }));
-        broadcast({ kind: 'render', cursor: state.cursor, native: { threadId, items: renderTranscript(state.thread, turns).items } });
+        const turns = structuredClone(state.turns.map(t => ({ ...t, items: t.items.filter(i => pending.ids.has(i.id)) }))), cursor = state.cursor;
+        const references = await files.issueTranscriptRefs(state.thread, turns).catch(() => new Map());
+        broadcast({ kind: 'render', cursor, native: { threadId, items: renderTranscript(state.thread, turns, references).items } });
         discardIdle(threadId);
       }, 100); pending.timer.unref(); renderTimers.set(threadId, pending);
     }
@@ -262,6 +274,7 @@ export function createWebServer({ config, codex }) {
       if (!state) chats.set(threadId, state = createChatState(threadId));
       installSnapshot(state, { snapshot: event.native, cursor: event.cursor });
       snapshots.set(event.native, { ...safe(event.native), transcript: renderTranscript(state.thread, state.turns) });
+      renderedLater(threadId, state.turns.flatMap(turn => turn.items.map(item => item.id)));
       reconcileWrites(state);
     } else {
       const state = chats.get(threadId);
@@ -290,8 +303,8 @@ export function createWebServer({ config, codex }) {
     if (!id(body.threadId) || !id(body.clientUserMessageId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
     if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在删除。');
     fields(body.draft, ['text', 'selections', 'uploadIds']);
-    if (!text(body.draft.text, 500_000) || !body.draft.text.trim() ||
-        (body.draft.selections?.length ?? 0) || (body.draft.uploadIds?.length ?? 0) ||
+    if (!text(body.draft.text, 500_000) || (!body.draft.text.trim() && !body.draft.uploadIds?.length) ||
+        (body.draft.selections?.length ?? 0) ||
         !['start', 'steer', 'queue'].includes(body.mode) ||
         (body.model != null && !text(body.model, 128)) || (body.effort != null && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(body.effort))) throw error(400, 'INVALID_DRAFT', '消息或发送选项不正确。');
     const key = `${body.threadId}:${body.clientUserMessageId}`;
@@ -310,7 +323,10 @@ export function createWebServer({ config, codex }) {
     if (body.mode === 'start' && active) throw error(409, 'ACTIVE_TURN', '会话正在运行，请选择补充或排队。');
     if (body.mode !== 'start' && !active) throw error(409, 'TURN_CHANGED', '当前轮次已结束，请选择直接发送。');
     if (body.mode === 'steer' && (body.model != null || body.effort != null)) throw error(400, 'STEER_SETTINGS', '补充输入沿用当前轮次设置。');
-    const input = [{ type: 'text', text: body.draft.text, text_elements: [] }];
+    const attached = await files.attachmentInputs(body.draft.uploadIds ?? [], body.threadId);
+    // Recheck after file validation: another HTTP request may already own this UUID.
+    if (writes.has(key)) return sendOnce(body, view);
+    const input = [...(body.draft.text.trim() ? [{ type: 'text', text: body.draft.text, text_elements: [] }] : []), ...attached];
     const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record);
     record.promise = (async () => {
       try {
@@ -386,6 +402,24 @@ export function createWebServer({ config, codex }) {
       if (!session) throw error(401, 'LOGIN_REQUIRED', '请先登录。');
       if (req.method === 'GET' && url.pathname === '/api/status') { reply(res, 200, publicStatus()); return; }
       if (req.method === 'GET' && url.pathname === '/api/preferences') { reply(res, 200, safe(preferences)); return; }
+      const download = url.pathname.match(/^\/api\/(files|images)\/([A-Za-z0-9_-]{20,64})$/);
+      if (req.method === 'GET' && download) {
+        const file = await files.openReference(download[2]);
+        if (download[1] === 'images' && !file.imageMime) { await file.handle.close(); throw error(404, 'NOT_IMAGE', '此文件不能作为照片预览。'); }
+        const name = encodeURIComponent(file.name).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+        res.writeHead(200, { 'Content-Type': download[1] === 'images' ? file.imageMime : 'application/octet-stream',
+          'Content-Length': file.size, 'Content-Disposition': `${download[1] === 'images' ? 'inline' : 'attachment'}; filename="download"; filename*=UTF-8''${name}` });
+        if (!file.size) { await file.handle.close(); res.end(); }
+        else await pipeline(file.handle.createReadStream({ start: 0, end: file.size - 1, autoClose: true }), res);
+        return;
+      }
+      const uploadPath = url.pathname.match(/^\/api\/uploads\/([A-Za-z0-9_-]{20,64})$/);
+      if (req.method === 'GET' && uploadPath) { reply(res, 200, await files.describeUpload(uploadPath[1], url.searchParams.get('threadId'))); return; }
+      if (req.method === 'PUT' && uploadPath) {
+        requireView(url.searchParams.get('viewId'), session);
+        req.setTimeout(30_000, () => req.destroy());
+        reply(res, 201, await files.receiveUpload(uploadPath[1], req)); return;
+      }
       if (req.method === 'GET' && url.pathname === '/api/events') {
         const view = requireView(url.searchParams.get('viewId'), session);
         if (view.streams.size >= 2) throw error(429, 'TOO_MANY_STREAMS', '请关闭重复页面。');
@@ -422,7 +456,9 @@ export function createWebServer({ config, codex }) {
         if (body.method === 'thread/turns/list') {
           const turns = structuredClone(result.result.data);
           for (const turn of turns) for (const item of turn.items) item._cursor = result.cursor;
-          reply(res, 200, { ...result, result: { ...safe(result.result), transcript: renderTranscript({ id: body.params.threadId }, turns) } });
+          const thread = chats.get(body.params.threadId)?.thread ?? (await codex.rpc('thread/read', { threadId: body.params.threadId, includeTurns: false })).result.thread;
+          const references = await files.issueTranscriptRefs(thread, turns);
+          reply(res, 200, { ...result, result: { ...safe(result.result), transcript: renderTranscript(thread, turns, references) } });
         } else if (body.method === 'project/list') reply(res, 200, { ...result, result: { ...safe(result.result),
           data: result.result.data.map(project => ({ ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) })) } });
         else reply(res, 200, { ...result, result: safe(result.result) });
@@ -430,6 +466,11 @@ export function createWebServer({ config, codex }) {
         fields(body, ['viewId', 'projectId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
         const project = await saveProject(codex, body);
         reply(res, 200, { project: { ...safe(project), webArchived: preferences.archivedProjectIds.includes(project.id) } });
+      } else if (url.pathname === '/api/uploads') {
+        fields(body, ['viewId', 'threadId', 'name', 'size', 'mime']); const view = requireView(body.viewId, session);
+        if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '附件所属会话不正确。');
+        if (view.threadId !== body.threadId || !chats.get(body.threadId)?.ready) await codex.rpc('thread/read', { threadId: body.threadId, includeTurns: false });
+        reply(res, 201, await files.beginUpload(body));
       } else if (url.pathname === '/api/project/archive') {
         fields(body, ['viewId', 'projectId', 'archived']); requireView(body.viewId, session);
         await setProjectArchived(body.projectId, body.archived); reply(res, 200, { archivedProjectIds: preferences.archivedProjectIds });
@@ -453,6 +494,12 @@ export function createWebServer({ config, codex }) {
         fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
         reply(res, 200, await openThread(body.viewId, view, body.threadId));
+      } else if (url.pathname === '/api/thread/render') {
+        fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        if (view.threadId !== body.threadId || !state?.ready) throw error(409, 'RESYNC_REQUIRED', '请先打开会话。');
+        const turns = structuredClone(state.turns), thread = structuredClone(state.thread), cursor = state.cursor;
+        const references = await files.issueTranscriptRefs(thread, turns);
+        reply(res, 200, { kind: 'render', cursor, native: { threadId: body.threadId, items: renderTranscript(thread, turns, references).items } });
       } else if (url.pathname === '/api/thread/start') {
         fields(body, ['viewId', 'projectId', 'cwd', 'name']); const view = requireView(body.viewId, session);
         if (!text(body.cwd) || !body.cwd.startsWith('/') || (body.projectId != null && !id(body.projectId)) ||
@@ -496,10 +543,10 @@ export function createWebServer({ config, codex }) {
     } catch (e) {
       if (res.headersSent) { res.destroy(); return; }
       const status = e.status ?? ({ ORIGIN_DENIED: 403, LOGIN_DENIED: 401, LOGIN_THROTTLED: 429, STALE_NATIVE_REQUEST: 409, NATIVE_DISCONNECTED: 503, NATIVE_TIMEOUT: 504 }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
-      reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}) } }, status === 413 ? { Connection: 'close' } : {});
+      reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
     }
   });
-  server.requestTimeout = 30_000; server.headersTimeout = 10_000;
+  server.requestTimeout = 600_000; server.headersTimeout = 10_000;
   server.on('close', () => { off(); for (const [key, view] of views) releaseView(key, view); for (const value of renderTimers.values()) clearTimeout(value.timer); });
   return server;
 }

@@ -5,8 +5,8 @@
 Implementation is in progress on `codex/native-web-client`, following the
 [approved plan](superpowers/plans/2026-10-08-native-web-client.md). The first
 components include shared native transport, HTTPS owner login and live browser
-conversations and native project management. Files/model controls follow in
-subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
+conversations and native project management. Native files/photos and authenticated downloads are included; model/usage controls
+follow in subsequent commits. It uses Node.js 24's native WebSocket, with no transport dependency.
 
 ## Native connection
 
@@ -82,7 +82,7 @@ Name a newly created empty native thread before resuming it. Native
 `thread/name/set` materializes its empty paginated history; otherwise immediate
 resume can fail with “no rollout found”. This is the upstream test's own flow.
 
-Attachments, model/usage controls and deployment are subsequent
+Model/usage controls and deployment are subsequent
 steps of this same plan; no Xpra connection is used by this client.
 
 Current verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
@@ -198,3 +198,40 @@ creation, create-key idempotency, member-thread creation, rebinding with origina
 thread cwd intact, web archive/restore and thread deletion with exact workspace
 file bytes preserved. Its disposable project is left web-archived in the private
 test environment; no host directory or native project is deleted.
+
+
+## Files, photos and downloads
+
+Use **Files** or **Photos** to select multiple attachments. Uploads run serially
+with native browser progress and removable previews; sending waits for completion.
+The default exact per-file cap is 33,554,432 bytes (32 MiB), configurable up to the
+pinned native image-input ceiling of 1 GiB. Both metadata and actual streamed
+bytes are checked. A cancelled, short, over-limit or failed upload removes its
+partial files; existing completed attachments and the draft remain.
+
+Completed metadata/files are private (0700 directories/0600 files) under the
+configured state directory. Removing an attachment from the draft or deleting a
+conversation does not delete its historical bytes. Native photos use local-image
+inputs; documents use native text paths and UTF-8 text elements, never invented
+binary input types. PNG/JPEG/WebP/GIF previews use raster signatures plus browser
+and native image decoding. Active formats such as SVG remain ordinary downloads.
+
+Download links are issued only for transcript targets and completed uploads,
+using the thread's actual directory, known upload storage and configured generated
+roots. Canonical paths, no-follow opens and opened descriptor/inode checks stop
+symlink replacement. Links contain opaque IDs; arbitrary path/URL downloads are
+not exposed. UTF-8 filenames use Content-Disposition and downloads stream the
+opened file's bytes. Linux `/proc/self/fd` is required for this validation.
+
+SSE keeps its 1 MiB queue bound. Large snapshots and presentations use authenticated
+HTTPS with small SSE checkpoint signals; late file/HTML enrichment cannot replace
+newer native text. JSON requests have a 30-second deadline; uploads have a
+10-minute request deadline and a 30-second idle limit.
+
+`web/test/files.test.mjs` verifies exact caps, chunked/dishonest lengths,
+interruption/ENOSPC cleanup, Unicode names, invalid photos, forged IDs, symlink
+races, project rebinding, authentication and large histories. Run the live probe
+with `--exercise-attachments` to verify the native text/photo inputs and exact
+model-generated download bytes. This passed against the source backend, including
+successful download of an uploaded file after its disposable thread was deleted.
+Browser picker/preview interaction still follows the manual UI acceptance note.

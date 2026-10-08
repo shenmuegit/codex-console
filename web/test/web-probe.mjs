@@ -8,9 +8,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { createCodexClient } from '../codex.mjs';
 import { createChatState, applyNativeEvent, installSnapshot } from '../public/chat.js';
+import { tinyPng } from './helpers.mjs';
 
 const { values } = parseArgs({ options: { config: { type: 'string' }, 'password-file': { type: 'string' },
-  'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false } } });
+  'exercise-chat': { type: 'boolean', default: false }, 'exercise-projects': { type: 'boolean', default: false },
+  'exercise-attachments': { type: 'boolean', default: false } } });
 assert.ok(values.config && values['password-file'], 'Supply --config and --password-file.');
 assert.equal((await stat(values['password-file'])).mode & 0o077, 0, 'Keep the owner password file private.');
 const config = JSON.parse(await readFile(values.config, 'utf8')), ca = await readFile(config.tlsCert);
@@ -22,13 +24,22 @@ async function request(path, body, origin = config.origin) {
     const req = https.request(config.origin + path, { ca, method: body === undefined ? 'GET' : 'POST',
       headers: { Origin: origin, ...(cookie ? { Cookie: cookie } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) } }, res => {
       const chunks = []; res.on('data', c => chunks.push(c));
-      res.on('end', () => { try { const text = Buffer.concat(chunks).toString(); resolve({ status: res.statusCode, headers: res.headers,
+      res.on('end', () => { try { const bytes = Buffer.concat(chunks), text = bytes.toString(); resolve({ status: res.statusCode, headers: res.headers, bytes,
         data: res.headers['content-type']?.startsWith('application/json') ? JSON.parse(text) : text }); } catch (e) { reject(e); } });
     });
     req.on('error', reject); req.end(body === undefined ? undefined : JSON.stringify(body));
   });
 }
-async function api(path, body) { const r = await request(path, body); assert.equal(r.status, 200, `${path}: ${r.data.error?.message}`); return r.data; }
+async function api(path, body, status = 200) { const r = await request(path, body); assert.equal(r.status, status, `${path}: ${r.data.error?.message}`); return r.data; }
+async function upload(name, content, mime) {
+  const begin = await api('/api/uploads', { viewId, threadId, name, size: content.length, mime }, 201);
+  return new Promise((resolve, reject) => {
+    const req = https.request(config.origin + `/api/uploads/${begin.id}?viewId=${viewId}`, { ca, method: 'PUT',
+      headers: { Cookie: cookie, Origin: config.origin, 'Content-Type': 'application/octet-stream', 'Content-Length': content.length } }, res => {
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => { try { assert.equal(res.statusCode, 201); resolve(JSON.parse(Buffer.concat(chunks))); } catch (e) { reject(e); } });
+    }); req.on('error', reject); req.end(content);
+  });
+}
 async function waitFor(predicate, description, timeout = 120_000) {
   const deadline = Date.now() + timeout;
   while (!predicate() && Date.now() < deadline) await delay(50);
@@ -63,7 +74,7 @@ try {
     catch (e) { if (e.code !== 'ECONNREFUSED') throw e; await delay(100); }
   }
   assert.ok(reachable, 'HTTPS service became ready.');
-  for (const path of ['/', '/app.js', '/chat.js', '/styles.css']) {
+  for (const path of ['/', '/app.js', '/chat.js', '/composer.js', '/styles.css']) {
     const resource = await request(path); assert.equal(resource.status, 200, `UI resource ${path}`);
     assert.match(resource.headers['content-security-policy'], /frame-ancestors 'none'/);
   }
@@ -130,6 +141,29 @@ try {
     report.webSend = true; report.secondNativeClient = true; report.closeReopenDuringWork = true;
     report.interrupt = true; report.stableMessageIdOnce = true; report.realThreadId = threadId;
     await actor.rpc('thread/delete', { threadId }); threadId = null; report.disposableThreadDeleted = true;
+  }
+  if (values['exercise-attachments']) {
+    const created = await api('/api/thread/start', { viewId, cwd: config.workspace ?? config.generatedRoots[0], name: 'Disposable native attachment probe' });
+    threadId = created.snapshot.thread.id; state = createChatState(threadId); installSnapshot(state, created);
+    const content = Buffer.from(`NATIVE_ATTACHMENT:${randomUUID()}\n真实文件字节\n`), photo = tinyPng();
+    const document = await upload('附件 测试\'%.txt', content, 'text/plain'), image = await upload('照片 测试.png', photo, 'image/png');
+    assert.deepEqual((await request(document.href)).bytes, content);
+    const preview = await request(image.imageHref); assert.equal(preview.headers['content-type'], 'image/png'); assert.deepEqual(preview.bytes, photo);
+    const target = join(config.workspace ?? config.generatedRoots[0], `生成 文件-${randomUUID()}.txt`);
+    const sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(),
+      draft: { text: `Read the attached UTF-8 text file. Use a filesystem or command tool to copy its exact bytes to ${JSON.stringify(target)}. The photo is also an input validation check. Do not modify other files. Reply with a Markdown download link to that exact output file.`, uploadIds: [document.id, image.id] } });
+    await waitFor(() => completion(sent.result.turn.id), 'Native attachment turn completed.'); assert.equal(completion(sent.result.turn.id).status, 'completed');
+    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    const user = history.data.flatMap(t => t.items).find(i => i.type === 'userMessage');
+    assert.ok(user.content.some(p => p.type === 'localImage' && p.path.endsWith('content.png')));
+    assert.ok(user.content.some(p => p.type === 'text' && p.text.includes('content.txt')));
+    const presentation = await api('/api/thread/render', { viewId, threadId });
+    const file = presentation.native.items.flatMap(i => i.files ?? []).find(f => f.name === target.split('/').at(-1));
+    assert.ok(file, 'A generated target link was issued from the native transcript.');
+    assert.deepEqual((await request(file.href)).bytes, content);
+    await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
+    assert.deepEqual((await request(document.href)).bytes, content);
+    report.nativeTextAndPhotoInputs = true; report.generatedDownloadExactBytes = true; report.uploadSurvivesThreadDelete = true;
   }
   await api('/api/logout', {}); report.logout = true;
   console.log(JSON.stringify(report));

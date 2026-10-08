@@ -154,18 +154,18 @@ HTTP 边界：除注明外均需认证，写入还须匹配配置的 Origin。
 **文件：** 新建 `web/files.mjs`、`web/public/composer.js`、`web/test/files.test.mjs`，更新服务端/聊天/页面模块。
 **接口：** `createFiles({stateDir,uploadLimitBytes,generatedRoots})` 提供 `beginUpload({threadId,name,size,mime})`、`receiveUpload(uploadId,readable)`、`attachmentInputs(ids,threadId)`、`issueTranscriptRefs(thread,turns)`、`openReference(refId)`。完成描述私有保存原名/路径，浏览器提交 ID，不提交主机上传路径。
 
-- [ ] **1. 写失败测试：** 精确 33,554,432 字节、超一字节、伪 Content-Length/分块超限、中断/ENOSPC 清理、中文名称、无效图片、伪造 ID、验证后符号链接替换。示例：
+- [x] **1. 写失败测试：** 精确 33,554,432 字节、超一字节、伪 Content-Length/分块超限、中断/ENOSPC 清理、中文名称、无效图片、伪造 ID、验证后符号链接替换。示例：
   ```js
   assert.equal(await fixtureUploadBytes(33554432), 201);
   assert.equal(await fixtureUploadBytes(33554433), 413);
   assert.equal(await fixtureDownload('../auth.json'), 404);
   ```
   HTTP 样本流式供块，不填满真实磁盘；添加 `rebound_project_keeps_old_thread_reference` 及名称/字节断言。
-- [ ] **2. 确认 RED：** `node --test web/test/files.test.mjs`。
-- [ ] **3. 最小实现：** 元数据、原始字节、排他半文件、流式上限与清理，原子标记完成；草稿移除完成附件不删历史文件。图片为 `{type:'localImage',path}`，普通文件按原生输入框路径规则作为文本引用，不造二进制 UserInput。仅预览验证过的光栅图片，活动格式作为 octet-stream 下载。
-- [ ] **4. 下载实现：** 只从原生聊天目标/已知上传签发引用，根目录为线程实际 `cwd`、上传目录和配置生成目录，不能用项目后续绑定。realpath、no-follow open、打开后的 fd/stat 校验拒绝逃逸/竞态。GET 仅收不透明引用，不能任意路径/URL；Content-Disposition 保留 UTF-8 文件名，字节不变。
-- [ ] **5. 确认 GREEN 与附件：** 全部测试；浏览器上传中文文本/照片并核对原生输入，在私有工作目录生成小文件并逐字节下载；中断保留草稿/旧完成文件，更新双语说明。
-- [ ] **6. 提交推送：** `feat: upload attachments and download referenced chat files`，确认远端包含。
+- [x] **2. 确认 RED：** `node --test web/test/files.test.mjs`。
+- [x] **3. 最小实现：** 元数据、原始字节、排他半文件、流式上限与清理，原子标记完成；草稿移除完成附件不删历史文件。图片为 `{type:'localImage',path}`，普通文件按原生输入框路径规则作为文本引用，不造二进制 UserInput。仅预览验证过的光栅图片，活动格式作为 octet-stream 下载。
+- [x] **4. 下载实现：** 只从原生聊天目标/已知上传签发引用，根目录为线程实际 `cwd`、上传目录和配置生成目录，不能用项目后续绑定。realpath、no-follow open、打开后的 fd/stat 校验拒绝逃逸/竞态。GET 仅收不透明引用，不能任意路径/URL；Content-Disposition 保留 UTF-8 文件名，字节不变。
+- [x] **5. 确认 GREEN 与附件：** 全部测试；浏览器上传中文文本/照片并核对原生输入，在私有工作目录生成小文件并逐字节下载；中断保留草稿/旧完成文件，更新双语说明。
+- [x] **6. 提交推送：** `feat: upload attachments and download referenced chat files`，确认远端包含。
 
 ## 任务 6：原生模型、上下文和周额度
 

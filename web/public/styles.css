@@ -84,6 +84,16 @@ dialog::backdrop { background: rgb(0 0 0 / .6); }
 .dialog-form input { width: 100%; min-width: 0; }
 #directory-list { max-height: 30dvh; overflow-y: auto; }
 #secondary-roots { white-space: pre-wrap; }
+#attachments { display: flex; flex-wrap: wrap; gap: 8px; max-height: 190px; overflow-y: auto; }
+.attachment { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-width: 100%; margin-bottom: 8px; }
+.attachment > span { flex: 1; min-width: 100px; overflow-wrap: anywhere; font-size: 13px; }
+.attachment small { color: var(--muted); }
+.attachment img { object-fit: cover; border-radius: 4px; }
+.attachment button { padding: 6px 10px; font-size: 13px; }
+.attachment progress { width: 100%; }
+.message-files { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 8px; }
+.message-files a { display: block; overflow-wrap: anywhere; }
+.chat-image { max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: 8px; display: block; }
 @media (max-width: 1100px) and (min-width: 761px) { .work-layout { grid-template-columns: 180px 230px minmax(0, 1fr); } .chat-heading, .chat-feed { padding-inline: 16px; } .composer { padding-inline: 16px; } }
 @media (max-width: 760px) {
   .topbar { padding: max(8px, env(safe-area-inset-top)) 16px 8px; flex-wrap: nowrap; }

@@ -154,18 +154,18 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 **Files:** Create `web/files.mjs`, `web/public/composer.js`, `web/test/files.test.mjs`; update server/transcript/public modules.
 **Interfaces:** `createFiles({stateDir,uploadLimitBytes,generatedRoots})` produces `beginUpload({threadId,name,size,mime})`, `receiveUpload(uploadId,readable)`, `attachmentInputs(ids,threadId)`, `issueTranscriptRefs(thread,turns)`, `openReference(refId)`. Completed descriptors retain original names and stored paths privately; browsers submit IDs, not host upload paths.
 
-- [ ] **1. Write failing tests** for exact 33,554,432-byte cap, one-byte excess, false Content-Length/chunked excess, interruption/ENOSPC cleanup, Unicode names, invalid images, forged IDs and symlink replacement after validation. Assertions include:
+- [x] **1. Write failing tests** for exact 33,554,432-byte cap, one-byte excess, false Content-Length/chunked excess, interruption/ENOSPC cleanup, Unicode names, invalid images, forged IDs and symlink replacement after validation. Assertions include:
   ```js
   assert.equal(await fixtureUploadBytes(33554432), 201);
   assert.equal(await fixtureUploadBytes(33554433), 413);
   assert.equal(await fixtureDownload('../auth.json'), 404);
   ```
   The file's HTTP fixtures allocate streaming chunks, not a disk-filling file. Add `rebound_project_keeps_old_thread_reference` and exact downloaded-byte/name assertions.
-- [ ] **2. Verify RED:** `node --test web/test/files.test.mjs`.
-- [ ] **3. Implement** metadata then raw-byte upload, exclusive partial files, streamed size checks and cleanup. Mark complete atomically; removing a completed attachment from the draft does not delete historical bytes. Native photo input is `{type:'localImage',path}`; ordinary files are native text paths, quoted using the native composer's path rule. No binary UserInput variant. Preview only validated raster MIME types; active formats download as octet-stream.
-- [ ] **4. Implement reference downloads** derived only from native transcript targets/known uploads. Allowed roots are actual thread `cwd`, upload storage and configured generated roots; never use the project's later binding. Realpath, no-follow open and opened-fd/stat checks reject traversal and symlink races. Only issued opaque references reach GET routes; no arbitrary path/URL endpoint. Preserve UTF-8 filenames with Content-Disposition and exact bytes.
-- [ ] **5. Verify GREEN and native attachment round trip:** all tests; upload a Unicode-named text file and photo from the browser, verify native thread inputs, generate a small file inside the private test workspace and download it byte-for-byte. Interrupted upload retains the draft/previous completed files. Update both docs.
-- [ ] **6. Commit/push:** `feat: upload attachments and download referenced chat files`; verify remote containment.
+- [x] **2. Verify RED:** `node --test web/test/files.test.mjs`.
+- [x] **3. Implement** metadata then raw-byte upload, exclusive partial files, streamed size checks and cleanup. Mark complete atomically; removing a completed attachment from the draft does not delete historical bytes. Native photo input is `{type:'localImage',path}`; ordinary files are native text paths, quoted using the native composer's path rule. No binary UserInput variant. Preview only validated raster MIME types; active formats download as octet-stream.
+- [x] **4. Implement reference downloads** derived only from native transcript targets/known uploads. Allowed roots are actual thread `cwd`, upload storage and configured generated roots; never use the project's later binding. Realpath, no-follow open and opened-fd/stat checks reject traversal and symlink races. Only issued opaque references reach GET routes; no arbitrary path/URL endpoint. Preserve UTF-8 filenames with Content-Disposition and exact bytes.
+- [x] **5. Verify GREEN and native attachment round trip:** all tests; upload a Unicode-named text file and photo from the browser, verify native thread inputs, generate a small file inside the private test workspace and download it byte-for-byte. Interrupted upload retains the draft/previous completed files. Update both docs.
+- [x] **6. Commit/push:** `feat: upload attachments and download referenced chat files`; verify remote containment.
 
 ## Task 6: Native model, context and weekly-usage controls
 

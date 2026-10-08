@@ -53,8 +53,11 @@
         <section id="native-requests" aria-label="待回答的原生请求"></section>
         <div id="chat-error" class="error chat-meta" role="alert"></div>
         <form id="composer" class="composer">
+          <div id="attachments" aria-label="待发送附件"></div>
+          <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
           <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="3" placeholder="给 Codex 发送消息…" disabled></textarea>
           <div class="composer-footer"><span id="turn-status" class="muted" role="status"></span>
+            <button id="choose-files" type="button" disabled>文件</button><button id="choose-photos" type="button" disabled>照片</button>
             <label id="send-mode-label" hidden>运行中输入<select id="send-mode"><option value="steer">补充当前轮次</option><option value="queue">排队到下一轮</option></select></label>
             <button id="retry-uncertain" type="button" hidden>核对后重新发送</button>
             <button id="stop-turn" type="button" hidden>停止</button><button id="send" type="submit" class="primary" disabled>发送</button>

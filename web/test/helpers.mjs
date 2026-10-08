@@ -7,6 +7,8 @@ import { execFileSync } from 'node:child_process';
 import https from 'node:https';
 import { createWebServer } from '../server.mjs';
 import { hashPassword } from '../auth.mjs';
+import { once } from 'node:events';
+import { crc32, deflateSync } from 'node:zlib';
 
 export function resumeFixture(id = 'thread-1', turns = []) {
   return {
@@ -132,6 +134,18 @@ export async function httpsFixture() {
     if (r.status !== 200) throw new Error(`Fixture login failed: ${r.status}`);
     return r.headers['set-cookie'][0].split(';')[0];
   }
+  function putBytes(path, source, { cookie, headers = {}, origin = config.origin } = {}) {
+    return new Promise((resolve, reject) => {
+      const req = https.request(config.origin + path, { method: 'PUT', rejectUnauthorized: false,
+        headers: { Origin: origin, ...(cookie ? { Cookie: cookie } : {}), 'Content-Type': 'application/octet-stream', ...headers } }, res => {
+        const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => {
+          try { resolve({ status: res.statusCode, headers: res.headers, json: JSON.parse(Buffer.concat(chunks).toString()) }); } catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      (async () => { for await (const chunk of source) if (!req.write(chunk)) await once(req, 'drain'); req.end(); })().catch(e => req.destroy(e));
+    });
+  }
   async function view(cookie) {
     return (await request('/api/view', { method: 'POST', cookie, body: {} })).json.viewId;
   }
@@ -147,11 +161,18 @@ export async function httpsFixture() {
       req.on('error', reject);
     });
   }
-  return { ...native, config, server, request, login, view, events, eventResponses, dir,
+  return { ...native, config, server, request, putBytes, login, view, events, eventResponses, dir,
     async close() {
       server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
       native.client.close(); await rm(dir, { recursive: true, force: true });
     },
     async preferences() { return JSON.parse(await readFile(join(config.stateDir, 'preferences.json'), 'utf8')); },
   };
+}
+
+export function tinyPng() {
+  const chunk = (type, data) => { const name = Buffer.from(type), size = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    size.writeUInt32BE(data.length); checksum.writeUInt32BE(crc32(Buffer.concat([name, data]))); return Buffer.concat([size, name, data, checksum]); };
+  const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 2;
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 255, 0, 0]))), chunk('IEND', Buffer.alloc(0))]);
 }
