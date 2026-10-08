@@ -1,7 +1,7 @@
 import { access, stat, realpath, mkdir, readFile, writeFile, chmod, copyFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, isAbsolute } from 'node:path';
+import { basename, dirname, join, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes, createPrivateKey, createPublicKey, X509Certificate } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -34,6 +34,21 @@ export function assertPrivate(info) {
   if (info.uid !== process.getuid()) throw fail('OWNER_REQUIRED', 'Private configuration must belong to this OS user.');
   if (info.mode & 0o077) throw fail('PRIVATE_FILE_REQUIRED', 'Private configuration files must use owner-only permissions.');
 }
+async function canonicalDestination(path) {
+  const suffix = [];
+  for (;;) {
+    try { return join(await realpath(path), ...suffix); }
+    catch (e) {
+      if (e.code !== 'ENOENT' || dirname(path) === path) throw e;
+      suffix.unshift(basename(path)); path = dirname(path);
+    }
+  }
+}
+async function requireExternal(repo, paths) {
+  for (const path of paths) for (const destination of [resolve(path), await canonicalDestination(path)]) {
+    if (destination === repo || destination.startsWith(repo + '/')) throw fail('PRIVATE_PATH_IN_REPO', 'Configuration and app data must stay outside the checkout.');
+  }
+}
 export async function validateConfig(config, configPath) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw fail('NODE_REQUIRED', 'Node.js 24 or newer is required.');
   const url = new URL(config.origin);
@@ -44,7 +59,7 @@ export async function validateConfig(config, configPath) {
   const original = await realpath(process.env.CODEX_HOME || join(homedir(), '.codex')).catch(() => resolve(process.env.CODEX_HOME || join(homedir(), '.codex')));
   if (await realpath(config.backendHome) === original || resolve(config.backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Keep the original desktop home separate; migration is a separate operation.');
   const repo = await realpath(config.repoDir);
-  for (const path of [configPath, config.stateDir, config.backendHome, config.environmentFile, config.tlsKey, config.tlsCert]) if (resolve(path) === repo || resolve(path).startsWith(repo + '/')) throw fail('PRIVATE_PATH_IN_REPO', 'Configuration and app data must stay outside the checkout.');
+  await requireExternal(repo, [configPath, config.stateDir, config.backendHome, config.environmentFile, config.tlsKey, config.tlsCert]);
   if (config.backendExecutable.includes('/.cache/')) throw fail('CACHE_BINARY_REFUSED', 'Install the verified source binary in a persistent path.');
   for (const path of [config.nodePath, config.backendExecutable, join(dirname(config.backendExecutable), 'codex-code-mode-host')]) { if (!(await stat(path)).isFile()) throw fail('EXECUTABLE_REQUIRED', 'A required native executable is missing.'); await access(path, constants.X_OK); }
   for (const path of [config.backendHome, config.workspace, config.repoDir]) if (!(await stat(path)).isDirectory()) throw fail('DIRECTORY_REQUIRED', 'A configured directory is missing.');
@@ -76,7 +91,7 @@ export async function initialize(options) {
   const canonicalHome = await realpath(backendHome).catch(() => resolve(backendHome)), canonicalOriginal = await realpath(original).catch(() => original);
   if (canonicalHome === canonicalOriginal || resolve(backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Do not initialize the original desktop home.');
   for (const path of [configPath, stateDir, backendHome, workspace]) if (!pathValue(path)) throw fail('ABSOLUTE_PATH_REQUIRED', 'Configuration paths must be absolute.');
-  for (const path of [configPath, stateDir, backendHome]) if (resolve(path) === repoDir || resolve(path).startsWith(repoDir + '/')) throw fail('PRIVATE_PATH_IN_REPO', 'Keep credentials and app data outside the checkout.');
+  await requireExternal(repoDir, [configPath, stateDir, backendHome]);
   for (const path of [privateDir, stateDir, backendHome, workspace]) await privateDirectory(path);
   const origin = new URL(options.origin || 'https://127.0.0.1:8443').origin, url = new URL(origin), host = url.hostname.replace(/^\[|\]$/g, '');
   const tlsKey = join(privateDir, 'key.pem'), tlsCert = join(privateDir, 'cert.pem'), environmentFile = join(privateDir, 'runtime.env'), passwordFile = join(privateDir, 'owner-password');

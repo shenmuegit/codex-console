@@ -36,6 +36,10 @@ otherwise init generates a 30-day self-signed SAN certificate for the origin.
 Trust/import that certificate on the accessing device, or provide a trusted pair.
 Browser security interstitials require the owner to act.
 
+Private destinations are checked through their real existing ancestors before
+initialization writes anything, then checked again when configuration is loaded.
+A symlinked directory cannot redirect credentials or application data into the checkout.
+
 The only managed units are `codex-console-native-backend.service` and
 `codex-console-native-web.service`. Native startup uses the configured persistent
 source executable and isolated home. The web handshake checks that native home;
