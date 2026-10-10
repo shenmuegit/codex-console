@@ -28,7 +28,7 @@ test('owner authentication has exact Origin, native scrypt, bounded failures and
 
 test('HTTPS rejects unauthenticated APIs, cross-Origin requests, oversized bodies and unknown RPCs', async t => {
   const f = await httpsFixture(); t.after(() => f.close());
-  for (const path of ['/api/status', '/api/events?viewId=missing']) assert.equal((await f.request(path)).status, 401);
+  for (const path of ['/api/status', '/api/events?viewId=missing', '/api/project/create']) assert.equal((await f.request(path)).status, 401);
   assert.equal((await f.request('/api/login', { method: 'POST', origin: 'https://evil.test', body: { password: 'fixture-passphrase' } })).status, 403);
   assert.equal((await f.request('/api/login', { method: 'POST', origin: null, body: { password: 'fixture-passphrase' } })).status, 403);
   assert.equal((await f.request('/api/login', { method: 'POST', body: JSON.stringify({ password: 'x'.repeat(1_048_576) }) })).status, 413);

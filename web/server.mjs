@@ -562,6 +562,15 @@ export function createWebServer({ config, codex }) {
         if (views.size >= 1024) throw error(429, 'TOO_MANY_VIEWS', '页面数量过多，请退出后重新登录。');
         const viewId = randomBytes(24).toString('base64url');
         views.set(viewId, { session, threadId: null, streams: new Set() }); reply(res, 200, { viewId });
+      } else if (url.pathname === '/api/project/create') {
+        fields(body, ['viewId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
+        if (!text(body.name, 160) || !body.name.trim() || !absolutePath(body.rootPath) || !id(body.idempotencyKey)) throw error(400, 'INVALID_PROJECT', '请输入项目名称、服务器绝对目录和有效操作标识。');
+        const metadata = (await codex.rpc('fs/getMetadata', { path: body.rootPath })).result;
+        if (!metadata.isDirectory) throw error(400, 'INVALID_DIRECTORY', '请选择服务器上可访问的已有目录。');
+        let canonical;
+        try { canonical = await realpath(body.rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '请选择服务器上可访问的已有目录。'); }
+        const result = await codex.rpc('project/create', { name: body.name.trim(), roots: [{ path: canonical }], idempotencyKey: body.idempotencyKey });
+        reply(res, 200, { project: safe(result.result.project) });
       } else if (url.pathname === '/api/completions') {
         fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');

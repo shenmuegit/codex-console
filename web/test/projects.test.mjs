@@ -11,7 +11,40 @@ async function waitCall(peer, method, count = 1) {
   assert.fail(`Missing ${method}`);
 }
 const project = (roots, name = 'Project') => ({ id: 'p', name, roots: roots.map(path => ({ path })), metadata: { unrelated: 'preserve' }, position: 0, createdAt: 1, updatedAt: 1 });
-test('browser project and folder mutations are denied without native side effects', async t => {
+test('owner project creation uses an existing canonical native directory and stable native idempotency key', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+  const body = { viewId, name: ' Demo ', rootPath: f.dir, idempotencyKey: 'stable-create-key' };
+  for (let count = 1; count <= 2; count++) {
+    const creating = f.request('/api/project/create', { method: 'POST', cookie, body });
+    await waitCall(f.peer, 'fs/getMetadata', count); f.peer.replyTo('fs/getMetadata', { isDirectory: true });
+    await waitCall(f.peer, 'project/create', count);
+    assert.deepEqual(f.peer.sent.at(-1).params, { name: 'Demo', roots: [{ path: f.dir }], idempotencyKey: 'stable-create-key' });
+    f.peer.replyTo('project/create', { project: project([f.dir], 'Demo') });
+    const response = await creating; assert.equal(response.status, 200); assert.equal(response.json.project.id, 'p');
+  }
+  assert.equal(f.peer.sent.some(call => ['project/update', 'fs/createDirectory', 'thread/settings/update'].includes(call.method)), false);
+});
+
+test('project creation rejects invalid fields and another session view before any native mutation', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), other = await f.login();
+  const body = { viewId, name: 'Demo', rootPath: f.dir, idempotencyKey: 'create-key' }, before = f.peer.sent.length;
+  for (const changes of [{ name: '' }, { rootPath: 'relative' }, { rootPath: f.dir + '/../outside' }, { idempotencyKey: '' }, { projectId: 'existing' }]) {
+    assert.equal((await f.request('/api/project/create', { method: 'POST', cookie, body: { ...body, ...changes } })).status, 400);
+  }
+  assert.equal((await f.request('/api/project/create', { method: 'POST', cookie: other, body })).status, 403);
+  assert.deepEqual(f.peer.sent.slice(before), []);
+});
+
+test('a non-directory project root is rejected without creating a directory or project', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+  const path = join(f.dir, 'file.txt'); await writeFile(path, 'keep');
+  const creating = f.request('/api/project/create', { method: 'POST', cookie, body: { viewId, name: 'Demo', rootPath: path, idempotencyKey: 'create-key' } });
+  await waitCall(f.peer, 'fs/getMetadata'); f.peer.replyTo('fs/getMetadata', { isDirectory: false });
+  assert.equal((await creating).status, 400); assert.equal(await readFile(path, 'utf8'), 'keep');
+  assert.equal(f.peer.sent.some(call => ['project/create', 'fs/createDirectory'].includes(call.method)), false);
+});
+
+test('browser project editing archiving and folder mutations remain denied without native side effects', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
   const before = f.peer.sent.length;
   for (const [path, body] of [

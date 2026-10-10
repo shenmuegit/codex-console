@@ -106,7 +106,7 @@ try {
       await api('/api/thread/delete', { viewId, threadId: projectThreadId, confirmed: true }); projectThreadId = null;
       report.nativeProjectRootUsed = true;
     }
-    report.projectsReadOnly = true; report.browserCwdOverridesDenied = true;
+    report.projectEditsDenied = true; report.browserCwdOverridesDenied = true;
   }
   if (values['exercise-thread-menu']) {
     const target = (await api('/api/thread/start', { viewId, name: 'Disposable row-menu target' })).snapshot.thread.id; menuThreads.add(target);

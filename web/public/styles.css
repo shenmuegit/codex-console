@@ -151,6 +151,10 @@ dialog { border: 1px solid var(--border); background: var(--surface); color: var
 dialog::backdrop { background: #0006; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .dialog-heading h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.project-form { display: grid; gap: 12px; }
+.project-form label { display: grid; gap: 6px; }
+.project-form input { width: 100%; min-height: 44px; padding: 8px 10px; }
+.project-form p { margin: 0; }
 #info-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 #weekly-usage section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 #weekly-usage h3 { margin: 0; font-size: 13px; font-weight: 500; }
@@ -175,6 +179,8 @@ dialog::backdrop { background: #0006; }
   .composer-surface { padding: 10px 10px 6px; border-radius: 22px; }
   .select-control { max-width: min(48vw, 210px); }
   .select-control select, #send-mode { font-size: 16px; }
+  .project-form input { font-size: 16px; }
+  #project-dialog { inset: 12px 0 auto; margin: 0 auto; max-height: calc(var(--app-height, 100dvh) - 24px); }
   .effective-settings { font-size: 10px; }
   .chat-pane[data-empty="true"] .chat-feed { padding-top: clamp(40px, 12dvh, 100px); }
   .welcome h2 { font-size: 28px; }

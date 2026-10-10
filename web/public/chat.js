@@ -179,6 +179,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
+  let creatingProject = false, projectRequest;
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft'), threadMenu = $('#thread-menu');
   const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
   const busyThreads = new Set(); let menuTarget, menuTrigger;
@@ -308,6 +309,35 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     project = item;
     setLevel('threads'); await Promise.all([loadProjects(), loadThreads()]);
   }
+  bind($('#new-project'), 'click', () => {
+    if (creatingProject || !online) return;
+    if (!projectRequest?.unknown) {
+      projectRequest = null; $('#project-name').value = ''; $('#project-root').value = project?.roots?.[0]?.path ?? selected?.settings.cwd ?? ''; $('#project-error').textContent = '';
+    } else { $('#project-name').value = projectRequest.name; $('#project-root').value = projectRequest.rootPath; }
+    draw(); $('#project-dialog').showModal(); $(projectRequest?.unknown ? '#project-submit' : '#project-name').focus();
+  });
+  bind($('#close-project'), 'click', () => $('#project-dialog').close());
+  bind($('#project-form'), 'submit', async event => {
+    event.preventDefault(); if (creatingProject || !online) return;
+    if (!projectRequest?.unknown) {
+      const name = $('#project-name').value.trim(), rootPath = $('#project-root').value;
+      if (!projectRequest || projectRequest.name !== name || projectRequest.rootPath !== rootPath) projectRequest = { name, rootPath, idempotencyKey: crypto.randomUUID() };
+    }
+    const request = projectRequest, currentProject = project, version = opening; let created;
+    creatingProject = true; $('#project-error').textContent = ''; draw();
+    try {
+      created = (await api('/api/project/create', { viewId, name: request.name, rootPath: request.rootPath, idempotencyKey: request.idempotencyKey })).project;
+      projectRequest = null;
+    } catch (e) {
+      request.unknown = e.outcome === 'unknown' || !e.status;
+      if (alive) $('#project-error').textContent = request.unknown ? '创建结果尚未确认，请重试核对。' : e.message;
+      return;
+    } finally { creatingProject = false; if (alive) draw(); }
+    if (!alive) return;
+    if ($('#project-dialog').open && project === currentProject && opening === version) {
+      $('#project-dialog').close(); await chooseProject(created); $('#new-thread').focus();
+    } else await loadProjects();
+  });
   function select(state) {
     if (selected) save(selected);
     selected = state; setLevel('chat'); messageNodes.clear(); formNodes.clear();
@@ -378,6 +408,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function draw() {
     if (!alive) return;
+    $('#new-project').disabled = $('#project-submit').disabled = creatingProject || !online;
+    $('#project-name').disabled = $('#project-root').disabled = creatingProject || Boolean(projectRequest?.unknown);
+    $('#project-submit').textContent = creatingProject ? '创建中…' : projectRequest?.unknown ? '重试核对' : '创建项目';
     if (menuTarget) $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
@@ -577,6 +610,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }

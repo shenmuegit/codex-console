@@ -30,7 +30,7 @@
         <button id="new-thread" class="new-thread"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M16 3l5 5M10 14l-1 4 4-1L22 8l-5-5Z"/></svg><span>新建会话</span></button>
         <div class="sidebar-scroll">
           <section class="projects-pane" aria-label="项目">
-            <div class="pane-heading"><h2>项目</h2></div>
+            <div class="pane-heading"><h2>项目</h2><button id="new-project" class="more-button" type="button" aria-haspopup="dialog" aria-controls="project-dialog">新建项目</button></div>
             <nav id="projects" aria-label="项目列表"></nav><button id="more-projects" class="more-button" hidden>更多项目</button>
           </section>
           <section class="threads-pane" aria-label="会话">
@@ -81,6 +81,16 @@
   </main>
   <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
   <dialog id="usage-dialog"><div class="dialog-heading"><h2>账号用量</h2><button id="close-usage" class="icon-button" aria-label="关闭">×</button></div><p class="muted small">7 天滚动窗口 · 当前账号的全局用量</p><div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p><button id="refresh-usage" class="more-button">更新用量</button></dialog>
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+    <div class="dialog-heading"><h2 id="project-dialog-title">新建项目</h2><button id="close-project" class="icon-button" type="button" aria-label="关闭">×</button></div>
+    <form id="project-form" class="project-form">
+      <label for="project-name">项目名称<input id="project-name" name="projectName" maxlength="160" required autocomplete="off"></label>
+      <label for="project-root">服务器上的现有目录<input id="project-root" name="projectRoot" maxlength="8192" required autocomplete="off" placeholder="/path/to/project" spellcheck="false"></label>
+      <p class="muted small">使用 Codex 中已有的工作目录，或填写服务器上的其他已有目录。</p>
+      <p id="project-error" class="error" role="alert"></p>
+      <button id="project-submit" class="primary" type="submit">创建项目</button>
+    </form>
+  </dialog>
   <div id="thread-menu" class="thread-menu" popover role="menu" aria-label="会话选项" hidden><button id="thread-menu-copy" type="button" role="menuitem">复制线程 ID</button><button id="thread-menu-archive" type="button" role="menuitem">归档会话</button><button id="thread-menu-delete" class="danger" type="button" role="menuitem">删除会话</button></div>
 </body>
 </html>

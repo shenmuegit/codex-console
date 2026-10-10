@@ -21,6 +21,12 @@ Projects and Conversations have separate headings. The project list contains
 native projects only; All conversations is a conversation-scope control. The
 conversation scope names its selected project, and archived empty results are
 labeled explicitly. Selecting a project filters native conversations by its ID.
+New project opens a name and existing-server-directory form. The directory is
+checked through native metadata and canonicalized before native `project/create`.
+Successful creation selects the project scope; New conversation then uses that
+native project ID. Existing conversations keep their working directories.
+Uncertain creation retries retain the native idempotency key and lock the input
+values until the result is confirmed. Closing the form preserves newer navigation.
 
 At widths of 760 CSS px or less, navigation opens as a left drawer capped at
 290 px, leaving at least 48 px outside it. Chat keeps its full width behind the
@@ -44,8 +50,10 @@ public text cannot be backfilled from their encrypted records.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
-The attachment plus opens the existing file/photo pickers. There are no project
-or directory mutation controls, logout control or manual conversation refresh.
+The attachment plus opens the existing file/photo pickers. Existing-project
+editing/archiving, directory mutation, logout and manual conversation refresh
+controls remain absent. The owner-only project-create endpoint requires its own
+session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
 Native row menus require a current browser with Popover API support.
 Archive always asks for confirmation that any running work will stop, including
 when the conversation list has not yet received its latest status.
@@ -156,7 +164,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-109 Node checks passed; the production dependency audit reported zero vulnerabilities.
+116 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -172,6 +180,9 @@ the native backend: both settings were saved and text/PNG uploads retained exact
 bytes. The disposable conversation and uploads were removed; no inference ran.
 The reasoning check received native summary deltas through the real HTTPS/SSE
 path and retained the public summary after reopening its disposable conversation.
+Native project acceptance created a disposable project through the mounted form,
+replayed its key to the same project, and opened a chat using the native primary
+root. The original chat cwd and host files were preserved; fixtures were cleaned.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop
@@ -185,6 +196,7 @@ An offline static Firefox fixture at 390×844 with 430 px of visible app height
 confirmed that the empty welcome area shrinks and the send button stays visible.
 Static drawer renders at 320, 390, 706 and 1280 CSS px confirmed the width cap,
 outside close area, visible chat and absence of horizontal page overflow.
+The project form also fits a 390 px layout with 430 px of visible keyboard height.
 
 Known presentation limit: another page opening the same conversation can reset
 already loaded older pages to the latest 20-turn snapshot. Use **Load earlier
