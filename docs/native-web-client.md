@@ -17,6 +17,13 @@ input surface. Model, effort, permissions and the read-only context indicator
 are inside that surface. Context details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
 
+An authenticated visit without a thread ID prepares one native blank conversation
+when the backend is online. File/photo pickers and model/effort selectors then
+work without first clicking New conversation. Its ID is recorded in the URL,
+so reload reopens it. Existing thread links and newer navigation take priority.
+This preparation sends no model turn. Creation failures stay visible in chat;
+the existing New conversation button can retry.
+
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
 The attachment plus opens the existing file/photo pickers. There are no project
@@ -131,7 +138,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-95 Node checks passed; the production dependency audit reported zero vulnerabilities.
+100 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -142,6 +149,9 @@ model/effort/context/compaction, weekly metadata, references and command effects
 Separate web/backend restart checks proved accepted work survives web restart,
 authoritative resync after backend restart and one native user message per UUID.
 Runtime proof files stay outside Git.
+First-entry checks also exercised the mounted controllers against real HTTPS and
+the native backend: both settings were saved and text/PNG uploads retained exact
+bytes. The disposable conversation and uploads were removed; no inference ran.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop

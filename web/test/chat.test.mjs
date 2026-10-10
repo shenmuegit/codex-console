@@ -123,7 +123,7 @@ test('reconnection refreshes native project and conversation lists without a sel
   const dom = domFixture(); dom.location.href = 'https://fixture.test/'; let chat; const reads = [];
   t.after(() => { chat?.dispose(); dom.restore(); });
   const api = async (path, body) => { assert.equal(path, '/api/rpc'); reads.push(body.method); return { result: { data: [], nextCursor: null } }; };
-  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.load();
+  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(false); await chat.load();
   const before = reads.length;
   chat.onEvent({ kind: 'status', cursor: cursor(1), native: { online: false } });
   chat.onEvent({ kind: 'status', cursor: cursor(2), native: { online: true } }); await delay(0);

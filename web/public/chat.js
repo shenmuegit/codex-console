@@ -482,10 +482,17 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   async function newThread() {
     if ($('#new-thread').disabled) return false;
+    const version = ++opening;
     const button = $('#new-thread'); button.disabled = true; $('#chat-error').textContent = '';
     try { const result = await api('/api/thread/start', { viewId, ...(project ? { projectId: project.id } : {}) });
+      if (!alive || version !== opening) return false;
       const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads();
-    } finally { button.disabled = false; }
+    } catch (e) { if (!alive || version !== opening) return false; throw e;
+    } finally {
+      button.disabled = false;
+      // A late creation can bind the gateway after newer navigation has finished.
+      if (alive && version !== opening && selected) await open(selected.threadId);
+    }
   }
   bind($('#new-thread'), 'click', newThread);
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
@@ -509,7 +516,13 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     try { await api('/api/thread/stop', { viewId, threadId: selected.threadId, turnId: turn.id }); } finally { draw(); } });
   bind($('#retry-uncertain'), 'click', () => { if (selected?.pending?.unknown && window.confirm('请先核对历史。确认重新发送当前草稿？')) { selected.pending = null; save(selected); draw(); } });
   return {
-    async load() { await Promise.all([loadProjects(), loadThreads(), usage.loadModels()]); const requested = new URL(location.href).searchParams.get('thread'); if (requested) await open(requested); },
+    async load() {
+      const version = opening, requested = new URL(location.href).searchParams.get('thread');
+      await Promise.all([loadProjects(), loadThreads(), usage.loadModels()]);
+      if (!alive || version !== opening || selected) return;
+      if (requested) await open(requested);
+      else if (online) await newThread().catch(showError);
+    },
     onEvent(event) {
       if (!alive) return;
       const reconnected = event.kind === 'status' && event.native.online && !online;

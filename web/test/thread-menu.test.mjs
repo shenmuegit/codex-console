@@ -7,7 +7,7 @@ import { domFixture } from './dom.mjs';
 
 const other = 'thread-other-0123456789abcdefghijklmnopqrstuvwxyz';
 async function fixture(t, activeOther = false, unarchiveResult) {
-  const dom = domFixture(); dom.location.href = 'https://fixture.test/'; let chat, seq = 0;
+  const dom = domFixture(); dom.location.href = 'https://fixture.test/?thread=current'; let chat, seq = 0;
   const calls = [], archived = new Set(), deleted = new Set();
   const threads = ['current', other].map(id => ({ id, name: id, updatedAt: 1, status: { type: activeOther && id === other ? 'active' : 'idle' } }));
   t.after(() => { chat?.dispose(); dom.restore(); });
@@ -21,7 +21,7 @@ async function fixture(t, activeOther = false, unarchiveResult) {
     else assert.fail(path);
     return {};
   };
-  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.load(); await chat.open('current'); chat.getState().draft = 'keep my current draft';
+  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.load(); chat.getState().draft = 'keep my current draft';
   const menu = id => { const row = dom.get('threads').children.find(node => node.dataset.threadId === id); assert.ok(row, 'Conversation row has its own action menu'); row.children[1].click(); };
   return { dom, chat, calls, menu };
 }
