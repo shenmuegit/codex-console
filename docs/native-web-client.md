@@ -16,7 +16,8 @@ The shell copies the installed Codex desktop's gray theme tokens, native system
 font and current 290 px sidebar preference. One global sidebar contains native
 projects/conversations; the conversation pane uses the desktop-style rounded
 input surface. Model, effort and the read-only context indicator
-are inside that surface. Context details retain native token/window values and
+are inside that surface. Context usage is a non-clickable indicator with hover
+text and accessible details; it has no disclosure popup. Details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
 The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native

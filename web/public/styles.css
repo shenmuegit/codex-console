@@ -148,18 +148,17 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .composer-status { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 24px; padding: 6px 8px 0; font-size: 11px; color: var(--muted); }
 .composer-status:has(#turn-status:empty) { display: none; }
 #retry-uncertain { color: var(--text); min-height: 28px; font-size: 11px; }
-.attachment-actions, .context-info { position: relative; }
-.attachment-actions > summary, .context-info > summary { list-style: none; cursor: pointer; border-radius: 6px; }
-.attachment-actions > summary::-webkit-details-marker, .context-info > summary::-webkit-details-marker { display: none; }
-.attachment-actions > summary::marker, .context-info > summary::marker { content: ""; }
-.attachment-menu, #context-detail { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 10; min-width: 170px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 20px #0002; }
+.attachment-actions { position: relative; }
+.attachment-actions > summary { list-style: none; cursor: pointer; border-radius: 6px; }
+.attachment-actions > summary::-webkit-details-marker { display: none; }
+.attachment-actions > summary::marker { content: ""; }
+.attachment-menu { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 10; min-width: 170px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 20px #0002; }
 .attachment-menu button { display: block; width: 100%; text-align: left; padding: 8px 10px; }
-.context-info > summary { display: flex; align-items: center; gap: 3px; min-height: 30px; padding: 4px 5px; color: var(--muted); font-size: 10px; }
+#context-toggle { display: flex; align-items: center; gap: 3px; min-height: 30px; padding: 4px 5px; color: var(--muted); font-size: 10px; cursor: default; }
 .context-info svg { width: 18px; height: 18px; }
 .context-info circle { stroke-width: 1.6; }
 .context-track { opacity: .2; }
 #context-ring { stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: center; }
-#context-detail { left: auto; right: 0; width: 240px; margin: 0; padding: 12px; color: var(--text); font-size: 12px; line-height: 1.6; }
 .chat-error { width: min(100%, var(--content-width)); margin: 0 auto; padding: 4px 24px; font-size: 12px; }
 #native-requests { width: min(100%, var(--content-width)); margin: 0 auto; padding: 0 24px; max-height: 40dvh; overflow-y: auto; }
 .native-form { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 8px; background: var(--surface); }
@@ -220,5 +219,5 @@ dialog::backdrop { background: #0006; }
   .welcome h2 { font-size: 28px; }
   #native-requests, .chat-error { padding-inline: 16px; }
 }
-@media (pointer: coarse) { button, .icon-button, .attachment-actions > summary, .context-info > summary, .select-control select, .message-activity > .activity-summary, .message-tool > summary, .message-subagent a { min-height: 44px; } .icon-button, .send-button { width: 44px; } .thread-actions { flex-basis: 44px; width: 44px; min-height: 44px; padding: 14px; opacity: 1; } .archive-filter { min-height: 44px; gap: 8px; } .archive-filter input { width: 16px; height: 16px; } }
+@media (pointer: coarse) { button, .icon-button, .attachment-actions > summary, .select-control select, .message-activity > .activity-summary, .message-tool > summary, .message-subagent a { min-height: 44px; } .icon-button, .send-button { width: 44px; } .thread-actions { flex-basis: 44px; width: 44px; min-height: 44px; padding: 14px; opacity: 1; } .archive-filter { min-height: 44px; gap: 8px; } .archive-filter input { width: 16px; height: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }

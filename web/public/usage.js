@@ -88,7 +88,6 @@ export function mountUsage({ api, viewId, getState, onChange, onError }) {
     $('#context-info').hidden = !state?.ready;
     $('#context-usage').textContent = usage.usedPercent == null ? '上下文' : `${usage.usedPercent}%`;
     $('#context-toggle').setAttribute('aria-label', detail); $('#context-toggle').title = detail;
-    $('#context-detail').textContent = detail;
     $('#context-ring').style.strokeDasharray = `${usage.usedPercent ?? 0} 100`;
     $('#context-meter').hidden = usage.usedPercent == null;
     if (usage.usedPercent != null) $('#context-meter').value = usage.usedPercent;

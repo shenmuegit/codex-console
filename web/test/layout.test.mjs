@@ -36,4 +36,8 @@ test('compact context indicator retains native percentages and complete accessib
   usage.render(); assert.equal(dom.get('context-usage').textContent, '53%');
   assert.equal(dom.get('context-meter').value, 53);
   const detail = dom.get('context-toggle').getAttribute('aria-label'); assert.ok(detail.includes((112000).toLocaleString())); assert.ok(detail.includes((200000).toLocaleString())); assert.match(detail, /47%/);
+  assert.equal(dom.get('context-toggle').title, detail, 'Hover retains the complete native usage details');
+  assert.equal(dom.get('context-info').tagName, 'SPAN', 'Context usage has no clickable disclosure');
+  assert.equal(dom.get('context-toggle').tagName, 'SPAN');
+  assert.ok(!dom.get('context-detail'), 'There is no context popup content');
 });
