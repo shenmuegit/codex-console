@@ -62,6 +62,7 @@ nav { display: grid; gap: 2px; }
 .chat-heading { display: flex; align-items: center; gap: 10px; flex: 0 0 52px; min-height: 52px; padding: max(8px, env(safe-area-inset-top)) 24px 8px; }
 .thread-title { max-width: 320px; min-width: 0; font-size: 14px; font-weight: 500; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-open { display: none; }
+.sidebar-backdrop { display: none; }
 .work-layout[data-sidebar-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
 .work-layout[data-sidebar-collapsed="true"] .sidebar { display: none; }
 .work-layout[data-sidebar-collapsed="true"] .sidebar-open { display: inline-flex; }
@@ -156,12 +157,12 @@ dialog::backdrop { background: #0006; }
 .thread-menu .danger { color: var(--error); }
 @media (max-width: 760px) {
   :root { font-size: 14px; }
-  .work-layout { display: block; }
-  .sidebar { display: none; height: 100%; width: 100%; padding-inline: 14px; }
+  .work-layout { display: block; position: relative; }
+  .sidebar { display: none; position: absolute; inset: 0 auto 0 0; z-index: 30; height: 100%; width: min(290px, calc(100% - 48px)); padding-inline: 14px; box-shadow: 8px 0 24px #0002; }
+  .sidebar-backdrop { display: block; position: absolute; inset: 0; z-index: 20; width: 100%; height: 100%; padding: 0; border-radius: 0; cursor: default; }
+  .sidebar-backdrop, .sidebar-backdrop:hover { background: #0002; }
   .chat-pane { display: flex; height: 100%; }
   .work-layout[data-level="projects"] .sidebar, .work-layout[data-level="threads"] .sidebar { display: flex; }
-  .work-layout[data-level="projects"] .chat-pane, .work-layout[data-level="threads"] .chat-pane { display: none; }
-  .work-layout[data-level="projects"][data-sidebar-collapsed="true"] .sidebar, .work-layout[data-level="threads"][data-sidebar-collapsed="true"] .sidebar { display: flex; }
   .sidebar-open { display: inline-flex; }
   .chat-heading { padding-inline: 12px; min-height: 52px; }
   .chat-feed { padding: 12px 16px 20px; }

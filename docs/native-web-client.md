@@ -17,6 +17,13 @@ input surface. Model, effort, permissions and the read-only context indicator
 are inside that surface. Context details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
 
+At widths of 760 CSS px or less, navigation opens as a left drawer capped at
+290 px, leaving at least 48 px outside it. Chat keeps its full width behind the
+backdrop. Outside click, Escape and the close control dismiss the drawer;
+selecting a conversation closes it and focuses the chat heading. Keyboard focus
+stays in the open drawer, and the covered chat is inert. Resizing restores the
+normal desktop sidebar and chat interaction.
+
 An authenticated visit without a thread ID prepares one native blank conversation
 when the backend is online. File/photo pickers and model/effort selectors then
 work without first clicking New conversation. Its ID is recorded in the URL,
@@ -144,7 +151,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-103 Node checks passed; the production dependency audit reported zero vulnerabilities.
+107 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -171,6 +178,8 @@ send in both directions. The CSS uses visible focus, native controls, safe areas
 and the visual viewport for the keyboard; physical-device behavior remains unverified.
 An offline static Firefox fixture at 390×844 with 430 px of visible app height
 confirmed that the empty welcome area shrinks and the send button stays visible.
+Static drawer renders at 320, 390, 706 and 1280 CSS px confirmed the width cap,
+outside close area, visible chat and absence of horizontal page overflow.
 
 Known presentation limit: another page opening the same conversation can reset
 already loaded older pages to the latest 20-turn snapshot. Use **Load earlier

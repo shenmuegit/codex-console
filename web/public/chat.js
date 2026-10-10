@@ -180,6 +180,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft'), threadMenu = $('#thread-menu');
+  const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
   const busyThreads = new Set(); let menuTarget, menuTrigger;
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
@@ -189,6 +190,32 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
   const bind = (node, type, fn) => node.addEventListener(type, event => { try { Promise.resolve(fn(event)).catch(showError); } catch (e) { showError(e); } }, { signal: abort.signal });
   const read = async (method, params = {}) => (await api('/api/rpc', { method, params })).result;
+  function syncSidebar() {
+    const drawerOpen = narrow.matches && layout.dataset.level !== 'chat';
+    backdrop.hidden = !drawerOpen; chatPane.inert = drawerOpen; sidebar.inert = narrow.matches && !drawerOpen;
+    if (drawerOpen) { sidebar.setAttribute('role', 'dialog'); sidebar.setAttribute('aria-modal', 'true'); }
+    else { sidebar.setAttribute('role', 'complementary'); sidebar.removeAttribute('aria-modal'); }
+    $('#back-threads').setAttribute('aria-expanded', String(narrow.matches ? drawerOpen : layout.dataset.sidebarCollapsed !== 'true'));
+  }
+  function setLevel(level) { layout.dataset.level = level; syncSidebar(); }
+  function closeSidebar() {
+    if (menuTarget) closeThreadMenu();
+    layout.dataset.sidebarCollapsed = 'true'; setLevel('chat'); $('#back-threads').focus();
+  }
+  narrow.addEventListener('change', () => {
+    const focusedInside = sidebar.contains(document.activeElement); syncSidebar();
+    if (sidebar.inert && focusedInside) $('#back-threads').focus();
+  }, { signal: abort.signal });
+  bind(sidebar, 'keydown', event => {
+    if (!narrow.matches || layout.dataset.level === 'chat') return;
+    if (event.key === 'Escape') { event.preventDefault(); closeSidebar(); return; }
+    if (event.key !== 'Tab') return;
+    const items = [...sidebar.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')].filter(node => !node.disabled && node.getAttribute('tabindex') !== '-1' && node.getClientRects().length);
+    const first = items[0], last = items.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  });
+  setLevel(layout.dataset.level ?? 'chat');
   function closeThreadMenu(restoreFocus = false) {
     const trigger = menuTrigger; menuTarget = null; menuTrigger = null;
     threadMenu.hidePopover(); threadMenu.hidden = true; trigger?.setAttribute('aria-expanded', 'false');
@@ -277,13 +304,14 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   async function chooseProject(item) {
     project = item; $('#project-title').textContent = item?.name ?? '全部会话';
-    layout.dataset.level = 'threads'; await Promise.all([loadProjects(), loadThreads()]);
+    setLevel('threads'); await Promise.all([loadProjects(), loadThreads()]);
   }
   function select(state) {
     if (selected) save(selected);
-    selected = state; layout.dataset.level = 'chat'; messageNodes.clear(); formNodes.clear();
+    selected = state; setLevel('chat'); messageNodes.clear(); formNodes.clear();
     completions.close(); if (menuTarget) closeThreadMenu();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
+    if (narrow.matches) $('#thread-title').focus();
     const url = new URL(location.href); url.searchParams.set('thread', state.threadId); history.replaceState(null, '', url);
   }
   async function open(threadId) {
@@ -465,7 +493,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     ++opening; save(selected); selected = undefined; messageNodes.clear(); formNodes.clear();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = '';
     const url = new URL(location.href); url.searchParams.delete('thread'); history.replaceState(null, '', url);
-    layout.dataset.sidebarCollapsed = 'false'; layout.dataset.level = 'threads'; draw(); $('#new-thread').focus();
+    layout.dataset.sidebarCollapsed = 'false'; setLevel('threads'); draw(); $('#new-thread').focus();
   }
   async function archiveConversation(item) {
     if (busyThreads.has(item.id) || !window.confirm('归档此会话？正在运行的工作会先停止。')) return false;
@@ -499,8 +527,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#new-thread'), 'click', newThread);
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
-  bind($('#back-projects'), 'click', () => { layout.dataset.sidebarCollapsed = 'true'; layout.dataset.level = 'chat'; $('#back-threads').focus(); });
-  bind($('#back-threads'), 'click', () => { layout.dataset.sidebarCollapsed = 'false'; layout.dataset.level = 'threads'; $('#new-thread').focus(); });
+  bind($('#back-projects'), 'click', closeSidebar); bind(backdrop, 'click', closeSidebar);
+  bind($('#back-threads'), 'click', () => { layout.dataset.sidebarCollapsed = 'false'; setLevel('threads'); $('#new-thread').focus(); });
   bind($('#older-history'), 'click', async () => {
     const state = selected, button = $('#older-history'); if (!state?.historyCursor) return; button.disabled = true;
     try { const response = await api('/api/rpc', { method: 'thread/turns/list', params: { threadId: state.threadId, cursor: state.historyCursor, limit: 20, sortDirection: 'desc', itemsView: 'full' } });

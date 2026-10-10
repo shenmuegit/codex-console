@@ -11,8 +11,8 @@ test('model effort and context are in the composer while weekly usage belongs to
   const start = html.indexOf('<form id="composer"'), composer = html.slice(start, html.indexOf('</form>', start));
   for (const id of ['model', 'effort', 'context-usage', 'context-meter', 'effective-settings']) assert.ok(composer.includes(`id="${id}"`), `${id} is inside the input surface`);
   assert.equal(composer.includes('id="show-usage"'), false);
-  const sidebar = html.indexOf('<aside id="sidebar"');
-  assert.ok(sidebar >= 0); assert.ok(html.slice(sidebar, html.indexOf('</aside>', sidebar)).includes('id="show-usage"'));
+  const sidebar = html.indexOf('id="sidebar"');
+  assert.ok(sidebar >= 0); assert.ok(html.slice(sidebar, html.indexOf('id="sidebar-backdrop"', sidebar)).includes('id="show-usage"'));
 });
 
 test('weekly usage opens without a selected chat and keeps one account-scoped value across thread switches', async t => {

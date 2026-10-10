@@ -22,7 +22,7 @@
   </main>
   <main id="workspace" hidden>
     <div class="work-layout" data-level="chat">
-      <aside id="sidebar" class="sidebar" aria-label="全局导航">
+      <div id="sidebar" class="sidebar" role="complementary" aria-label="全局导航">
         <header class="sidebar-header">
           <strong class="wordmark">Codex</strong>
           <button id="back-projects" class="icon-button" aria-label="收起侧栏" title="收起侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
@@ -42,10 +42,11 @@
           <button id="show-usage" class="global-usage" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
           <span id="connection" class="connection" role="status">正在连接…</span>
         </footer>
-      </aside>
+      </div>
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭侧栏" tabindex="-1" hidden></button>
       <section id="chat-pane" class="chat-pane" aria-label="聊天" data-empty="true">
         <header class="chat-heading">
-          <button id="back-threads" class="icon-button sidebar-open" aria-label="打开侧栏" title="打开侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
+          <button id="back-threads" class="icon-button sidebar-open" aria-label="打开侧栏" title="打开侧栏" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
           <h1 id="thread-title" class="thread-title" tabindex="-1">新会话</h1>
         </header>
         <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
