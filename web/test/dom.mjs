@@ -25,7 +25,7 @@ export function domFixture() {
     contains(node) { for (; node; node = node.parent) if (node === this) return true; return false; }
     querySelectorAll() { return this.children.flatMap(node => [node, ...node.querySelectorAll()]).filter(node => ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(node.tagName) || node.getAttribute('tabindex') != null); }
     requestSubmit() { this.dispatchEvent(new Event('submit', { cancelable: true })); }
-    click() { if (!this.disabled) this.dispatchEvent(new Event('click', { cancelable: true })); }
+    click() { if (!this.disabled) { const event = new Event('click', { cancelable: true }); this.dispatchEvent(event); this.onclick?.(event); } }
   }
   const document = { body: new Element('body'), createElement: tag => new Element(tag),
     querySelector(selector) { return selector === '.work-layout' ? layout : nodes.findLast(node => node.id === selector.slice(1)) ?? null; } };

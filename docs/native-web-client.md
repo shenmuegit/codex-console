@@ -544,6 +544,10 @@ in a modal; its close button, Escape or backdrop dismisses it. Inline Markdown
 pictures use the same preview and are not repeated below the message. Ordinary
 files keep their download links; native message data and text exports retain
 their image markers. Previews use authenticated same-origin image references.
+Completed draft photos are compact thumbnails without filenames or uploaded
+labels. Click to enlarge; hover or keyboard focus reveals a red × in the upper
+right to remove that photo. Touch devices keep the × visible. Upload progress,
+failure feedback and retry remain available, and removal preserves the draft.
 
 Use **Files** or **Photos** to select multiple attachments. Uploads run serially
 with native browser progress and removable previews; sending waits for completion.

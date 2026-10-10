@@ -58,3 +58,37 @@ test('Markdown pictures support the same accessible preview and keep literal ima
   assert.match(items[0].html, /role="button"/); assert.match(items[0].html, /tabindex="0"/);
   assert.match(items[1].html, /［图片］是我输入的文字/);
 });
+
+test('completed draft photos are plain thumbnails with a labelled corner cross; documents keep their filenames', async t => {
+  const f = await fixture(t), state = f.chat.getState();
+  state.attachments = [{ id: 'photo', name: '图片.png', status: 'complete', imageHref: '/api/images/photo' }, { id: 'document', name: 'notes.txt', status: 'complete' }];
+  state.draft = '保留草稿'; f.chat.connection(true);
+  const [photo, document] = f.dom.get('attachments').children;
+  assert.equal(photo.className, 'attachment attachment-image'); assert.equal(photo.children.length, 2);
+  assert.equal(photo.children[0].tagName, 'IMG'); assert.equal(photo.children[0].getAttribute('role'), 'button');
+  assert.equal(photo.children[1].textContent, '×'); assert.equal(photo.children[1].className, 'attachment-remove');
+  assert.equal(photo.children[1].getAttribute('aria-label'), '移除附件 图片.png');
+  assert.equal(document.children[0].textContent, 'notes.txt');
+  pictureEvent(f.dom, photo.children[0], 'click'); assert.equal(f.dom.get('image-viewer').open, true); f.dom.get('image-viewer').close();
+  photo.children[1].click(); assert.deepEqual(state.attachments.map(item => item.id), ['document']); assert.equal(state.draft, '保留草稿');
+});
+
+test('local draft photo previews open without allowing external blob origins', async t => {
+  const f = await fixture(t), state = f.chat.getState();
+  state.attachments = [{ name: 'local.png', status: 'complete', previewUrl: 'blob:https://fixture.test/local-photo' }]; f.chat.connection(true);
+  const image = f.dom.get('attachments').children[0].children[0]; pictureEvent(f.dom, image, 'click');
+  assert.equal(f.dom.get('image-viewer').open, true); assert.equal(f.dom.get('image-viewer-image').src, image.src); f.dom.get('image-viewer').close();
+  image.src = 'blob:https://external.invalid/other'; pictureEvent(f.dom, image, 'click'); assert.equal(f.dom.get('image-viewer').open, false);
+});
+
+test('image thumbnails retain upload progress, failure feedback and cancellation', async t => {
+  const f = await fixture(t), state = f.chat.getState(); let cancelled = false;
+  const record = { name: 'image.png', status: 'uploading', progress: 40, imageHref: '/api/images/photo', xhr: { abort() { cancelled = true; } } };
+  state.attachments = [record]; f.chat.connection(true);
+  let photo = f.dom.get('attachments').children[0]; assert.ok(photo.children.some(node => node.tagName === 'PROGRESS'));
+  assert.ok(!photo.children.some(node => node.textContent === 'image.png'), 'Photo filenames must not return during upload');
+  record.status = 'error'; record.error = '上传连接中断'; record.file = { name: 'image.png' }; f.chat.connection(true);
+  photo = f.dom.get('attachments').children[0]; assert.ok(photo.children.some(node => node.textContent === '重试'));
+  assert.ok(photo.children.some(node => node.textContent === '上传连接中断'));
+  photo.children.at(-1).click(); assert.equal(cancelled, true); assert.deepEqual(state.attachments, []);
+});

@@ -182,7 +182,7 @@ export function mountImageViewer() {
   function open(target) {
     if (!target?.matches?.('.chat-image')) return false;
     const url = new URL(target.src, location.href);
-    if (url.origin !== new URL(location.href).origin || !/^\/api\/images\/[A-Za-z0-9_-]+$/.test(url.pathname)) return false;
+    if (url.origin !== new URL(location.href).origin || url.protocol !== 'blob:' && !/^\/api\/images\/[A-Za-z0-9_-]+$/.test(url.pathname)) return false;
     opener = target; image.src = url.href; image.alt = target.alt; dialog.showModal(); close.focus(); return true;
   }
   document.body.addEventListener('click', event => { if (open(event.target)) event.preventDefault(); }, options);
@@ -260,15 +260,17 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
   function render(state) {
     container.replaceChildren();
     for (const record of state?.attachments ?? []) {
-      const node = document.createElement('div'); node.className = 'attachment';
       const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+$/.test(record.imageHref) ? record.imageHref : null);
-      if (src) { const image = document.createElement('img'); image.src = src; image.alt = record.name; image.width = 64; image.height = 64; node.append(image); }
-      const label = document.createElement('span'); label.textContent = record.name;
-      const status = document.createElement('small'); status.textContent = record.status === 'complete' ? '已上传' : record.status === 'error' ? record.error : record.status === 'uploading' ? `上传中 ${record.progress}%` : '等待上传';
-      label.append(document.createElement('br'), status); node.append(label);
+      const node = document.createElement('div'); node.className = 'attachment' + (src ? ' attachment-image' : '');
+      if (src) { const image = document.createElement('img'); image.src = src; image.alt = record.name; image.width = image.height = 80; image.className = 'chat-image'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + record.name); node.append(image); }
+      if (!src) {
+        const label = document.createElement('span'); label.textContent = record.name;
+        const status = document.createElement('small'); status.textContent = record.status === 'complete' ? '已上传' : record.status === 'error' ? record.error : record.status === 'uploading' ? `上传中 ${record.progress}%` : '等待上传';
+        label.append(document.createElement('br'), status); node.append(label);
+      } else if (record.status === 'error') { const status = document.createElement('small'); status.textContent = record.error; node.append(status); }
       if (record.status === 'uploading') { const progress = document.createElement('progress'); progress.max = 100; progress.value = record.progress; progress.setAttribute('aria-label', record.name + ' 上传进度'); node.append(progress); }
       if (record.status === 'error' && record.file) { const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重试'; retry.onclick = () => { record.status = 'pending'; enqueue(record); notify(state); }; node.append(retry); }
-      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '移除'; remove.setAttribute('aria-label', '移除附件 ' + record.name);
+      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = src ? '×' : '移除'; if (src) remove.className = 'attachment-remove'; remove.setAttribute('aria-label', '移除附件 ' + record.name);
       remove.onclick = () => { record.removed = true; record.xhr?.abort(); state.attachments = state.attachments.filter(item => item !== record); notify(state); };
       node.append(remove); container.append(node);
     }
