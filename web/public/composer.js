@@ -175,6 +175,24 @@ export function mountCompletions({ api, viewId, getState, onChange }) {
   return { refresh, close, dispose() { alive = false; ++revision; abort.abort(); clearTimeout(timer); close(); } };
 }
 
+export function mountImageViewer() {
+  const dialog = document.querySelector('#image-viewer'), image = document.querySelector('#image-viewer-image');
+  const close = document.querySelector('#close-image-viewer'), abort = new AbortController(), options = { signal: abort.signal };
+  let opener;
+  function open(target) {
+    if (!target?.matches?.('.chat-image')) return false;
+    const url = new URL(target.src, location.href);
+    if (url.origin !== new URL(location.href).origin || !/^\/api\/images\/[A-Za-z0-9_-]+$/.test(url.pathname)) return false;
+    opener = target; image.src = url.href; image.alt = target.alt; dialog.showModal(); close.focus(); return true;
+  }
+  document.body.addEventListener('click', event => { if (open(event.target)) event.preventDefault(); }, options);
+  document.body.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key) && open(event.target)) event.preventDefault(); }, options);
+  close.addEventListener('click', () => dialog.close(), options);
+  dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); }, options);
+  dialog.addEventListener('close', () => { image.removeAttribute('src'); if (opener?.isConnected && opener.getClientRects().length) opener.focus(); opener = null; }, options);
+  return { dispose() { abort.abort(); dialog.close(); image.removeAttribute('src'); opener = null; } };
+}
+
 export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes }) {
   const fileInput = document.querySelector('#file-input'), photoInput = document.querySelector('#photo-input');
   const container = document.querySelector('#attachments'), abort = new AbortController(), records = new Set();

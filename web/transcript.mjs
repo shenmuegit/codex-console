@@ -1,5 +1,5 @@
 import MarkdownIt from 'markdown-it';
-import { itemText } from './public/chat.js';
+import { itemText, messageText } from './public/chat.js';
 
 const markdown = new MarkdownIt({ html: false, linkify: false, typographer: false });
 const escape = markdown.utils.escapeHtml;
@@ -55,7 +55,7 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
 markdown.renderer.rules.link_close = (tokens, index, options, env) => env.links?.pop() ? '</a>' : '</span>';
 markdown.renderer.rules.image = (tokens, index, options, env) => {
   const ref = env.files?.find(file => file.target === tokens[index].attrGet('src'));
-  return ref?.imageHref ? `<img class="chat-image" loading="lazy" src="${escape(ref.imageHref)}" alt="${escape(tokens[index].content || ref.name)}">` : `<span class="muted">${escape(tokens[index].content || '图片')}</span>`;
+  return ref?.imageHref ? `<img class="chat-image" loading="lazy" role="button" tabindex="0" aria-haspopup="dialog" aria-label="查看大图 ${escape(tokens[index].content || ref.name)}" src="${escape(ref.imageHref)}" alt="${escape(tokens[index].content || ref.name)}">` : `<span class="muted">${escape(tokens[index].content || '图片')}</span>`;
 };
 
 export function collectTargets(item) {
@@ -73,7 +73,7 @@ export function collectTargets(item) {
 
 export function renderTranscript(thread, turns, references = new Map()) {
   const items = turns.flatMap(turn => (turn.items ?? []).map(item => {
-    const text = itemText(item), role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
+    const text = messageText(item), role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
     const label = role === 'user' ? '你' : role === 'assistant' ? 'Codex' : ({ reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用' }[item.type] ?? item.type);
     return { id: item.id, turnId: turn.id, type: item.type, role, label: label + (item._historyTruncated ? ' · 部分输出' : ''), text, status: item.status ?? turn.status,
       cursor: item._cursor, files: references.get(item.id) ?? [], html: role === 'assistant' ? markdown.render(text, { files: references.get(item.id) }) : `<pre>${escape(text)}</pre>` };

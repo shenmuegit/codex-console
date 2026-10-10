@@ -70,7 +70,7 @@ test('mixed file and tool activity preserves safe details and attachment downloa
   const f = await fixture(t, [command('c'), { id: 'f', type: 'fileChange', status: 'completed', changes: [{ path: '/project/a.txt', diff: '+new <script>bad</script>' }] }, { id: 'm', type: 'mcpToolCall', status: 'completed', server: 'fixture', tool: 'lookup', arguments: {}, result: {} }]);
   const activity = f.messages.children[0]; assert.equal(f.messages.children.length, 1);
   assert.match(activity.children[0].children[1].textContent, /运行了命令.*编辑了文件.*调用了工具/);
-  const item = f.chat.getState().turns[0].items[1]; item._presentation.files = [{ name: 'a.txt', href: '/api/files/allowed', imageHref: '/api/images/allowed' }]; f.chat.connection(true);
+  const item = f.chat.getState().turns[0].items[1]; item._presentation.files = [{ name: 'picture.png', href: '/api/files/picture', imageHref: '/api/images/allowed' }, { name: 'a.txt', href: '/api/files/allowed' }]; f.chat.connection(true);
   const file = activity.children[1].children[1]; assert.ok(file.children[1].innerHTML.includes('&lt;script&gt;')); assert.equal(file.children[1].innerHTML.includes('<script>'), false);
   assert.equal(file.children[2].children[0].src, '/api/images/allowed'); assert.equal(file.children[2].children[1].href, '/api/files/allowed');
 });

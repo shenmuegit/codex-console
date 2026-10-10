@@ -176,7 +176,10 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .attachment progress { width: 100%; }
 .message-files { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
 .message-files a { display: block; overflow-wrap: anywhere; font-size: 12px; }
-.chat-image { max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: 10px; display: block; }
+.chat-image { max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: 10px; display: block; cursor: zoom-in; }
+#image-viewer { width: min(1100px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 40px 12px 12px; overflow: hidden; }
+#image-viewer-image { display: block; width: 100%; max-height: calc(100dvh - 88px); object-fit: contain; }
+#close-image-viewer { position: absolute; top: 4px; right: 8px; }
 #completion-menu { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 8px; }
 #completion-menu button { display: block; width: 100%; border: 0; text-align: left; background: transparent; padding: 9px 12px; border-radius: 0; overflow-wrap: anywhere; }
 #completion-menu button[aria-selected="true"] { background: var(--hover); outline: 2px solid var(--focus); outline-offset: -2px; }

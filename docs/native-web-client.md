@@ -77,6 +77,9 @@ errors stay visible. Choosing another project or conversation while the missing
 link is being restored prevents automatic creation.
 This preparation sends no model turn. Creation failures stay visible in chat;
 the existing New conversation button can retry.
+New conversations keep the native name unset and use Codex's name or preview
+when available. The blank heading is a display placeholder, never a saved name;
+native catalog refreshes update the current heading as well as the sidebar.
 
 New turns request native automatic reasoning summaries because current model
 catalogs can default to no summary. The transcript follows the desktop activity layout: consecutive commands, tools
@@ -377,9 +380,11 @@ login availability without printing account values. Its file flag creates a
 disposable native thread, requires a real filesystem/command tool call, compares
 exact private-file bytes and deletes that thread after completion.
 
-Name a newly created empty native thread before resuming it. Native
-`thread/name/set` materializes its empty paginated history; otherwise immediate
-resume can fail with “no rollout found”. This is the upstream test's own flow.
+Before resuming a newly created blank thread, reapply the Git metadata returned
+by native `thread/start` through `thread/metadata/update`. This materializes its
+empty paginated history without setting a name; immediate resume otherwise can
+fail with “no rollout found”. Failed persistence retries the same native thread.
+Explicit naming and rename requests still use native `thread/name/set`.
 
 The remaining sections document the implemented components; no Xpra connection is used by this client.
 
@@ -425,8 +430,8 @@ snapshot-required SSE and logout. Password values were not printed.
 
 Choose a native project or all conversations; list pages contain 20 entries.
 New conversations use the selected host directory, full access and no execution
-approvals, subject to native managed restrictions. Each new empty thread is named
-before its atomic resume. Copy the real thread ID from its conversation row menu;
+approvals, subject to native managed restrictions. Each new empty thread retains
+native naming and is materialized before its atomic resume. Copy the real thread ID from its conversation row menu;
 `/status` shows native conversation defaults. Reading a thread leaves its execution
 permissions unchanged.
 
@@ -532,6 +537,13 @@ The project checks cover read-only boundaries, authoritative roots, opaque
 pagination and the existing interruption/deletion regressions.
 
 ## Files, photos and downloads
+
+Chat photos display as clickable pictures without generated image-placeholder
+lines or download-name captions. Click, Enter or Space opens the full-size picture
+in a modal; its close button, Escape or backdrop dismisses it. Inline Markdown
+pictures use the same preview and are not repeated below the message. Ordinary
+files keep their download links; native message data and text exports retain
+their image markers. Previews use authenticated same-origin image references.
 
 Use **Files** or **Photos** to select multiple attachments. Uploads run serially
 with native browser progress and removable previews; sending waits for completion.

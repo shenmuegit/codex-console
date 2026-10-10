@@ -15,10 +15,11 @@ export function domFixture() {
     focus() { document.activeElement = this; }
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
     showModal() { this.open = true; }
-    close() { this.open = false; }
+    close() { this.open = false; this.dispatchEvent(new Event('close')); }
     showPopover() { this.open = true; this.dispatchEvent(Object.assign(new Event('toggle'), { newState: 'open' })); }
     hidePopover() { this.open = false; this.dispatchEvent(Object.assign(new Event('toggle'), { newState: 'closed' })); }
-    matches(selector) { return selector === ':popover-open' && Boolean(this.open); }
+    matches(selector) { return selector === ':popover-open' ? Boolean(this.open) : selector.startsWith('.') && (this.className ?? '').split(/\s+/).includes(selector.slice(1)); }
+    get isConnected() { for (let node = this; node; node = node.parent) if (node === document.body) return true; return false; }
     getBoundingClientRect() { return { left: 220, right: 252, top: 40, bottom: 72 }; }
     getClientRects() { return this.hidden ? [] : [this.getBoundingClientRect()]; }
     contains(node) { for (; node; node = node.parent) if (node === this) return true; return false; }

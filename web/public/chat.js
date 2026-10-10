@@ -1,4 +1,4 @@
-import { displayNativeText, mountAttachments, mountCompletions, commandAction, updateSelections } from './composer.js';
+import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
 import { mountFollowups } from './followups.js';
 
@@ -115,7 +115,7 @@ export function applyNativeEvent(state, event) {
       const item = state.turns.flatMap(t => t.items ?? []).find(item => item.id === rendered.id);
       const floor = Math.max(item?._cursor?.seq ?? 0, item?._presentation?.cursor?.seq ?? 0);
       if (item && rendered.cursor?.generation === state.generation && rendered.cursor.seq >= floor &&
-          (sameCursor(item._cursor, rendered.cursor) || (rendered.cursor.seq <= state.cursor.seq && rendered.text === itemText(item)))) item._presentation = rendered;
+          (sameCursor(item._cursor, rendered.cursor) || (rendered.cursor.seq <= state.cursor.seq && rendered.text === messageText(item)))) item._presentation = rendered;
     }
     return state;
   }
@@ -208,6 +208,9 @@ export function itemText(item) {
     default: return item.text ?? JSON.stringify(Object.fromEntries(Object.entries(item).filter(([key]) => !key.startsWith('_') && !['html', 'id', 'type'].includes(key))), null, 2);
   }
 }
+export function messageText(item) {
+  return itemText(item.type === 'userMessage' ? { ...item, content: (item.content ?? []).filter(part => !['localImage', 'image'].includes(part.type)) } : item);
+}
 export function shouldSubmitKey(event, { composing, finePointer }) {
   return event.key === 'Enter' && !event.shiftKey && !event.isComposing && !composing && event.keyCode !== 229 && finePointer;
 }
@@ -230,6 +233,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
   const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
+  const imageViewer = mountImageViewer();
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -422,6 +426,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       }
       if (!more) { if (menuTarget?.kind === 'thread' && group.list.contains(menuTrigger)) closeThreadMenu(); group.list.replaceChildren(); }
       for (const item of data) {
+        if (selected?.threadId === item.id && selected.thread && !selected.thread.name) {
+          Object.assign(selected.thread, { name: item.name, preview: item.preview }); scheduleDraw();
+        }
         const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
         const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
         const actions = element('button', null, 'thread-actions'); actions.type = 'button';
@@ -592,7 +599,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
     }
     entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
-    const text = itemText(item), html = presentation?.html;
+    const text = messageText(item), html = presentation?.html;
     if (html ? entry.html !== html : entry.text !== text || entry.html) {
       if (html) entry.body.innerHTML = html; else { const plain = element('pre', text); entry.body.replaceChildren(plain); }
       entry.html = html; entry.text = text;
@@ -600,8 +607,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (entry.files !== presentation?.files) {
       entry.downloads.replaceChildren();
       for (const file of presentation?.files ?? []) {
-        if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; entry.downloads.append(image); }
-        if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
+        if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) {
+          if (!html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
+        } else if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
       }
       entry.files = presentation?.files;
     }
@@ -623,8 +631,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     if (state) state.online = online;
-    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
-    $('#thread-title').title = state?.thread?.name ?? '';
+    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || state?.thread?.preview || (state && !state.ready ? '正在打开会话…' : '新会话');
+    $('#thread-title').title = state?.thread?.name || state?.thread?.preview || '';
     $('#older-history').hidden = !state?.historyCursor;
     $('#older-history').disabled = Boolean(state?.historyLoading);
     $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';
@@ -861,6 +869,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }
