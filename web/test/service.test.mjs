@@ -54,6 +54,26 @@ test('bootstrap requires explicit existing source binary, companion, private cer
   assert.throws(() => assertPrivate({ uid: process.getuid() + 1, mode: 0o600 }), { code: 'OWNER_REQUIRED' });
 });
 
+test('existing original home requires explicit boolean opt-in without weakening private file checks', async t => {
+  const f = await configFixture(t), previous = process.env.CODEX_HOME; process.env.CODEX_HOME = f.config.backendHome;
+  try {
+    for (const allowOriginalHome of [undefined, false, 'true']) await assert.rejects(validateConfig({ ...f.config, allowOriginalHome }, f.configPath), { code: 'ORIGINAL_HOME_REFUSED' });
+    await validateConfig({ ...f.config, allowOriginalHome: true }, f.configPath);
+    await chmod(f.configPath, 0o644);
+    await assert.rejects(validateConfig({ ...f.config, allowOriginalHome: true }, f.configPath), { code: 'PRIVATE_FILE_REQUIRED' });
+  } finally { if (previous == null) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; }
+});
+
+test('installed Codex CLI arguments precede the loopback listener and cannot inject unit directives', async t => {
+  const f = await configFixture(t), backendArgs = ['-c', 'features.code_mode_host=true', 'app-server', '-c', 'plugins.example.enabled=true'];
+  const units = renderUserUnits({ ...f.config, configPath: f.configPath, backendArgs });
+  assert.ok(units.backend.includes('"-c" "features.code_mode_host=true" "app-server" "-c" "plugins.example.enabled=true" "--listen"'));
+  for (const backendArgs of ['app-server', [5], ['app-server\nEnvironment=BAD=1']]) {
+    assert.throws(() => renderUserUnits({ ...f.config, configPath: f.configPath, backendArgs }));
+    await assert.rejects(validateConfig({ ...f.config, backendArgs }, f.configPath));
+  }
+});
+
 test('stop/start/status commands target only the two owned units and status excludes secrets', () => {
   assert.deepEqual(unitCommand('stop'), ['--user', 'stop', 'codex-console-native-web.service', 'codex-console-native-backend.service']);
   assert.equal(unitCommand('start').includes('ChatGPT'), false);
@@ -125,7 +145,7 @@ test('configuration validation rejects canonical private files inside the reposi
   const f = await configFixture(t), alias = join(f.root, 'outside');
   await symlink(f.config.repoDir, alias);
   await writeFile(join(f.config.repoDir, 'private-config.json'), '{}', { mode: 0o600 });
-  await assert.rejects(validateConfig(f.config, join(alias, 'private-config.json')), { code: 'PRIVATE_PATH_IN_REPO' });
+  await assert.rejects(validateConfig({ ...f.config, allowOriginalHome: true }, join(alias, 'private-config.json')), { code: 'PRIVATE_PATH_IN_REPO' });
 });
 
 test('installation checks both unit owners before changing either unit', async t => {

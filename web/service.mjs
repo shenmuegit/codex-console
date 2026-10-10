@@ -25,8 +25,10 @@ function unitValue(value) {
 }
 export function renderUserUnits(config) {
   for (const key of ['workspace', 'environmentFile', 'backendHome', 'backendExecutable', 'nodePath', 'repoDir', 'configPath']) if (!pathValue(config[key])) throw fail('INVALID_UNIT_VALUE', 'Unit paths must be absolute.');
+  const backendArgs = config.backendArgs ?? [];
+  if (!Array.isArray(backendArgs)) throw fail('INVALID_BACKEND_ARGS', 'Native executable arguments must be an array.');
   const common = `Type=simple\nWorkingDirectory=${config.workspace.replace(/%/g, '%%')}\nEnvironmentFile=${config.environmentFile.replace(/%/g, '%%')}\nUMask=0077\nRestart=on-failure\nRestartSec=2\nTimeoutStopSec=30\n`;
-  const backend = MARKER + `[Unit]\nDescription=Codex Console native app server\n[Service]\n${common}Environment=${unitValue('CODEX_HOME=' + config.backendHome)}\nExecStart=:${[config.backendExecutable, '--listen', config.backendUrl || 'ws://127.0.0.1:4500', '--managed-daemon'].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
+  const backend = MARKER + `[Unit]\nDescription=Codex Console native app server\n[Service]\n${common}Environment=${unitValue('CODEX_HOME=' + config.backendHome)}\nExecStart=:${[config.backendExecutable, ...backendArgs, '--listen', config.backendUrl || 'ws://127.0.0.1:4500', '--managed-daemon'].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
   const web = MARKER + `[Unit]\nDescription=Codex Console authenticated browser client\nAfter=${BACKEND}\nWants=${BACKEND}\n[Service]\n${common}ExecStart=:${[config.nodePath, join(config.repoDir, 'web/server.mjs'), '--config', config.configPath].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
   return { backend, web };
 }
@@ -65,7 +67,8 @@ export async function validateConfig(config, configPath) {
   for (const key of ['repoDir', 'nodePath', 'backendExecutable', 'backendHome', 'workspace', 'environmentFile', 'tlsCert', 'tlsKey', 'stateDir']) if (!pathValue(config[key])) throw fail('ABSOLUTE_PATH_REQUIRED', `${key} must be an absolute path.`);
   if (!pathValue(configPath)) throw fail('ABSOLUTE_PATH_REQUIRED', 'Use an absolute config path.');
   const original = await realpath(process.env.CODEX_HOME || join(homedir(), '.codex')).catch(() => resolve(process.env.CODEX_HOME || join(homedir(), '.codex')));
-  if (await realpath(config.backendHome) === original || resolve(config.backendHome) === resolve(join(homedir(), '.codex'))) throw fail('ORIGINAL_HOME_REFUSED', 'Keep the original desktop home separate; migration is a separate operation.');
+  if ((await realpath(config.backendHome) === original || resolve(config.backendHome) === resolve(join(homedir(), '.codex'))) && config.allowOriginalHome !== true) throw fail('ORIGINAL_HOME_REFUSED', 'Reusing the original desktop home requires explicit migration opt-in.');
+  renderUserUnits({ ...config, configPath });
   const repo = await realpath(config.repoDir);
   await requireExternal(repo, [configPath, config.stateDir, config.backendHome, config.environmentFile, config.tlsKey, config.tlsCert]);
   await requireExecutables(config);

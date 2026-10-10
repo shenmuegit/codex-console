@@ -2,11 +2,13 @@
 
 [中文](zh-CN/native-web-client.md)
 
-The native client is implemented on `codex/native-web-client` and runs against the
-isolated source-built app-server shared with the extra desktop. Projects, chats,
-files/photos, model/usage controls and native `@`/`$`/`/` actions are available.
-The original desktop's backend has not been migrated. Browser/hardware UI
-acceptance is explicitly listed below.
+The native client is implemented on `codex/native-web-client`. The current
+deployment uses the installed Codex 0.159.2 app-server and the original
+`~/.codex` account, projects and conversations. The original desktop profile is
+configured for the same loopback WebSocket; its reload waits for the current
+control conversation to finish. Files/photos, model/usage controls and native
+`@`/`$`/`/` actions are available. Browser/hardware UI acceptance is listed below.
+See [the original-client connection steps](original-codex-client.md) for this deployment.
 
 ## Codex desktop interface
 
@@ -108,7 +110,7 @@ and allows the corrected initialization command to be retried.
 
 The only managed units are `codex-console-native-backend.service` and
 `codex-console-native-web.service`. Native startup uses the configured persistent
-source executable and isolated home. The web handshake checks that native home;
+executable and home. The web handshake checks that native home;
 there is no fallback engine. Unit paths preserve spaces/Unicode/%/$ without a
 shell. A worktree referenced by an installed unit must stay present.
 Installation checks both existing unit owners before changing either file.
@@ -172,7 +174,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-125 Node checks passed; the production dependency audit reported zero vulnerabilities.
+127 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
