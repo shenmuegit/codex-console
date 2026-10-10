@@ -329,7 +329,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       created = (await api('/api/project/create', { viewId, name: request.name, rootPath: request.rootPath, idempotencyKey: request.idempotencyKey })).project;
       projectRequest = null;
     } catch (e) {
-      request.unknown = e.outcome === 'unknown' || !e.status;
+      request.unknown ||= e.outcome === 'unknown' || !e.status;
       if (alive) $('#project-error').textContent = request.unknown ? '创建结果尚未确认，请重试核对。' : e.message;
       return;
     } finally { creatingProject = false; if (alive) draw(); }

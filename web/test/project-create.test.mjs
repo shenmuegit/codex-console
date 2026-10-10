@@ -42,6 +42,24 @@ test('uncertain creation retries the same native request after closing and reope
   assert.equal(f.dom.get('project-dialog').open, false);
 });
 
+test('an unsuccessful reconciliation keeps the original uncertain creation locked across reopening', async t => {
+  let attempt = 0; const f = await fixture(t, async () => {
+    if (++attempt === 1) throw Object.assign(new Error('Unknown outcome'), { status: 504, outcome: 'unknown' });
+    if (attempt === 2) throw Object.assign(new Error('Backend unavailable'), { status: 503, outcome: 'not-sent' });
+    return { project };
+  });
+  f.submit(); await delay(0); f.submit(); await delay(0);
+  assert.equal(f.dom.get('project-name').disabled, true); assert.equal(f.dom.get('project-root').disabled, true);
+  assert.match(f.dom.get('project-error').textContent, /创建结果尚未确认/);
+  f.dom.get('project-name').value = 'Other'; f.dom.get('project-root').value = '/other';
+  f.dom.get('close-project').click(); f.dom.get('new-project').click();
+  assert.equal(f.dom.get('project-name').value, 'Demo'); assert.equal(f.dom.get('project-root').value, '/workspace');
+  f.submit(); await delay(0);
+  const creates = f.calls.filter(call => call.path === '/api/project/create'); assert.equal(creates.length, 3);
+  for (const create of creates.slice(1)) assert.deepEqual(create.body, creates[0].body);
+  assert.equal(f.dom.get('project-dialog').open, false);
+});
+
 test('known validation failure keeps inputs editable and a corrected request gets its own idempotency key', async t => {
   const f = await fixture(t, async () => { throw Object.assign(new Error('Directory unavailable'), { status: 400 }); });
   f.submit(); await delay(0); assert.ok(!f.dom.get('project-root').disabled); assert.match(f.dom.get('project-error').textContent, /Directory unavailable/);

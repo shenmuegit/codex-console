@@ -26,7 +26,8 @@ checked through native metadata and canonicalized before native `project/create`
 Successful creation selects the project scope; New conversation then uses that
 native project ID. Existing conversations keep their working directories.
 Uncertain creation retries retain the native idempotency key and lock the input
-values until the result is confirmed. Closing the form preserves newer navigation.
+values until the result is confirmed, even if a later retry is not sent. Closing
+the form preserves newer navigation.
 
 At widths of 760 CSS px or less, navigation opens as a left drawer capped at
 290 px, leaving at least 48 px outside it. Chat keeps its full width behind the
@@ -164,7 +165,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-116 Node checks passed; the production dependency audit reported zero vulnerabilities.
+117 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -397,9 +398,10 @@ real thread ID, send in both directions, then verify mobile navigation and copy.
 ## Native projects and working directories
 
 Projects and roots are read from Codex and shown without web archive overrides.
-The browser has no project creation, editing, folder creation or directory picker.
-Retired project/folder mutation routes return `WORKSPACE_MANAGED_BY_CODEX` before
-any native write. The raw browser RPC allowlist also excludes those mutations.
+The owner can create a native project from its name and an existing server
+directory. Existing-project editing, folder creation and directory picking remain
+unavailable. Retired project/folder mutation routes return
+`WORKSPACE_MANAGED_BY_CODEX` before any native write; raw mutation RPCs stay denied.
 
 Creating a conversation sends the selected native project ID. The gateway reads
 its primary registered root, or uses its configured default when no project is
