@@ -24,6 +24,12 @@ so reload reopens it. Existing thread links and newer navigation take priority.
 This preparation sends no model turn. Creation failures stay visible in chat;
 the existing New conversation button can retry.
 
+New turns request native automatic reasoning summaries because current model
+catalogs can default to no summary. The reasoning panel displays native public
+text as it arrives. An empty live item shows a waiting state; a completed empty
+item explains that no summary was provided. Older messages with no returned
+public text cannot be backfilled from their encrypted records.
+
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
 The attachment plus opens the existing file/photo pickers. There are no project
@@ -138,7 +144,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-100 Node checks passed; the production dependency audit reported zero vulnerabilities.
+103 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -152,6 +158,8 @@ Runtime proof files stay outside Git.
 First-entry checks also exercised the mounted controllers against real HTTPS and
 the native backend: both settings were saved and text/PNG uploads retained exact
 bytes. The disposable conversation and uploads were removed; no inference ran.
+The reasoning check received native summary deltas through the real HTTPS/SSE
+path and retained the public summary after reopening its disposable conversation.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop

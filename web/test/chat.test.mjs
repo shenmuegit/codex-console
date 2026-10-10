@@ -22,6 +22,7 @@ async function open(f, cookie, viewId, turns = []) {
 test('full defaults are encoded using native sandbox fields; effective restrictions remain visible', () => {
   const p = buildTurnParams({ threadId: 't', input: [{ type: 'text', text: '测试' }], clientUserMessageId: 'm' });
   assert.deepEqual(p.sandboxPolicy, { type: 'dangerFullAccess' }); assert.equal(p.approvalPolicy, 'never');
+  assert.equal(p.summary, 'auto', 'Native model defaults may otherwise suppress every reasoning summary');
   assert.equal('permissions' in p, false);
   assert.match(permissionText(resumeFixture('t')), /完全访问/);
   assert.doesNotMatch(permissionText({ approvalPolicy: 'on-request', sandbox: { type: 'workspaceWrite' } }), /完全访问/);

@@ -146,7 +146,7 @@ export function settleSend(state, id, { ok, unknown = false }) {
   state.pending = null;
 }
 export function buildTurnParams({ threadId, input, model, effort, clientUserMessageId }) {
-  return { threadId, input, clientUserMessageId, approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' },
+  return { threadId, input, clientUserMessageId, summary: 'auto', approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' },
     ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
 }
 export function permissionText(settings) {
@@ -375,7 +375,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
         node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
       }
       entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改' }[item.type] ?? '工具' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
-      const text = itemText(item), html = presentation?.html;
+      const nativeText = itemText(item), emptyReasoning = item.type === 'reasoning' && !nativeText.trim();
+      const text = emptyReasoning ? (turn.status === 'inProgress' ? '等待思考摘要…' : '模型未提供可显示的思考摘要。') : nativeText;
+      const html = emptyReasoning ? null : presentation?.html;
       if (html ? entry.html !== html : entry.text !== text || entry.html) {
         if (html) entry.body.innerHTML = html; else { const plain = element('pre', text); entry.body.replaceChildren(plain); }
         entry.html = html; entry.text = text;
