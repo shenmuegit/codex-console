@@ -138,7 +138,7 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .composer-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-height: 32px; }
 .composer-spacer { flex: 1; min-width: 8px; }
 .select-control { display: inline-flex; align-items: center; position: relative; max-width: min(44vw, 220px); }
-.select-control select, #send-mode { appearance: none; min-height: 32px; padding: 5px 22px 5px 8px; max-width: 100%; min-width: 0; font-size: 12px; border: 0; background: transparent; cursor: pointer; }
+.select-control select { appearance: none; min-height: 32px; padding: 5px 22px 5px 8px; max-width: 100%; min-width: 0; font-size: 12px; border: 0; background: transparent; cursor: pointer; }
 .select-control svg { position: absolute; right: 6px; width: 12px; height: 12px; pointer-events: none; color: var(--muted); }
 .effort-control { max-width: 90px; }
 .send-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 7px; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
@@ -148,8 +148,6 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .composer-status { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 24px; padding: 6px 8px 0; font-size: 11px; color: var(--muted); }
 .composer-status:has(#turn-status:empty) { display: none; }
 #retry-uncertain { color: var(--text); min-height: 28px; font-size: 11px; }
-.send-mode-label { display: inline-flex; align-items: center; color: var(--muted); }
-#send-mode { padding: 4px 6px; font-size: 11px; }
 .attachment-actions, .context-info { position: relative; }
 .attachment-actions > summary, .context-info > summary { list-style: none; cursor: pointer; border-radius: 6px; }
 .attachment-actions > summary::-webkit-details-marker, .context-info > summary::-webkit-details-marker { display: none; }
@@ -215,7 +213,7 @@ dialog::backdrop { background: #0006; }
   #draft { font-size: 16px; min-height: 72px; }
   .composer-surface { padding: 10px 10px 6px; border-radius: 22px; }
   .select-control { max-width: min(48vw, 210px); }
-  .select-control select, #send-mode { font-size: 16px; }
+  .select-control select { font-size: 16px; }
   .project-form input { font-size: 16px; }
   #project-dialog { inset: 12px 0 auto; margin: 0 auto; max-height: calc(var(--app-height, 100dvh) - 24px); }
   .chat-pane[data-empty="true"] .chat-feed { padding-top: clamp(40px, 12dvh, 100px); }

@@ -431,7 +431,8 @@ permissions unchanged.
 
 The composer keeps a stable message UUID, preserves failed/uncertain drafts and
 retains drafts in browser session storage when available. During active work,
-follow-up messages default to **Queue** and appear above the composer. Each
+follow-up messages default to **Queue** and appear above the composer. The
+composer has no queue/steer selector; the queued-message menu controls that choice. Each
 message offers **Steer**, delete, and a menu with **Edit message**, **Open in
 side chat**, and **Turn off queueing**. Turning off queueing changes future
 sends to steering without removing accepted messages; the choice survives

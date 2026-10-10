@@ -2,11 +2,10 @@ import { displayNativeText } from './composer.js';
 
 export function mountFollowups({ api, viewId, getState, onChange, onError }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController(), rows = new Map();
-  const list = $('#queued-messages'), menu = $('#queue-menu'), mode = $('#send-mode');
+  const list = $('#queued-messages'), menu = $('#queue-menu');
   const menuButtons = ['#queue-menu-edit', '#queue-menu-side', '#queue-menu-toggle'].map($);
-  let alive = true, target, trigger, editing, displayed;
-  try { mode.value = sessionStorage.getItem('codex-follow-up-mode') === 'steer' ? 'steer' : 'queue'; }
-  catch { mode.value = 'queue'; }
+  let alive = true, target, trigger, editing, displayed, mode = 'queue';
+  try { if (sessionStorage.getItem('codex-follow-up-mode') === 'steer') mode = 'steer'; } catch {}
   const bind = (node, type, fn) => node.addEventListener(type, event => {
     try { Promise.resolve(fn(event)).catch(onError); } catch (e) { onError(e); }
   }, { signal: abort.signal });
@@ -15,12 +14,11 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
     const previous = trigger; target = trigger = null;
     menu.hidePopover(); menu.hidden = true; previous?.setAttribute('aria-expanded', 'false'); if (focus) previous?.focus();
   }
-  function setMode(value) { mode.value = value; try { sessionStorage.setItem('codex-follow-up-mode', value); } catch {} }
+  function setMode(value) { mode = value; try { sessionStorage.setItem('codex-follow-up-mode', value); } catch {} }
   function openSide(threadId) {
     $('#side-chat-frame').src = '/?thread=' + encodeURIComponent(threadId) + '&side=1';
     $('#side-chat').hidden = false; $('#close-side-chat').focus();
   }
-  bind(mode, 'change', () => setMode(mode.value));
   async function load(state) {
     if (!alive || !state?.ready) return;
     const revision = state.queueRevision = (state.queueRevision ?? 0) + 1, generation = state.generation, data = [];
@@ -33,7 +31,7 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
     state.queued = data; render();
   }
   async function action(state, item, kind, text) {
-    if (!state.ready || mode.disabled || state.queueBusy || state.queueRecovery && kind !== 'restore') return;
+    if (!state.ready || !state.online || state.deleting || state.queueBusy || state.queueRecovery && kind !== 'restore') return;
     const transfer = ['steer', 'side'].includes(kind), operationId = crypto.randomUUID();
     if (transfer) { state.queueRecovery = { id: operationId, queuedSubmissionId: item.id, text: label(item) }; onChange(state); }
     state.queueBusy = true; render();
@@ -62,13 +60,13 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
   }
   function render() {
     if (!alive) return;
-    const state = getState(); mode.disabled = !state?.ready || !state.online || state.deleting;
+    const state = getState(), disabled = !state?.ready || !state.online || state.deleting;
     if (displayed !== state) { closeMenu(); rows.clear(); list.replaceChildren(); displayed = state; }
     if (target && (!state?.ready || !state.queued?.some(item => item.id === target.item.id))) closeMenu();
     list.hidden = !state?.queued?.length;
     $('#queue-recovery').hidden = !state?.queueRecovery;
     $('#queue-recovery-text').textContent = state?.queueRecovery ? '消息发送状态待核对：' + state.queueRecovery.text : '';
-    $('#queue-recovery-restore').disabled = $('#queue-recovery-dismiss').disabled = mode.disabled || Boolean(state?.queueBusy);
+    $('#queue-recovery-restore').disabled = $('#queue-recovery-dismiss').disabled = disabled || Boolean(state?.queueBusy);
     let index = 0;
     for (const item of state?.queued ?? []) {
       let row = rows.get(item.id);
@@ -81,7 +79,7 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
           button('删除排队消息', 'delete', () => action(state, row.item, 'delete'), '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>'));
         const more = button('消息选项', 'menu', () => {
           closeMenu(); target = { state, item: row.item }; trigger = more; more.setAttribute('aria-expanded', 'true');
-          $('#queue-menu-toggle').textContent = mode.value === 'queue' ? '关闭排队' : '开启排队';
+          $('#queue-menu-toggle').textContent = mode === 'queue' ? '关闭排队' : '开启排队';
           menu.hidden = false; menu.showPopover(); const rect = more.getBoundingClientRect();
           menu.style.left = Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)) + 'px';
           menu.style.top = Math.max(8, Math.min(rect.top - (menu.offsetHeight || 140) - 4, window.innerHeight - (menu.offsetHeight || 140) - 8)) + 'px';
@@ -90,11 +88,11 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
         more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false'); row.append(more); rows.set(item.id, row);
       }
       row.item = item; row.children[1].textContent = label(item); row.children[1].title = label(item);
-      for (const control of row.querySelectorAll('button')) control.disabled = mode.disabled || Boolean(state.queueBusy) || Boolean(state.queueRecovery);
+      for (const control of row.querySelectorAll('button')) control.disabled = disabled || Boolean(state.queueBusy) || Boolean(state.queueRecovery);
       if (list.children[index++] !== row) list.insertBefore(row, list.children[index - 1] ?? null);
     }
     for (const [id, row] of rows) if (!state?.queued?.some(item => item.id === id)) { row.remove(); rows.delete(id); }
-    for (const node of menuButtons) node.disabled = mode.disabled || Boolean(state?.queueBusy);
+    for (const node of menuButtons) node.disabled = disabled || Boolean(state?.queueBusy);
   }
   bind(menu, 'toggle', event => { if (event.newState === 'closed' && target) closeMenu(); });
   bind(menu, 'keydown', event => {
@@ -103,7 +101,7 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
     const items = menuButtons.filter(node => !node.disabled), index = items.indexOf(document.activeElement);
     event.preventDefault(); items[event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
   });
-  bind($('#queue-menu-toggle'), 'click', () => { setMode(mode.value === 'queue' ? 'steer' : 'queue'); closeMenu(true); });
+  bind($('#queue-menu-toggle'), 'click', () => { setMode(mode === 'queue' ? 'steer' : 'queue'); closeMenu(true); });
   bind($('#queue-menu-side'), 'click', () => { const current = target; closeMenu(); return action(current.state, current.item, 'side'); });
   bind($('#queue-menu-edit'), 'click', () => {
     editing = target; closeMenu(); $('#queue-edit-text').value = displayNativeText(editing.item.input.find(part => part.type === 'text') ?? { text: '' });
@@ -123,5 +121,5 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
     const state = getState(); if (state?.queueRecovery && window.confirm('请先核对当前及侧边会话。确认这条消息需要重新排队？')) return action(state, { id: state.queueRecovery.queuedSubmissionId }, 'restore');
   });
   bind($('#queue-recovery-dismiss'), 'click', () => { const state = getState(); if (state && !state.queueBusy) { state.queueRecovery = null; onChange(state); render(); } });
-  return { load, render, dispose() { alive = false; closeMenu(); abort.abort(); $('#queue-edit-dialog').close(); $('#side-chat').hidden = true; $('#side-chat-frame').src = 'about:blank'; } };
+  return { load, render, sendMode: () => mode, dispose() { alive = false; closeMenu(); abort.abort(); $('#queue-edit-dialog').close(); $('#side-chat').hidden = true; $('#side-chat-frame').src = 'about:blank'; } };
 }

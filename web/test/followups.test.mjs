@@ -33,14 +33,13 @@ async function fixture(t) {
 
 test('follow-ups default to the native queue and retain a visible queue with per-message actions', async t => {
   const f = await fixture(t), state = f.chat.getState();
-  assert.equal(f.dom.get('send-mode').value, 'queue');
+  assert.ok(!f.dom.get('send-mode'), 'The composer has no queue/steer selector');
   const list = f.dom.get('queued-messages'); assert.ok(list); assert.equal(list.hidden, false);
   assert.equal(list.children[0].children[1].textContent, '继续 <script> 😀\n［图片］');
   state.draft = 'Next task'; f.dom.get('draft').value = state.draft; f.dom.event('composer', 'submit'); await delay(0);
   assert.equal(f.calls.find(call => call.path === '/api/thread/send').body.mode, 'queue');
   f.action('menu'); assert.equal(f.dom.get('queue-menu').hidden, false);
   f.dom.get('queue-menu-toggle').click(); await delay(0);
-  assert.equal(f.dom.get('send-mode').value, 'steer');
   assert.equal(list.hidden, false, 'Turning off queueing must preserve accepted messages');
   state.draft = 'Correction'; f.dom.event('composer', 'submit'); await delay(0);
   assert.equal(f.calls.filter(call => call.path === '/api/thread/send').at(-1).body.mode, 'steer');

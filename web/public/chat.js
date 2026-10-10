@@ -633,7 +633,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
     $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
-    $('#send-mode-label').hidden = !active; $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
+    $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
     const currentIds = new Set(), currentActivities = new Set();
@@ -703,7 +703,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const state = selected, submission = beginSend(state); save(state); draw(); $('#chat-error').textContent = '';
     try {
       await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
-        mode: activeTurn(state) ? $('#send-mode').value : 'start', clientUserMessageId: submission.id });
+        mode: activeTurn(state) ? followups.sendMode() : 'start', clientUserMessageId: submission.id });
       settleSend(state, submission.id, { ok: true });
     } catch (e) { settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
     finally { save(state); if (selected === state) draw(); }
