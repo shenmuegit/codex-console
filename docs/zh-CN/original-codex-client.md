@@ -25,6 +25,7 @@
    保留原 Electron 配置目录。当前控制轮次结束后重载桌面，再检查它到共享后端的 TCP
    连接。一次性重载任务将结果写入
    `~/.local/state/codex-console-web/original-client-switch/desktop-verification.json`。
+   只有核对重启后进程的配置目录才能确认保留成功；超时或目录不匹配时不报告为已验证。
 
 切换不需要重新登录原生账号，不改写项目目录。网页服务重载后请从 HTTPS 首页重新登录；
 旧测试会话的 URL 属于已停用的隔离后端。

@@ -32,6 +32,8 @@ To repeat this connection change:
    the desktop after the current control turn completes, then verify its TCP
    connection to the shared backend. The one-shot reload reports its result in
    `~/.local/state/codex-console-web/original-client-switch/desktop-verification.json`.
+   Profile retention remains unknown until the restarted process is checked;
+   a timeout or profile mismatch cannot be reported as verified.
 
 The change requires no new native login and does not rewrite project directories.
 Open the HTTPS home page and sign in again after the web service reload; an old
