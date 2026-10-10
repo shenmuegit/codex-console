@@ -172,7 +172,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-118 Node checks passed; the production dependency audit reported zero vulnerabilities.
+124 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -417,7 +417,12 @@ its primary registered root, or uses its configured default when no project is
 selected. Browser-supplied `cwd` overrides are rejected. Existing conversations
 keep the actual working directory reported by their native snapshots.
 
-Each conversation row has a three-line options button with **Copy thread ID**, **Archive/Restore**, and **Delete**. The header no longer displays copy/delete controls. Actions use the clicked row's full native ID and preserve another selected conversation and its draft. Native popovers support arrow keys, Escape/Tab dismissal and focus return; a running archive can be cancelled before interruption.
+Each conversation row has a three-line options button with **Copy thread ID**, **Rename**, **Archive/Restore**, and **Delete**. The header no longer displays copy/delete controls. Actions use the clicked row's full native ID and preserve another selected conversation and its draft. Native popovers support arrow keys, Escape/Tab dismissal and focus return; a running archive can be cancelled before interruption.
+
+Rename and `/rename` share the native `thread/name/set` action. A valid session
+view can rename a listed conversation without opening it; names are trimmed and
+validated as 1–160 characters. Cancel/blank input sends nothing, pending renames
+cannot submit twice, and native failures retain the current name and draft.
 
 Conversation deletion still confirms once, reads fresh native active state,
 interrupts its matching turn and waits up to 30 seconds. Refusal, timeout or a

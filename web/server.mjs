@@ -657,8 +657,9 @@ export function createWebServer({ config, codex }) {
         if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
         reply(res, 200, await codex.rpc('thread/compact/start', { threadId: body.threadId }));
       } else if (url.pathname === '/api/thread/rename') {
-        fields(body, ['viewId', 'threadId', 'name']); const view = requireView(body.viewId, session);
-        if (view.threadId !== body.threadId || !text(body.name, 160) || !body.name.trim()) throw error(400, 'INVALID_NAME', '会话名称须为 1–160 个字符。');
+        fields(body, ['viewId', 'threadId', 'name']); requireView(body.viewId, session);
+        if (!id(body.threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
+        if (!text(body.name, 160) || !body.name.trim()) throw error(400, 'INVALID_NAME', '会话名称须为 1–160 个字符。');
         reply(res, 200, await codex.rpc('thread/name/set', { threadId: body.threadId, name: body.name.trim() }));
       } else if (url.pathname === '/api/thread/archive') {
         fields(body, ['viewId', 'threadId', 'confirmed']); requireView(body.viewId, session);

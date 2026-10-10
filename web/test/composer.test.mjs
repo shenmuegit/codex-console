@@ -112,6 +112,20 @@ test('nested @path completion resolves under the actual thread directory', async
   assert.equal(response.json.items[0].path, f.dir + '/src/index.mjs'); stream.req.destroy();
 });
 
+test('row rename accepts another thread with its own session view and validates names and IDs', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+  for (const body of [{ threadId: '', name: 'Title' }, { threadId: 'other', name: ' ' }, { threadId: 'other', name: 'x'.repeat(161) }]) {
+    assert.equal((await f.request('/api/thread/rename', { method: 'POST', cookie, body: { viewId, ...body } })).status, 400);
+  }
+  const otherCookie = await f.login();
+  assert.equal((await f.request('/api/thread/rename', { method: 'POST', cookie: otherCookie, body: { viewId, threadId: 'other', name: 'Title' } })).status, 403);
+  assert.equal(f.peer.sent.filter(call => call.method === 'thread/name/set').length, 0);
+  const rename = f.request('/api/thread/rename', { method: 'POST', cookie, body: { viewId, threadId: 'other', name: '  新标题  ' } });
+  await waitCall(f.peer, 'thread/name/set'); assert.deepEqual(f.peer.sent.at(-1).params, { threadId: 'other', name: '新标题' });
+  f.peer.replyTo('thread/name/set', {}); assert.equal((await rename).status, 200);
+  assert.equal(f.peer.sent.filter(call => call.method === 'thread/resume').length, 0);
+});
+
 test('dedicated rename/fork/export actions preserve full defaults and paginate native Markdown', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });

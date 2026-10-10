@@ -226,7 +226,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (menuTarget) closeThreadMenu();
     menuTarget = { ...item, archived }; menuTrigger = trigger;
     $('#thread-menu-archive').textContent = archived ? '恢复会话' : '归档会话';
-    $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(item.id);
+    $('#thread-menu-rename').disabled = $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(item.id);
     trigger.setAttribute('aria-expanded', 'true'); threadMenu.hidden = false; threadMenu.showPopover();
     const rect = trigger.getBoundingClientRect();
     threadMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 232)) + 'px';
@@ -237,17 +237,30 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     try { await navigator.clipboard.writeText(threadId); $('#turn-status').textContent = '已复制会话 ID'; }
     catch { window.prompt('复制会话 ID', threadId); }
   }
+  async function renameConversation(target, name) {
+    if (!online || busyThreads.has(target.id)) return false;
+    if (name === undefined) name = window.prompt('重命名会话', target.name ?? '');
+    if (!name?.trim()) return false;
+    name = name.trim(); busyThreads.add(target.id); draw();
+    try {
+      await api('/api/thread/rename', { viewId, threadId: target.id, name });
+      if (!alive) return true;
+      const state = states.get(target.id); if (state?.thread) state.thread.name = name;
+      draw(); await loadThreads(); return true;
+    } finally { busyThreads.delete(target.id); draw(); }
+  }
   bind(threadMenu, 'toggle', event => { if (event.newState === 'closed' && !threadMenu.matches(':popover-open')) {
     menuTrigger?.setAttribute('aria-expanded', 'false'); menuTarget = null; menuTrigger = null; threadMenu.hidden = true;
   } });
   bind(threadMenu, 'keydown', event => {
     if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') event.preventDefault(); closeThreadMenu(true); return; }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault(); const items = [$('#thread-menu-copy'), $('#thread-menu-archive'), $('#thread-menu-delete')].filter(node => !node.disabled);
+    event.preventDefault(); const items = [$('#thread-menu-copy'), $('#thread-menu-rename'), $('#thread-menu-archive'), $('#thread-menu-delete')].filter(node => !node.disabled);
     const index = items.indexOf(document.activeElement), next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length;
     items[next]?.focus();
   });
   bind($('#thread-menu-copy'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return copyThreadId(target.id); });
+  bind($('#thread-menu-rename'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return renameConversation(target); });
   bind($('#thread-menu-archive'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.archived ? restore(target.id) : archiveConversation(target); });
   bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return deleteConversation(target.id); });
   function save(state) {
@@ -412,7 +425,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#new-project').disabled = $('#project-submit').disabled = creatingProject || !online;
     $('#project-name').disabled = $('#project-root').disabled = creatingProject || Boolean(projectRequest?.unknown);
     $('#project-submit').textContent = creatingProject ? '创建中…' : projectRequest?.unknown ? '重试核对' : '创建项目';
-    if (menuTarget) $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
+    if (menuTarget) $('#thread-menu-rename').disabled = $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name ?? '';
@@ -516,7 +529,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (command === 'skills') { selected.draft = '$'; selected.selections = []; draft.value = '$'; draft.focus(); draft.setSelectionRange(1, 1); completions.refresh(); return false; }
     if (!selected?.ready) throw new Error('请先打开会话。');
     if (command === 'compact') { await api('/api/thread/compact', { viewId, threadId: selected.threadId }); selected.tokenUsage = null; return; }
-    if (command === 'rename') { const name = args || window.prompt('新会话名称', selected.thread?.name ?? ''); if (!name) return false; await api('/api/thread/rename', { viewId, threadId: selected.threadId, name }); return; }
+    if (command === 'rename') return renameConversation({ id: selected.threadId, name: selected.thread?.name }, args || undefined);
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
     if (command === 'delete') return deleteConversation(selected.threadId);
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
