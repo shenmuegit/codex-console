@@ -27,7 +27,11 @@ heading: All conversations, or the selected project's conversations. A labeled
 clear-filter icon beside the project heading returns to all conversations and
 focuses that heading; the archive switch stays on the same line. The heading
 updates even if the project list cannot refresh. Archived empty results are
-labeled explicitly. Selecting a project filters native conversations by its ID.
+labeled explicitly. Selecting a project combines native project membership with
+older unassigned conversations whose cwd exactly matches any registered project
+root. Both native cursors are retained; results merge by recency in pages of 20.
+Threads explicitly assigned elsewhere are excluded from the cwd fallback, and
+existing membership still works when a thread's cwd differs from the current root.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
 Successful creation selects the project scope and its unarchived conversations;

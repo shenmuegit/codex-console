@@ -42,6 +42,20 @@ test('HTTPS rejects unauthenticated APIs, cross-Origin requests, oversized bodie
   assert.equal((await stat(f.config.stateDir)).mode & 0o077, 0);
 });
 
+test('thread reads support bounded exact native cwd lists and null project membership', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login();
+  const params = { projectId: null, cwd: ['/demo', '/secondary'], archived: false, limit: 20 };
+  const reading = f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'thread/list', params } });
+  for (let i = 0; i < 100 && !f.peer.sent.some(call => call.method === 'thread/list'); i++) await delay(5);
+  assert.deepEqual(f.peer.sent.find(call => call.method === 'thread/list').params, params);
+  f.peer.replyTo('thread/list', { data: [], nextCursor: null }); assert.equal((await reading).status, 200);
+  const before = f.peer.sent.length;
+  for (const cwd of [[], ['/demo', null], ['relative'], ['/demo/../other'], Array(101).fill('/demo')]) {
+    assert.equal((await f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'thread/list', params: { cwd } } })).status, 400);
+  }
+  assert.equal(f.peer.sent.length, before);
+});
+
 test('login sets an absolute secure cookie and views belong to one session', async t => {
   const f = await httpsFixture(); t.after(() => f.close());
   const login = await f.request('/api/login', { method: 'POST', body: { password: 'fixture-passphrase' } });

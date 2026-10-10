@@ -175,7 +175,7 @@ export { activeTurn };
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), formNodes = new Map();
-  let selected, project, projectCursor, threadCursor, online = false, alive = true;
+  let selected, project, projectCursor, threadPages, online = false, alive = true;
   let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
@@ -301,11 +301,25 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   async function loadThreads(more = false) {
     const version = ++threadLoad, projectId = project?.id;
     const archived = $('#show-archived-threads').checked;
-    const page = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', archived,
-      ...(projectId ? { projectId } : {}), ...(more && threadCursor ? { cursor: threadCursor } : {}) });
-    if (!alive || version !== threadLoad || project?.id !== projectId) return;
+    const roots = project?.roots?.map(root => root.path) ?? [];
+    const pages = more && threadPages ? threadPages.map(page => ({ ...page, data: [...page.data] })) :
+      [{ params: projectId ? { projectId } : {}, data: [], done: false },
+        ...(projectId && roots.length ? [{ params: { projectId: null, cwd: roots }, data: [], done: false }] : [])];
+    const data = []; $('#more-threads').hidden = true;
+    // Old desktop history has a cwd but no project ID; keep native membership and both native cursors.
+    while (data.length < 20) {
+      await Promise.all(pages.filter(page => !page.data.length && !page.done).map(async page => {
+        const result = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', archived,
+          ...page.params, ...(page.cursor ? { cursor: page.cursor } : {}) });
+        page.data = result.data; page.cursor = result.nextCursor; page.done = !result.nextCursor;
+      }));
+      if (!alive || version !== threadLoad || project?.id !== projectId) return;
+      const next = pages.filter(page => page.data.length).sort((a, b) => b.data[0].updatedAt - a.data[0].updatedAt)[0];
+      if (next) data.push(next.data.shift());
+      else if (pages.every(page => page.done)) break;
+    }
     if (!more) { if (menuTarget) closeThreadMenu(); $('#threads').replaceChildren(); }
-    for (const item of page.data) {
+    for (const item of data) {
       const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
       const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
       const actions = element('button', null, 'thread-actions'); actions.type = 'button';
@@ -315,8 +329,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       if (item.status?.type === 'active') { button.append(element('span', '运行中', 'thread-activity')); button.setAttribute('aria-label', (item.name || item.preview || item.id) + '，运行中'); }
       if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); $('#threads').append(container);
     }
-    if (!page.data.length && !more) $('#threads').append(element('p', archived ? '没有已归档会话。' : project ? '这个项目还没有会话。' : '这里还没有会话。', 'muted'));
-    threadCursor = page.nextCursor; $('#more-threads').hidden = !threadCursor;
+    if (!data.length && !more) $('#threads').append(element('p', archived ? '没有已归档会话。' : project ? '这个项目还没有会话。' : '这里还没有会话。', 'muted'));
+    threadPages = pages; $('#more-threads').hidden = pages.every(page => page.done && !page.data.length);
   }
   async function chooseProject(item) {
     project = item;

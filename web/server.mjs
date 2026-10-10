@@ -46,7 +46,7 @@ function validateRead(method, p) {
       method === 'project/list' ? ['cursor', 'limit', 'sortKey', 'sortDirection'] : ['cursor', 'limit', 'includeHidden']);
     if ((p.cursor != null && !text(p.cursor)) || (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100)) ||
         (p.projectId != null && !id(p.projectId)) || (p.archived != null && typeof p.archived !== 'boolean') ||
-        (p.cwd != null && (!text(p.cwd) || !p.cwd.startsWith('/'))) ||
+        (p.cwd != null && (Array.isArray(p.cwd) ? !p.cwd.length || p.cwd.length > 100 || p.cwd.some(path => !absolutePath(path)) : !absolutePath(p.cwd))) ||
         (p.searchTerm != null && !text(p.searchTerm, 256)) || (p.sortDirection != null && !['asc', 'desc'].includes(p.sortDirection)) ||
         (p.sortKey != null && !['created_at', 'updated_at', 'recency_at', 'position', 'recencyAt', 'createdAt', 'updatedAt'].includes(p.sortKey)) ||
         (p.includeHidden != null && typeof p.includeHidden !== 'boolean') ||
