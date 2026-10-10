@@ -77,9 +77,9 @@ try {
     catch (e) { if (e.code !== 'ECONNREFUSED') throw e; await delay(100); }
   }
   assert.ok(reachable, 'HTTPS service became ready.');
-  for (const path of ['/', '/app.js', '/chat.js', '/composer.js', '/usage.js', '/styles.css']) {
+  for (const path of ['/', '/app.js', '/chat.js', '/composer.js', '/followups.js', '/usage.js', '/styles.css']) {
     const resource = await request(path); assert.equal(resource.status, 200, `UI resource ${path}`);
-    assert.match(resource.headers['content-security-policy'], /frame-ancestors 'none'/);
+    assert.match(resource.headers['content-security-policy'], /frame-ancestors 'self'/);
   }
   assert.equal((await request('/api/login', { password: 'irrelevant' }, 'https://foreign.invalid')).status, 403);
   const login = await request('/api/login', { password }); assert.equal(login.status, 200);

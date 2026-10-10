@@ -13,6 +13,41 @@ export function displayNativeText(part) {
   return decoder.decode(bytes.subarray(0, end)) + result;
 }
 
+export function updateQueuedInput(input, text) {
+  const index = input.findIndex(part => part.type === 'text');
+  if (index < 0) return [{ type: 'text', text, text_elements: [] }, ...input];
+  const part = input[index], bytes = new TextEncoder().encode(part.text), decoder = new TextDecoder();
+  let original = '', offset = 0;
+  const selections = [];
+  for (const range of [...(part.text_elements ?? [])].sort((a, b) => a.byteRange.start - b.byteRange.start)) {
+    const { start, end } = range.byteRange;
+    if (typeof range.placeholder !== 'string' || !Number.isInteger(start) || !Number.isInteger(end) || start < offset || end > bytes.length || start > end) continue;
+    original += decoder.decode(bytes.subarray(offset, start));
+    selections.push({ start: original.length, end: original.length + range.placeholder.length,
+      replacement: decoder.decode(bytes.subarray(start, end)), token: range.placeholder });
+    original += range.placeholder; offset = end;
+  }
+  original += decoder.decode(bytes.subarray(offset));
+  if (text === original) return input;
+  let encoded = '', previous = 0; const elements = [];
+  const retained = updateSelections(original, text, selections);
+  // Dialog edits can change both sides of an otherwise unchanged reference.
+  for (const selection of selections) {
+    if (retained.some(item => item.replacement === selection.replacement && item.token === selection.token)) continue;
+    const start = text.indexOf(selection.token);
+    if (start < 0 || original.indexOf(selection.token) !== original.lastIndexOf(selection.token) || start !== text.lastIndexOf(selection.token)) continue;
+    if (!retained.some(item => start < item.end && start + selection.token.length > item.start)) retained.push({ ...selection, start, end: start + selection.token.length });
+  }
+  for (const selection of retained.sort((a, b) => a.start - b.start)) {
+    encoded += text.slice(previous, selection.start);
+    const start = encoded.length; encoded += selection.replacement;
+    elements.push({ byteRange: utf8Range(encoded, start, encoded.length), placeholder: selection.token });
+    previous = selection.end;
+  }
+  encoded += text.slice(previous);
+  return input.map((item, i) => i === index ? { ...part, text: encoded, text_elements: elements } : item);
+}
+
 export const COMMANDS = ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export'];
 export function commandAction(text) {
   const match = text.trimEnd().match(/^\/([a-z]+)(?:\s+([\s\S]*))?$/);

@@ -55,6 +55,8 @@
         <section id="native-requests" aria-label="待回答的原生请求"></section>
         <div id="chat-error" class="error chat-error" role="alert"></div>
         <form id="composer" class="composer">
+          <section id="queued-messages" class="queued-messages" aria-label="排队消息" hidden></section>
+          <div id="queue-recovery" class="queue-recovery" hidden><p id="queue-recovery-text" role="status"></p><button id="queue-recovery-restore" type="button">核对后重新排队</button><button id="queue-recovery-dismiss" type="button">已核对，无需重发</button></div>
           <div class="composer-surface">
             <div id="attachments" aria-label="待发送附件"></div>
             <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
@@ -66,7 +68,7 @@
               <label class="select-control effort-control" title="选择思考强度"><span class="sr-only">思考强度</span><select id="effort" aria-label="选择思考强度" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
               <span class="composer-spacer"></span>
               <details id="context-info" class="context-info"><summary id="context-toggle" aria-label="上下文用量"><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-track" cx="10" cy="10" r="7"/><circle id="context-ring" cx="10" cy="10" r="7" pathLength="100"/></svg><span id="context-usage">上下文</span></summary><p id="context-detail"></p><meter id="context-meter" class="sr-only" min="0" max="100" aria-label="上下文使用比例" hidden></meter></details>
-              <label id="send-mode-label" class="send-mode-label" hidden><span class="sr-only">运行中输入</span><select id="send-mode" aria-label="运行中输入"><option value="steer">补充</option><option value="queue">排队</option></select></label>
+              <label id="send-mode-label" class="send-mode-label" hidden><span class="sr-only">运行中输入</span><select id="send-mode" aria-label="运行中输入"><option value="queue">排队</option><option value="steer">引导</option></select></label>
               <button id="stop-turn" type="button" class="send-button" aria-label="停止" title="停止" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
               <button id="send" type="submit" class="send-button" aria-label="发送" title="发送" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
             </div>
@@ -74,9 +76,12 @@
           <div class="composer-status"><span id="turn-status" role="status"></span><button id="retry-uncertain" type="button" hidden>核对后重新发送</button></div>
         </form>
       </section>
+      <aside id="side-chat" class="side-chat" aria-label="侧边聊天" hidden><header><h2>侧边聊天</h2><button id="close-side-chat" class="icon-button" type="button" aria-label="关闭侧边聊天">×</button></header><iframe id="side-chat-frame" title="侧边聊天"></iframe></aside>
     </div>
   </main>
   <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
+  <dialog id="queue-edit-dialog" aria-labelledby="queue-edit-title"><form id="queue-edit-form"><h2 id="queue-edit-title">编辑消息</h2><label class="sr-only" for="queue-edit-text">排队消息内容</label><textarea id="queue-edit-text" rows="5" maxlength="500000" required></textarea><p class="muted small">保留原有附件与引用。</p><p id="queue-edit-error" class="error" role="alert"></p><div class="toolbar"><button id="queue-edit-cancel" type="button">取消</button><button id="queue-edit-save" type="submit" class="primary">保存消息</button></div></form></dialog>
+  <div id="queue-menu" class="thread-menu queue-menu" popover role="menu" aria-label="排队消息选项" hidden><button id="queue-menu-edit" type="button" role="menuitem">编辑消息</button><button id="queue-menu-side" type="button" role="menuitem">在侧边聊天中打开</button><button id="queue-menu-toggle" type="button" role="menuitem">关闭排队</button></div>
   <dialog id="usage-dialog"><div class="dialog-heading"><h2>账号用量</h2><button id="close-usage" class="icon-button" aria-label="关闭">×</button></div><p class="muted small">7 天滚动窗口 · 当前账号的全局用量</p><div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p></dialog>
   <dialog id="project-dialog" aria-labelledby="project-dialog-title">
     <div class="dialog-heading"><h2 id="project-dialog-title">新建项目</h2><button id="close-project" class="icon-button" type="button" aria-label="关闭">×</button></div>

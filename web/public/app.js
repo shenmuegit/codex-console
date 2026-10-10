@@ -1,5 +1,6 @@
 import { mountChat } from './chat.js';
 const $ = selector => document.querySelector(selector);
+if (new URL(location.href).searchParams.get('side') === '1') document.body.dataset.sideChat = 'true';
 let events, chat;
 if (window.visualViewport) {
   const viewport = () => document.documentElement.style.setProperty('--app-height', `${window.visualViewport.height}px`);

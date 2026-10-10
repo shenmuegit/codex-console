@@ -1,5 +1,6 @@
 import { displayNativeText, mountAttachments, mountCompletions, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
+import { mountFollowups } from './followups.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
@@ -228,6 +229,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
+  const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -316,6 +318,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.kind === 'project' ? changeProject(target, 'delete') : deleteConversation(target.id); });
   function save(state) {
     try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
+      queueRecovery: state.queueRecovery,
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
   function stateFor(threadId) {
@@ -326,6 +329,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
         if (typeof saved?.text === 'string') state.draft = saved.text;
         if (Array.isArray(saved?.selections)) state.selections = saved.selections;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
+        if (typeof saved?.queueRecovery?.id === 'string' && typeof saved.queueRecovery.queuedSubmissionId === 'string') state.queueRecovery = saved.queueRecovery;
         if (Array.isArray(saved?.attachments)) state.attachments = saved.attachments.filter(a => typeof a.id === 'string' && typeof a.name === 'string').map(a => ({ ...a, status: 'complete' }));
       } catch {}
     }
@@ -497,6 +501,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     catch (e) { if (version === opening) throw e; return; }
     if (!alive || version !== opening) return;
     installSnapshot(state, result); save(state); draw();
+    followups.load(state).catch(showError);
     if (state.presentationNeeded) { state.presentationNeeded = false; loadPresentation().catch(showError); }
     attachments.hydrate(state);
     await loadThreads();
@@ -617,6 +622,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || (menuTarget.kind === 'project' ? busyProjects : busyThreads).has(menuTarget.id);
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    if (state) state.online = online;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name ?? '';
     $('#older-history').hidden = !state?.historyCursor;
@@ -670,6 +676,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (state) save(state);
     if (shownNativeError !== state?.error) { shownNativeError = state?.error; $('#chat-error').textContent = state?.error ?? ''; }
     attachments.render(state);
+    followups.render();
     usage.render();
   }
   function scheduleDraw() { if (!drawing) { drawing = true; requestAnimationFrame(() => { drawing = false; draw(); }); } }
@@ -841,6 +848,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       if (event.native?.method?.startsWith('project/')) loadProjects().catch(showError);
       const threadId = event.kind === 'snapshot' ? event.native.thread.id : event.native?.threadId ?? event.native?.params?.threadId;
       if (event.kind === 'snapshot' || (threadId && states.has(threadId))) applyNativeEvent(stateFor(threadId), event);
+      if (threadId && states.has(threadId) && (event.kind === 'snapshot' || event.native?.method === 'thread/queue/changed')) followups.load(stateFor(threadId)).catch(showError);
       if (['status', 'resync'].includes(event.kind)) {
         for (const state of states.values()) if (!event.native.threadId || event.native.threadId === state.threadId) applyNativeEvent(state, event);
         if (event.kind === 'resync' && selected && online && (!event.native.threadId || event.native.threadId === selected.threadId)) open(selected.threadId).catch(showError);
@@ -853,6 +861,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }

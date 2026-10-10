@@ -6,13 +6,13 @@ import { randomBytes } from 'node:crypto';
 import { parseArgs, isDeepStrictEqual } from 'node:util';
 import { createAuth, checkOrigin } from './auth.mjs';
 import { createCodexClient } from './codex.mjs';
-import { realpath, stat } from 'node:fs/promises';
+import { realpath, stat, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, activeTurn } from './public/chat.js';
 import { renderTranscript, boundedHistoryItem } from './transcript.mjs';
 import { createFiles } from './files.mjs';
 import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
-import { encodeComposer, utf8Range } from './public/composer.js';
+import { encodeComposer, utf8Range, updateQueuedInput, displayNativeText } from './public/composer.js';
 import { itemText } from './public/chat.js';
 import { validateConfig } from './service.mjs';
 
@@ -22,6 +22,7 @@ const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
+  ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
   ['/usage.js', ['usage.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']]]);
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -60,7 +61,8 @@ function validateRead(method, p) {
     fields(p, method === 'app/list' ? ['threadId', 'limit', 'cursor'] : ['threadId']);
     if ((p.threadId != null && !id(p.threadId)) || (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100)) || (p.cursor != null && !text(p.cursor))) throw error(400, 'INVALID_PARAMS', '应用目录参数不正确。');
   } else if (method === 'thread/queue/list') {
-    fields(p, ['threadId']); if (!id(p.threadId)) throw error(400, 'INVALID_PARAMS', '会话 ID 不正确。');
+    fields(p, ['threadId', 'cursor', 'limit']);
+    if (!id(p.threadId) || (p.cursor != null && !text(p.cursor)) || (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100))) throw error(400, 'INVALID_PARAMS', '队列参数不正确。');
   } else if (['fs/readDirectory', 'fs/getMetadata'].includes(method)) {
     fields(p, ['path']); if (!absolutePath(p.path)) throw error(400, 'INVALID_PATH', '请选择绝对主机路径，不能包含上级跳转。');
   } else if (method === 'account/rateLimits/read') fields(p, []);
@@ -181,6 +183,7 @@ export function createWebServer({ config, codex }) {
   const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
   const initialHistory = new WeakMap();
+  const queueLocks = new Set(), recoveryDir = join(config.stateDir, 'queue-recovery');
   const files = createFiles(config);
   let accountEpoch = 0;
   async function nativeModels() {
@@ -457,6 +460,111 @@ export function createWebServer({ config, codex }) {
     })();
     return record.promise;
   }
+  async function queueList(threadId) {
+    const data = []; let cursor;
+    do { const page = (await codex.rpc('thread/queue/list', { threadId, limit: 100, ...(cursor ? { cursor } : {}) })).result;
+      data.push(...page.data); cursor = page.nextCursor;
+    } while (cursor);
+    return data;
+  }
+  async function saveRecovery(path, data) {
+    await writeFile(path + '.tmp', JSON.stringify(data), { mode: 0o600 }); await rename(path + '.tmp', path);
+  }
+  async function recoveredTurn(threadId, clientId) {
+    let cursor;
+    do {
+      const page = (await codex.rpc('thread/turns/list', { threadId, limit: 100, sortDirection: 'desc', itemsView: 'summary', ...(cursor ? { cursor } : {}) })).result;
+      const turn = page.data.find(turn => turn.items?.some(item => item.type === 'userMessage' && item.clientId === clientId));
+      if (turn) return turn.id; cursor = page.nextCursor;
+    } while (cursor);
+  }
+  async function queueAction(body, view) {
+    fields(body, ['viewId', 'threadId', 'queuedSubmissionId', 'action', 'text', 'operationId', 'recoveryId']);
+    if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+    if (!id(body.queuedSubmissionId) || !['delete', 'update', 'steer', 'side', 'restore'].includes(body.action) ||
+        (body.action === 'update' ? !text(body.text, 500_000) || !body.text.trim() : body.text !== undefined) ||
+        (body.action !== 'delete' ? !id(body.operationId) : body.operationId !== undefined) ||
+        (body.action === 'restore' ? !id(body.recoveryId) : body.recoveryId !== undefined)) throw error(400, 'INVALID_QUEUE_ACTION', '排队消息操作不正确。');
+    const key = `${body.threadId}:queue:${body.queuedSubmissionId}:${body.action}:${body.operationId ?? ''}`, fingerprint = JSON.stringify([body.text, body.recoveryId]), previous = writes.get(key);
+    if (previous?.state === 'unknown') throw Object.assign(error(409, 'OUTCOME_UNKNOWN', '操作状态未知，请先核对会话与队列，不要重复发送。'), { outcome: 'unknown', queueRecovery: previous.queueRecovery });
+    if (previous && previous.fingerprint === fingerprint) return previous.state === 'done' ? previous.result : previous.promise;
+    if (previous?.state === 'pending' || queueLocks.has(body.threadId)) throw error(409, 'QUEUE_BUSY', '正在处理这条会话的排队消息。');
+    if (!chats.get(body.threadId)?.ready || deleting.has(body.threadId)) throw error(409, 'RESYNC_REQUIRED', '请先刷新会话。');
+    for (const [key, record] of writes) if (record.state === 'done' && record.time + 600_000 < Date.now()) writes.delete(key);
+    if (writes.size >= 1024) throw error(429, 'PENDING_LIMIT', '待确认操作过多，请先核对会话。');
+    const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record); queueLocks.add(body.threadId);
+    record.promise = (async () => {
+      let backup, backupPath;
+      try {
+        if (body.action === 'restore') {
+          backupPath = join(recoveryDir, body.recoveryId + '.json');
+          try { backup = JSON.parse(await readFile(backupPath, 'utf8')); }
+          catch { throw error(404, 'RECOVERY_MISSING', '恢复内容不可用，请保留消息文本并核对会话。'); }
+          if (backup.threadId !== body.threadId || backup.queued.id !== body.queuedSubmissionId) throw error(403, 'RECOVERY_DENIED', '恢复内容属于其他会话。');
+        }
+        const items = await queueList(body.threadId), queued = items.find(item => item.id === body.queuedSubmissionId);
+        if (body.action === 'restore') {
+          let response;
+          const pending = queued ?? items.find(item => item.clientUserMessageId === backup.retryId || item.clientUserMessageId === backup.queued.clientUserMessageId);
+          if (pending) response = { result: { queuedSubmission: pending }, cursor: checkpoint };
+          else {
+            const turnId = await recoveredTurn(backup.state === 'restoring' ? body.threadId : backup.sideThreadId ?? body.threadId,
+              backup.state === 'restoring' ? backup.retryId : backup.queued.clientUserMessageId);
+            if (turnId) response = { result: { turnId, reconciled: true }, cursor: checkpoint };
+          }
+          if (!response) {
+            backup.state = 'restoring'; await saveRecovery(backupPath, backup);
+            response = await codex.rpc('thread/queue/add', { threadId: body.threadId, input: backup.queued.input, clientUserMessageId: backup.retryId });
+          }
+          await unlink(backupPath).catch(() => {}); record.state = 'done'; record.result = response; return response;
+        }
+        if (!queued) throw error(409, 'QUEUE_CHANGED', '这条消息已发送或删除，请核对会话。');
+        const state = chats.get(body.threadId), active = activeTurn(state);
+        let response;
+        const params = { threadId: body.threadId, queuedSubmissionId: queued.id };
+        if (['steer', 'side'].includes(body.action)) {
+          const recoveryId = body.operationId; backupPath = join(recoveryDir, recoveryId + '.json');
+          mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
+          const data = { threadId: body.threadId, queued, retryId: randomBytes(16).toString('hex'), state: 'claimed' };
+          await writeFile(backupPath, JSON.stringify(data), { mode: 0o600, flag: 'wx' }); backup = data;
+          record.queueRecovery = { id: recoveryId, queuedSubmissionId: queued.id, text: displayNativeText(queued.input.find(part => part.type === 'text') ?? { text: '' }) || '［附件消息］' };
+        }
+        if (body.action === 'update') response = await codex.rpc('thread/queue/update', { ...params, input: updateQueuedInput(queued.input, body.text) });
+        else if (body.action === 'steer' && !active) { record.transferAttempted = true; response = await codex.rpc('thread/queue/start', params); record.accepted = true; }
+        else {
+          const removed = await codex.rpc('thread/queue/delete', params);
+          if (!removed.result.deleted) { if (backupPath) await unlink(backupPath).catch(() => {}); backup = null; throw error(409, 'QUEUE_CHANGED', '这条消息已发送或删除，请核对会话。'); }
+          record.removed = true; response = removed;
+          if (body.action === 'steer') { record.transferAttempted = true; response = await codex.rpc('turn/steer', { threadId: body.threadId, input: queued.input, clientUserMessageId: queued.clientUserMessageId, expectedTurnId: active.id }); record.accepted = true; }
+          if (body.action === 'side') {
+            const fork = await codex.rpc('thread/fork', { threadId: body.threadId, excludeTurns: true, deferGoalContinuation: true, approvalPolicy: 'never', sandbox: 'danger-full-access' });
+            const threadId = fork.result.thread.id, watcher = 'side:' + threadId;
+            record.queueRecovery.sideThreadId = threadId;
+            backup.sideThreadId = threadId; await saveRecovery(backupPath, backup);
+            await codex.rpc('thread/name/set', { threadId, name: '侧边聊天' });
+            try { await codex.retainThread(threadId, watcher); record.transferAttempted = true; response = await codex.rpc('turn/start', buildTurnParams({ threadId, input: queued.input, clientUserMessageId: queued.clientUserMessageId })); record.accepted = true; }
+            finally { await codex.releaseThread(threadId, watcher); }
+            response = { ...response, result: { ...response.result, threadId } };
+          }
+        }
+        if (backupPath) await unlink(backupPath).catch(() => {});
+        record.state = 'done'; record.result = { ...response, result: safe(response.result) }; return record.result;
+      } catch (e) {
+        if (backup && record.removed && !record.accepted && (!record.transferAttempted || e.outcome !== 'unknown')) {
+          try { backup.state = 'restoring'; backup.retryId = backup.queued.clientUserMessageId; await saveRecovery(backupPath, backup);
+            await codex.rpc('thread/queue/add', { threadId: body.threadId, input: backup.queued.input, clientUserMessageId: backup.queued.clientUserMessageId });
+            await unlink(backupPath).catch(() => {}); backup = null; e.message += ' 消息已恢复到队列末尾。';
+          } catch { e.outcome = 'unknown'; }
+        }
+        if (record.accepted) e.outcome = 'unknown';
+        if (backup && e.outcome === 'unknown') e.queueRecovery = record.queueRecovery;
+        else if (backup && body.action !== 'restore' && !record.removed) await unlink(backupPath).catch(() => {});
+        if (e.outcome === 'unknown') record.state = 'unknown'; else writes.delete(key);
+        throw e;
+      } finally { queueLocks.delete(body.threadId); }
+    })();
+    return record.promise;
+  }
   const off = codex.onEvent(event => {
     checkpoint = event.cursor;
     if (event.kind === 'status' || event.native?.method === 'account/updated') ++accountEpoch;
@@ -525,7 +633,7 @@ export function createWebServer({ config, codex }) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'");
     try {
       const url = new URL(req.url, config.origin), mutation = !['GET', 'HEAD'].includes(req.method);
       if (req.headers.host !== new URL(config.origin).host) throw error(403, 'HOST_DENIED', '请使用配置中的地址。');
@@ -719,6 +827,8 @@ export function createWebServer({ config, codex }) {
         reply(res, 200, await creation.promise);
       } else if (url.pathname === '/api/thread/send') {
         reply(res, 200, await sendOnce(body, requireView(body.viewId, session)));
+      } else if (url.pathname === '/api/thread/queue') {
+        reply(res, 200, await queueAction(body, requireView(body.viewId, session)));
       } else if (url.pathname === '/api/thread/stop') {
         fields(body, ['viewId', 'threadId', 'turnId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId) || !id(body.turnId) || view.threadId !== body.threadId || activeTurn(chats.get(body.threadId) ?? { turns: [] })?.id !== body.turnId) throw error(409, 'TURN_CHANGED', '目标轮次已变化，请刷新会话。');
@@ -762,7 +872,7 @@ export function createWebServer({ config, codex }) {
     } catch (e) {
       if (res.headersSent) { res.destroy(); return; }
       const status = e.status ?? ({ ORIGIN_DENIED: 403, LOGIN_DENIED: 401, LOGIN_THROTTLED: 429, STALE_NATIVE_REQUEST: 409, NATIVE_DISCONNECTED: 503, NATIVE_TIMEOUT: 504 }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
-      reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
+      reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}), ...(e.queueRecovery ? { queueRecovery: e.queueRecovery } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
     }
   });
   server.requestTimeout = 600_000; server.headersTimeout = 10_000;

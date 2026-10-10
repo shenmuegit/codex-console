@@ -428,10 +428,34 @@ permissions unchanged.
 
 The composer keeps a stable message UUID, preserves failed/uncertain drafts and
 retains drafts in browser session storage when available. During active work,
-choose **Supplement current turn** or **Queue for the next turn** explicitly.
+follow-up messages default to **Queue** and appear above the composer. Each
+message offers **Steer**, delete, and a menu with **Edit message**, **Open in
+side chat**, and **Turn off queueing**. Turning off queueing changes future
+sends to steering without removing accepted messages; the choice survives
+reload in the same browser tab. Native queue notifications refresh messages
+added or changed by another client. Edit saves preserve images, skills and
+unchanged references; if a message has already dispatched, the edit stays
+visible with an error. Side chat forks native context, transfers the selected
+message and leaves the source conversation and draft in place. Wide layouts
+show both chats; narrower layouts show the side chat with a close control.
 Steering keeps current-turn settings; queued work uses native future defaults.
 Queueing waits for the native settings notification before applying full future
 permission defaults. Stop targets the actual active turn ID.
+
+Codex owns queue execution, including when the browser is closed. Stopping a
+turn pauses its queue. Transfers claim a queued message before sending it so
+the native idle dispatcher cannot execute it twice. A definite transfer failure
+restores the original input at the end of the native queue. An uncertain transfer
+retains its text in the browser and a private recovery file under
+`<stateDir>/queue-recovery/` (directory 0700, files 0600, outside Git), including
+the original native attachment inputs. The recovery controls require checking
+the conversation before requeueing; they reconcile queued items and history
+first. Closing the side pane leaves accepted native work running. Successful
+transfers/recoveries remove their backup files; retained uncertain backups can
+be cleaned up after their corresponding messages have been checked.
+
+This follows the [official steering and queueing behavior](https://learn.chatgpt.com/docs/prompting#steering-and-queuing).
+Regression checks: `node --test web/test/followups.test.mjs web/test/queue-http.test.mjs`.
 
 Opening/switching pages uses native atomic resume and ordered cursors. Native
 completion summaries preserve previously streamed tool items. Older full history
