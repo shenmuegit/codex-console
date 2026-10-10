@@ -17,6 +17,11 @@ input surface. Model, effort, permissions and the read-only context indicator
 are inside that surface. Context details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
 
+Projects and Conversations have separate headings. The project list contains
+native projects only; All conversations is a conversation-scope control. The
+conversation scope names its selected project, and archived empty results are
+labeled explicitly. Selecting a project filters native conversations by its ID.
+
 At widths of 760 CSS px or less, navigation opens as a left drawer capped at
 290 px, leaving at least 48 px outside it. Chat keeps its full width behind the
 backdrop. Outside click, Escape and the close control dismiss the drawer;
@@ -151,7 +156,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-107 Node checks passed; the production dependency audit reported zero vulnerabilities.
+109 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation

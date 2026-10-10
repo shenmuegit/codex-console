@@ -274,7 +274,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   async function loadProjects(more = false) {
     const version = ++projectLoad, page = await read('project/list', { limit: 20, ...(more && projectCursor ? { cursor: projectCursor } : {}) });
     if (!alive || version !== projectLoad) return;
-    if (!more) $('#projects').replaceChildren(row('全部会话', null, !project, () => chooseProject(null)));
+    if (!more) $('#projects').replaceChildren();
+    $('#project-title').textContent = project ? '项目：' + project.name : '全部项目'; $('#project-title').title = $('#project-title').textContent;
+    $('#all-threads').setAttribute('aria-pressed', String(!project));
     for (const item of page.data) {
       const button = row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item));
       const icon = element('span', null, 'project-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>';
@@ -299,11 +301,11 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       if (item.status?.type === 'active') { button.append(element('span', '运行中', 'thread-activity')); button.setAttribute('aria-label', (item.name || item.preview || item.id) + '，运行中'); }
       if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); $('#threads').append(container);
     }
-    if (!page.data.length && !more) $('#threads').append(element('p', '这里还没有会话。', 'muted'));
+    if (!page.data.length && !more) $('#threads').append(element('p', archived ? '没有已归档会话。' : project ? '这个项目还没有会话。' : '这里还没有会话。', 'muted'));
     threadCursor = page.nextCursor; $('#more-threads').hidden = !threadCursor;
   }
   async function chooseProject(item) {
-    project = item; $('#project-title').textContent = item?.name ?? '全部会话';
+    project = item;
     setLevel('threads'); await Promise.all([loadProjects(), loadThreads()]);
   }
   function select(state) {
@@ -525,6 +527,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
   }
   bind($('#new-thread'), 'click', newThread);
+  bind($('#all-threads'), 'click', () => chooseProject(null));
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
   bind($('#back-projects'), 'click', closeSidebar); bind(backdrop, 'click', closeSidebar);
