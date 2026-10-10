@@ -276,8 +276,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const version = ++projectLoad, page = await read('project/list', { limit: 20, ...(more && projectCursor ? { cursor: projectCursor } : {}) });
     if (!alive || version !== projectLoad) return;
     if (!more) $('#projects').replaceChildren();
-    $('#project-title').textContent = project ? '项目：' + project.name : '全部项目'; $('#project-title').title = $('#project-title').textContent;
-    $('#all-threads').setAttribute('aria-pressed', String(!project));
     for (const item of page.data) {
       const button = row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item));
       const icon = element('span', null, 'project-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>';
@@ -307,7 +305,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   async function chooseProject(item) {
     project = item;
-    setLevel('threads'); await Promise.all([loadProjects(), loadThreads()]);
+    setLevel('threads'); draw(); await Promise.all([loadProjects(), loadThreads()]);
   }
   bind($('#new-project'), 'click', () => {
     if (creatingProject || !online) return;
@@ -408,6 +406,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function draw() {
     if (!alive) return;
+    $('#project-title').textContent = project ? '项目：' + project.name : '全部项目'; $('#project-title').title = $('#project-title').textContent;
+    $('#all-threads').setAttribute('aria-pressed', String(!project));
     $('#new-project').disabled = $('#project-submit').disabled = creatingProject || !online;
     $('#project-name').disabled = $('#project-root').disabled = creatingProject || Boolean(projectRequest?.unknown);
     $('#project-submit').textContent = creatingProject ? '创建中…' : projectRequest?.unknown ? '重试核对' : '创建项目';

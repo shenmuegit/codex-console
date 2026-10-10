@@ -19,8 +19,9 @@ the native 12000-token percentage baseline; no custom context limit is added.
 
 Projects and Conversations have separate headings. The project list contains
 native projects only; All conversations is a conversation-scope control. The
-conversation scope names its selected project, and archived empty results are
-labeled explicitly. Selecting a project filters native conversations by its ID.
+conversation scope names its selected project even if the project list cannot
+refresh, and archived empty results are labeled explicitly. Selecting a project
+filters native conversations by its ID.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
 Successful creation selects the project scope; New conversation then uses that
@@ -165,7 +166,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-117 Node checks passed; the production dependency audit reported zero vulnerabilities.
+118 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation

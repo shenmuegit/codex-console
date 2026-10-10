@@ -5,11 +5,13 @@ import { mountChat } from '../public/chat.js';
 import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
 
-async function fixture(t) {
+async function fixture(t, { failProjectRefresh = false } = {}) {
   const dom = domFixture(), reads = [];
+  let projectReads = 0;
   const api = async (path, body) => {
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } };
     assert.equal(path, '/api/rpc'); reads.push(body);
+    if (body.method === 'project/list' && ++projectReads > 1 && failProjectRefresh) throw new Error('Project list unavailable');
     const data = body.method === 'project/list' ? [{ id: 'p', name: 'Demo', roots: [{ path: '/demo' }] }, { id: 'q', name: 'Other', roots: [{ path: '/other' }] }] :
       body.method === 'thread/list' && !body.params.archived ? [{ id: body.params.projectId ? 'project-chat' : 'global-chat', name: 'Chat', updatedAt: 1 }] : [];
     return { result: { data, nextCursor: null } };
@@ -37,4 +39,19 @@ test('project selection labels and filters conversations while archived empty re
   assert.equal(reads.findLast(call => call.method === 'thread/list').params.projectId, undefined);
   dom.get('show-archived-threads').checked = true; dom.event('show-archived-threads', 'change'); await delay(0);
   assert.match(dom.get('threads').children[0].textContent, /已归档会话/);
+});
+
+test('conversation scope stays accurate when the project list cannot refresh', async t => {
+  const { dom, reads } = await fixture(t, { failProjectRefresh: true });
+  dom.get('projects').children[0].click(); await delay(0);
+  assert.equal(dom.get('threads').children[0].dataset.threadId, 'project-chat');
+  assert.equal(reads.findLast(call => call.method === 'thread/list').params.projectId, 'p');
+  assert.equal(dom.get('project-title').textContent, '项目：Demo');
+  assert.equal(dom.get('project-title').title, '项目：Demo');
+  assert.equal(dom.get('all-threads').getAttribute('aria-pressed'), 'false');
+  assert.match(dom.get('chat-error').textContent, /Project list unavailable/);
+  dom.get('all-threads').click(); await delay(0);
+  assert.equal(dom.get('threads').children[0].dataset.threadId, 'global-chat');
+  assert.equal(dom.get('project-title').textContent, '全部项目');
+  assert.equal(dom.get('all-threads').getAttribute('aria-pressed'), 'true');
 });
