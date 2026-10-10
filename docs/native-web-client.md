@@ -13,9 +13,12 @@ acceptance is explicitly listed below.
 The shell copies the installed Codex desktop's gray theme tokens, native system
 font and current 290 px sidebar preference. One global sidebar contains native
 projects/conversations; the conversation pane uses the desktop-style rounded
-input surface. Model, effort, permissions and the read-only context indicator
+input surface. Model, effort and the read-only context indicator
 are inside that surface. Context details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
+The shell omits the connected label, permission summary, idle keyboard hint and
+manual quota-update button. Quota still reads when opened and follows native
+updates; disconnections, pending sends and errors remain visible.
 
 Projects and Conversations have separate headings. The project list contains
 native projects only; All conversations is a conversation-scope control. The
@@ -359,9 +362,9 @@ snapshot-required SSE and logout. Password values were not printed.
 Choose a native project or all conversations; list pages contain 20 entries.
 New conversations use the selected host directory, full access and no execution
 approvals, subject to native managed restrictions. Each new empty thread is named
-before its atomic resume. The header displays the real thread ID for copying and
-native conversation defaults. Reading a thread leaves its execution permissions
-unchanged.
+before its atomic resume. Copy the real thread ID from its conversation row menu;
+`/status` shows native conversation defaults. Reading a thread leaves its execution
+permissions unchanged.
 
 The composer keeps a stable message UUID, preserves failed/uncertain drafts and
 retains drafts in browser session storage when available. During active work,
@@ -464,8 +467,8 @@ The model menu and reasoning options come from the native catalog. Changes apply
 to future turns through `thread/settings/update` and wait for its matching native
 notification; they preserve the draft and never change a running turn through
 `turn/settings/update`. Queued messages use shared future defaults, so subsequent
-selector changes can affect them. Steering inherits the current turn. The header
-reports native defaults and managed policy; unsupported model/effort/photo
+selector changes can affect them. Steering inherits the current turn. The
+`/status` and `/permissions` commands report native defaults and managed policy; unsupported model/effort/photo
 combinations are rejected with the draft and attachments retained.
 
 Context shows the latest `last.totalTokens`, available native window and the

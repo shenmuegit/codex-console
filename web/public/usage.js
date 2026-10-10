@@ -104,9 +104,8 @@ export function mountUsage({ api, viewId, getState, onChange, onError }) {
   $('#effort').addEventListener('change', apply, { signal: abort.signal });
   $('#show-usage').addEventListener('click', () => { $('#usage-dialog').showModal(); refreshQuota(); }, { signal: abort.signal });
   $('#close-usage').addEventListener('click', () => $('#usage-dialog').close(), { signal: abort.signal });
-  $('#refresh-usage').addEventListener('click', refreshQuota, { signal: abort.signal });
   return {
-    render, loadModels, refreshQuota,
+    render, loadModels,
     async choose(model, effort) { const choice = modelChoice(models, model, effort); $('#model').value = model; effortOptions(choice, effort ?? choice.defaultReasoningEffort); return apply(); },
     onEvent(event) {
       const method = event.native?.method;

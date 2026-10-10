@@ -417,8 +417,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name ?? '';
     $('#older-history').hidden = !state?.historyCursor;
-    $('#effective-settings').textContent = state?.ready ? permissionText(state.settings) : '';
-    $('#effective-settings').title = state?.ready ? `${active ? '下轮默认' : '会话默认'}：${state.settings.model ?? '原生模型'} · ${state.settings.effort ?? '原生思考强度'}` : '';
     const hasMessages = Boolean(state?.turns.some(t => t.items?.length)); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
@@ -426,7 +424,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#send-mode-label').hidden = !active; $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
-    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : state?.ready ? 'Enter 发送 · Shift+Enter 换行' : '';
+    $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
     const currentIds = new Set();
     let position = 0;
     for (const turn of state?.turns ?? []) for (const item of turn.items ?? []) {

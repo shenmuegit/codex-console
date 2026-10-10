@@ -24,10 +24,9 @@ async function connected() {
   events?.close(); events = new EventSource('/api/events?viewId=' + encodeURIComponent(viewId));
   events.onmessage = event => {
     const envelope = JSON.parse(event.data);
-    if (envelope.kind === 'status') $('#connection').textContent = envelope.native.online ? '已连接' : '后端离线 · 正在重连';
     chat?.onEvent(envelope);
   };
-  events.onerror = () => { $('#connection').textContent = '连接中断 · 正在重连'; chat?.connection(false); api('/api/status').catch(() => {}); };
+  events.onerror = () => { chat?.connection(false); api('/api/status').catch(() => {}); };
   await chat.load();
 }
 $('#login-form').addEventListener('submit', async event => {

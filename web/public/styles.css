@@ -61,7 +61,6 @@ nav { display: grid; gap: 2px; }
 .global-usage { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 8px 10px; text-align: left; }
 .global-usage svg { width: 17px; height: 17px; color: var(--muted); }
 .footer-arrow { margin-left: auto; color: var(--muted); font-size: 18px; }
-.connection { display: block; font-size: 11px; color: var(--muted); padding: 4px 10px 0; }
 .chat-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg); }
 .chat-heading { display: flex; align-items: center; gap: 10px; flex: 0 0 52px; min-height: 52px; padding: max(8px, env(safe-area-inset-top)) 24px 8px; }
 .thread-title { max-width: 320px; min-width: 0; font-size: 14px; font-weight: 500; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -104,12 +103,12 @@ nav { display: grid; gap: 2px; }
 .select-control select, #send-mode { appearance: none; min-height: 32px; padding: 5px 22px 5px 8px; max-width: 100%; min-width: 0; font-size: 12px; border: 0; background: transparent; cursor: pointer; }
 .select-control svg { position: absolute; right: 6px; width: 12px; height: 12px; pointer-events: none; color: var(--muted); }
 .effort-control { max-width: 90px; }
-.effective-settings { font-size: 11px; color: var(--muted); padding: 4px 6px; white-space: nowrap; }
 .send-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 7px; border-radius: 50%; background: var(--accent); color: var(--on-accent); }
 .send-button:hover { background: var(--accent); opacity: .85; }
 .send-button:disabled { opacity: .3; }
 #stop-turn rect { fill: currentColor; stroke: none; }
 .composer-status { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 24px; padding: 6px 8px 0; font-size: 11px; color: var(--muted); }
+.composer-status:has(#turn-status:empty) { display: none; }
 #retry-uncertain { color: var(--text); min-height: 28px; font-size: 11px; }
 .send-mode-label { display: inline-flex; align-items: center; color: var(--muted); }
 #send-mode { padding: 4px 6px; font-size: 11px; }
@@ -181,7 +180,6 @@ dialog::backdrop { background: #0006; }
   .select-control select, #send-mode { font-size: 16px; }
   .project-form input { font-size: 16px; }
   #project-dialog { inset: 12px 0 auto; margin: 0 auto; max-height: calc(var(--app-height, 100dvh) - 24px); }
-  .effective-settings { font-size: 10px; }
   .chat-pane[data-empty="true"] .chat-feed { padding-top: clamp(40px, 12dvh, 100px); }
   .welcome h2 { font-size: 28px; }
   #native-requests, .chat-error { padding-inline: 16px; }

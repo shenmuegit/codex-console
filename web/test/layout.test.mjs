@@ -9,7 +9,8 @@ import { domFixture } from './dom.mjs';
 test('model effort and context are in the composer while weekly usage belongs to the global sidebar', () => {
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   const start = html.indexOf('<form id="composer"'), composer = html.slice(start, html.indexOf('</form>', start));
-  for (const id of ['model', 'effort', 'context-usage', 'context-meter', 'effective-settings']) assert.ok(composer.includes(`id="${id}"`), `${id} is inside the input surface`);
+  for (const id of ['model', 'effort', 'context-usage', 'context-meter']) assert.ok(composer.includes(`id="${id}"`), `${id} is inside the input surface`);
+  for (const id of ['effective-settings', 'connection', 'refresh-usage']) assert.equal(html.includes(`id="${id}"`), false, `${id} is omitted`);
   assert.equal(composer.includes('id="show-usage"'), false);
   const sidebar = html.indexOf('id="sidebar"');
   assert.ok(sidebar >= 0); assert.ok(html.slice(sidebar, html.indexOf('id="sidebar-backdrop"', sidebar)).includes('id="show-usage"'));
