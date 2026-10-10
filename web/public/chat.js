@@ -216,13 +216,14 @@ export { activeTurn };
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), formNodes = new Map();
-  let selected, project, projectCursor, threadPages, online = false, alive = true;
-  let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
+  let selected, project, projectCursor, online = false, alive = true;
+  let opening = 0, projectLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
   let creatingProject = false, projectRequest, archivedProjects = false;
   const layout = $('.work-layout'), feed = $('#chat-feed'), draft = $('#draft'), threadMenu = $('#thread-menu');
   const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
+  const projectGroups = new Map(), allThreads = { list: $('#threads'), more: $('#more-threads'), load: 0 };
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
@@ -259,8 +260,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   });
   setLevel(layout.dataset.level ?? 'chat');
   function closeThreadMenu(restoreFocus = false) {
-    const trigger = menuTrigger; menuTarget = null; menuTrigger = null;
-    threadMenu.hidePopover(); threadMenu.hidden = true; trigger?.setAttribute('aria-expanded', 'false');
+    const trigger = menuTrigger, isThread = menuTarget?.kind === 'thread'; menuTarget = null; menuTrigger = null;
+    threadMenu.hidePopover(); threadMenu.hidden = true; if (isThread) trigger?.setAttribute('aria-expanded', 'false');
     if (restoreFocus) trigger?.focus();
   }
   function openListMenu(item, archived, trigger, kind = 'thread', event) {
@@ -274,7 +275,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#thread-menu-rename').textContent = archived ? '重命名（先恢复会话）' : '重命名';
     $('#thread-menu-rename').disabled = archived || !online || busyThreads.has(item.id);
     $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || (isProject ? busyProjects : busyThreads).has(item.id);
-    trigger.setAttribute('aria-expanded', 'true'); threadMenu.hidden = false; threadMenu.showPopover();
+    if (!isProject) trigger.setAttribute('aria-expanded', 'true'); threadMenu.hidden = false; threadMenu.showPopover();
     const rect = trigger.getBoundingClientRect(), pointer = event?.clientX || event?.clientY;
     threadMenu.style.left = Math.max(8, Math.min(pointer ? event.clientX : rect.left, window.innerWidth - 232)) + 'px';
     threadMenu.style.top = Math.max(8, Math.min(pointer ? event.clientY : rect.bottom + 4, window.innerHeight - (threadMenu.offsetHeight || 140) - 8)) + 'px';
@@ -297,7 +298,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     } finally { busyThreads.delete(target.id); draw(); }
   }
   bind(threadMenu, 'toggle', event => { if (event.newState === 'closed' && !threadMenu.matches(':popover-open')) {
-    menuTrigger?.setAttribute('aria-expanded', 'false'); menuTarget = null; menuTrigger = null; threadMenu.hidden = true;
+    if (menuTarget?.kind === 'thread') menuTrigger?.setAttribute('aria-expanded', 'false'); menuTarget = null; menuTrigger = null; threadMenu.hidden = true;
   } });
   bind(threadMenu, 'keydown', event => {
     if (event.key === 'Escape' || event.key === 'Tab') { if (event.key === 'Escape') event.preventDefault(); closeThreadMenu(true); return; }
@@ -341,20 +342,39 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       data = page.data.filter(item => (item.metadata?.['codex-console.archived'] === 'true') === archived);
       cursor = page.nextCursor;
     } while (!data.length && cursor);
-    const focusId = !more && $('#projects').contains(document.activeElement) ? document.activeElement.dataset.projectId :
-      menuTarget?.kind === 'project' && threadMenu.contains(document.activeElement) ? menuTarget.id : null;
+    const focus = !more && $('#projects').contains(document.activeElement) ? document.activeElement :
+      menuTarget?.kind === 'project' && threadMenu.contains(document.activeElement) ? menuTrigger : null;
     if (menuTarget?.kind === 'project') closeThreadMenu();
-    if (!more) $('#projects').replaceChildren();
     for (const item of data) {
-      const button = row(item.name, item.roots?.[0]?.path, project?.id === item.id, () => chooseProject(item));
-      button.dataset.projectId = item.id; button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', 'false'); button.setAttribute('aria-controls', 'thread-menu');
-      bind(button, 'contextmenu', event => { event.preventDefault(); openListMenu(item, archived, button, 'project', event); });
-      bind(button, 'keydown', event => { if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) { event.preventDefault(); openListMenu(item, archived, button, 'project'); } });
-      const icon = element('span', null, 'project-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>';
-      button.insertBefore(icon, button.children[0]); $('#projects').append(button);
+      let group = projectGroups.get(item.id);
+      if (!group) {
+        group = { item, node: element('div', null, 'project-group'), content: element('div', null, 'project-conversations'), list: element('nav'), more: element('button', '更多会话', 'more-button'), load: 0 };
+        projectGroups.set(item.id, group); group.content.id = 'project-conversations-' + item.id; group.content.hidden = group.more.hidden = true;
+        group.more.type = 'button'; bind(group.more, 'click', () => loadThreadList(group, true));
+        const button = group.button = row(item.name, null, false, () => {
+          if (group.content.hidden) return chooseProject(group.item);
+          group.content.hidden = true; group.load++; button.setAttribute('aria-expanded', 'false');
+          if (project?.id === group.item.id) project = null;
+          draw();
+        });
+        group.label = button.children[0]; button.className += ' project-row'; button.dataset.projectId = item.id;
+        button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', 'false'); button.setAttribute('aria-controls', group.content.id);
+        bind(button, 'contextmenu', event => { event.preventDefault(); openListMenu(group.item, archived, button, 'project', event); });
+        bind(button, 'keydown', event => { if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) { event.preventDefault(); openListMenu(group.item, archived, button, 'project'); } });
+        const icon = element('span', null, 'project-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>';
+        const arrow = element('span', null, 'project-arrow'); arrow.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg>';
+        button.insertBefore(icon, group.label); button.append(arrow); group.content.append(group.list, group.more); group.node.append(button, group.content);
+      }
+      group.item = item; group.label.textContent = item.name; group.button.title = item.roots?.[0]?.path ?? '';
+      group.list.setAttribute('aria-label', item.name + ' 的会话');
     }
-    projectCursor = page.nextCursor; $('#more-projects').hidden = !projectCursor;
-    if (focusId) ([...$('#projects').children].find(row => row.dataset.projectId === focusId) ?? $('#new-project')).focus();
+    if (!more) {
+      for (const [id, group] of projectGroups) if (!data.some(item => item.id === id)) { group.load++; projectGroups.delete(id); }
+      $('#projects').replaceChildren(...data.map(item => projectGroups.get(item.id).node));
+    } else $('#projects').append(...data.map(item => projectGroups.get(item.id).node));
+    projectCursor = page.nextCursor; $('#more-projects').hidden = !projectCursor; draw();
+    if (focus) ($('#projects').contains(focus) ? focus : $('#new-project')).focus();
+    await Promise.all(data.map(item => projectGroups.get(item.id)).filter(group => !group.content.hidden).map(group => loadThreadList(group)));
   }
   async function changeProject(target, operation) {
     if (!online || busyProjects.has(target.id)) return;
@@ -368,42 +388,63 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     } finally { busyProjects.delete(target.id); draw(); }
   }
   async function loadThreads(more = false) {
-    const version = ++threadLoad, projectId = project?.id;
+    await Promise.all([loadThreadList(allThreads, more), ...(!more ? [...projectGroups.values()].filter(group => !group.content.hidden).map(group => loadThreadList(group)) : [])]);
+  }
+  async function loadThreadList(group, more = false) {
+    if (more && (group.loading || !group.pages)) return;
+    const version = ++group.load, projectId = group.item?.id;
     const archived = $('#show-archived-threads').checked;
-    const roots = project?.roots?.map(root => root.path) ?? [];
-    const pages = more && threadPages ? threadPages.map(page => ({ ...page, data: [...page.data] })) :
+    const roots = group.item?.roots?.map(root => root.path) ?? [];
+    const pages = more && group.pages ? group.pages.map(page => ({ ...page, data: [...page.data] })) :
       [{ params: projectId ? { projectId } : {}, data: [], done: false },
         ...(projectId && roots.length ? [{ params: { projectId: null, cwd: roots }, data: [], done: false }] : [])];
-    const data = []; $('#more-threads').hidden = true;
-    // Old desktop history has a cwd but no project ID; keep native membership and both native cursors.
-    while (data.length < 20) {
-      await Promise.all(pages.filter(page => !page.data.length && !page.done).map(async page => {
-        const result = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', archived,
-          ...page.params, ...(page.cursor ? { cursor: page.cursor } : {}) });
-        page.data = result.data; page.cursor = result.nextCursor; page.done = !result.nextCursor;
-      }));
-      if (!alive || version !== threadLoad || project?.id !== projectId) return;
-      const next = pages.filter(page => page.data.length).sort((a, b) => b.data[0].updatedAt - a.data[0].updatedAt)[0];
-      if (next) data.push(next.data.shift());
-      else if (pages.every(page => page.done)) break;
+    const data = []; group.loading = group.more.disabled = true;
+    if (!group.list.children.length) group.list.append(element('p', '加载会话…', 'muted'));
+    try {
+      // Old desktop history has a cwd but no project ID; keep native membership and both native cursors.
+      while (data.length < 20) {
+        await Promise.all(pages.filter(page => !page.data.length && !page.done).map(async page => {
+          const result = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', sortDirection: 'desc', archived,
+            ...page.params, ...(page.cursor ? { cursor: page.cursor } : {}) });
+          page.data = result.data; page.cursor = result.nextCursor; page.done = !result.nextCursor;
+        }));
+        if (!alive || version !== group.load) return;
+        const next = pages.filter(page => page.data.length).sort((a, b) => b.data[0].updatedAt - a.data[0].updatedAt)[0];
+        if (next) data.push(next.data.shift());
+        else if (pages.every(page => page.done)) break;
+      }
+      if (!more) { if (menuTarget?.kind === 'thread' && group.list.contains(menuTrigger)) closeThreadMenu(); group.list.replaceChildren(); }
+      for (const item of data) {
+        const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
+        const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
+        const actions = element('button', null, 'thread-actions'); actions.type = 'button';
+        actions.setAttribute('aria-label', '会话选项：' + (item.name || item.preview || item.id)); actions.setAttribute('aria-haspopup', 'menu'); actions.setAttribute('aria-expanded', 'false'); actions.setAttribute('aria-controls', 'thread-menu');
+        actions.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+        bind(actions, 'click', () => openListMenu(item, archived, actions));
+        if (item.status?.type === 'active') { button.append(element('span', '运行中', 'thread-activity')); button.setAttribute('aria-label', (item.name || item.preview || item.id) + '，运行中'); }
+        if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); group.list.append(container);
+      }
+      if (!data.length && !more) group.list.append(element('p', archived ? '没有已归档会话。' : projectId ? '这个项目还没有会话。' : '这里还没有会话。', 'muted'));
+      group.pages = pages;
+    } catch (e) {
+      if (!alive || version !== group.load) return;
+      if (!group.pages) group.list.replaceChildren(element('p', projectId ? '无法加载会话，请收起项目后重试。' : '无法加载会话。', 'muted'));
+      throw e;
+    } finally {
+      if (version === group.load) {
+        group.loading = group.more.disabled = false;
+        group.more.hidden = !group.pages || group.pages.every(page => page.done && !page.data.length);
+      }
     }
-    if (!more) { if (menuTarget?.kind === 'thread') closeThreadMenu(); $('#threads').replaceChildren(); }
-    for (const item of data) {
-      const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
-      const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
-      const actions = element('button', null, 'thread-actions'); actions.type = 'button';
-      actions.setAttribute('aria-label', '会话选项：' + (item.name || item.preview || item.id)); actions.setAttribute('aria-haspopup', 'menu'); actions.setAttribute('aria-expanded', 'false'); actions.setAttribute('aria-controls', 'thread-menu');
-      actions.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
-      bind(actions, 'click', () => openListMenu(item, archived, actions));
-      if (item.status?.type === 'active') { button.append(element('span', '运行中', 'thread-activity')); button.setAttribute('aria-label', (item.name || item.preview || item.id) + '，运行中'); }
-      if (archived) button.append(element('small', '点击恢复此会话')); container.append(button, actions); $('#threads').append(container);
-    }
-    if (!data.length && !more) $('#threads').append(element('p', archived ? '没有已归档会话。' : project ? '这个项目还没有会话。' : '这里还没有会话。', 'muted'));
-    threadPages = pages; $('#more-threads').hidden = pages.every(page => page.done && !page.data.length);
   }
   async function chooseProject(item) {
     project = item;
-    setLevel('threads'); draw(); await Promise.all([loadProjects(), loadThreads()]);
+    setLevel('threads'); draw();
+    if (!projectGroups.has(item.id)) await loadProjects();
+    while (alive && project?.id === item.id && !projectGroups.has(item.id) && projectCursor) await loadProjects(true);
+    const group = projectGroups.get(item.id); if (!alive || project?.id !== item.id || !group) return;
+    group.content.hidden = false; group.button.setAttribute('aria-expanded', 'true');
+    await loadThreadList(group);
   }
   bind($('#new-project'), 'click', () => {
     if (creatingProject || !online) return;
@@ -433,7 +474,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if ($('#project-dialog').open && project === currentProject && opening === version) {
       archivedProjects = false;
       $('#show-archived-threads').checked = false;
-      $('#project-dialog').close(); await chooseProject(created); $('#new-thread').focus();
+      $('#project-dialog').close(); await chooseProject(created); await loadThreads(); $('#new-thread').focus();
     } else await loadProjects();
   });
   function select(state) {
@@ -507,8 +548,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function draw() {
     if (!alive) return;
-    $('#project-title').textContent = project ? project.name + ' 的会话' : '全部会话'; $('#project-title').title = $('#project-title').textContent;
-    $('#all-threads').hidden = !project;
+    for (const group of projectGroups.values()) group.button.setAttribute('aria-current', String(project?.id === group.item.id));
     $('#projects-title').textContent = archivedProjects ? '已归档项目' : '项目';
     $('#show-archived-projects').textContent = archivedProjects ? '返回项目' : '已归档';
     $('#show-archived-projects').setAttribute('aria-pressed', String(archivedProjects));
@@ -667,7 +707,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
   }
   bind($('#new-thread'), 'click', newThread);
-  bind($('#all-threads'), 'click', () => { $('#project-title').focus(); return chooseProject(null); });
   bind($('#show-archived-projects'), 'click', () => { archivedProjects = !archivedProjects; draw(); return loadProjects(); });
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));

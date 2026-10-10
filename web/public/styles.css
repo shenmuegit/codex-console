@@ -43,8 +43,12 @@ nav { display: grid; gap: 2px; }
 .list-row small { display: none; }
 .project-icon { flex: 0 0 16px; color: var(--muted); }
 .project-icon svg { width: 16px; height: 16px; }
+.project-arrow { margin-left: auto; flex: 0 0 12px; color: var(--muted); }
+.project-arrow svg { width: 12px; height: 12px; }
+.project-row[aria-expanded="true"] .project-arrow { transform: rotate(90deg); }
+.project-conversations { margin-left: 18px; }
+.project-conversations .muted { padding: 0 10px; font-size: 12px; }
 .more-button { color: var(--muted); font-size: 12px; padding: 6px 10px; }
-#all-threads { flex-shrink: 0; margin-left: auto; }
 .archive-filter { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .archive-filter input { appearance: none; width: 8px; height: 8px; border-radius: 50%; margin: 0; padding: 0; border: 1px solid currentColor; background: transparent; }
 .archive-filter input:checked { background: currentColor; }

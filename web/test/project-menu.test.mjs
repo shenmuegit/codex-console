@@ -23,7 +23,7 @@ async function fixture(t, mutation, listProjects) {
   };
   const chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true);
   t.after(() => { chat.dispose(); dom.restore(); }); await chat.load(); chat.getState().draft = 'keep my draft';
-  const row = id => dom.get('projects').children.find(node => node.dataset.projectId === id);
+  const row = id => dom.get('projects').children.map(node => node.children[0]).find(node => node.dataset.projectId === id);
   const menu = (id, type = 'contextmenu', fields = {}) => { const target = row(id); assert.ok(target, 'Native project row has its project ID'); const event = Object.assign(new Event(type, { cancelable: true }), fields); target.dispatchEvent(event); return event; };
   return { dom, chat, calls, row, menu };
 }
@@ -64,14 +64,14 @@ test('project deletion confirms once, blocks duplicates and preserves a newer pr
   f.dom.get('thread-menu-delete').click(); assert.equal(f.calls.length, 1);
   f.row('q').click(); await delay(0); finish(); await delay(0);
   assert.deepEqual(f.calls[0], { path: '/api/project/delete', body: { viewId: 'view', projectId: 'p', confirmed: true } });
-  assert.equal(f.row('p'), undefined); assert.equal(f.dom.get('project-title').textContent, 'Other 的会话');
+  assert.equal(f.row('p'), undefined); assert.equal(f.dom.get('project-title').textContent, '全部会话'); assert.equal(f.row('q').getAttribute('aria-current'), 'true');
   assert.equal(f.chat.getState().draft, 'keep my draft'); assert.equal(f.chat.getState().threadId, 't');
 });
 
 test('project mutation errors and disconnects retain the project and selected conversation', async t => {
   let fail; const f = await fixture(t, new Promise((_resolve, reject) => { fail = reject; }));
   f.row('p').click(); await delay(0); f.menu('p'); f.dom.get('thread-menu-archive').click(); fail(Error('Project update rejected')); await delay(0);
-  assert.ok(f.row('p')); assert.equal(f.dom.get('project-title').textContent, 'Demo 的会话'); assert.match(f.dom.get('chat-error').textContent, /Project update rejected/);
+  assert.ok(f.row('p')); assert.equal(f.dom.get('project-title').textContent, '全部会话'); assert.equal(f.row('p').getAttribute('aria-current'), 'true'); assert.match(f.dom.get('chat-error').textContent, /Project update rejected/);
   f.menu('p'); f.chat.connection(false); assert.equal(f.dom.get('thread-menu-archive').disabled, true); assert.equal(f.dom.get('thread-menu-delete').disabled, true);
   f.dom.get('thread-menu-delete').click(); assert.equal(f.calls.length, 1); assert.equal(f.chat.getState().draft, 'keep my draft');
 });

@@ -6,12 +6,12 @@ import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
 
 const project = { id: 'p', name: 'Demo', roots: [{ path: '/workspace' }], metadata: {}, position: 0, createdAt: 1, updatedAt: 1 };
-async function fixture(t, create = async () => ({ project })) {
+async function fixture(t, create = async () => ({ project }), listProjects) {
   const dom = domFixture(), calls = []; let saved = false, seq = 0;
   const api = async (path, body) => {
     calls.push({ path, body });
     if (path === '/api/project/create') { const response = await create(body); saved = true; return response; }
-    if (path === '/api/rpc') return { result: { data: body.method === 'project/list' && saved ? [project] : [], nextCursor: null } };
+    if (path === '/api/rpc') return { result: body.method === 'project/list' && listProjects ? await listProjects(body.params, saved) : { data: body.method === 'project/list' && saved ? [project] : [], nextCursor: null } };
     if (path === '/api/thread/open' || path === '/api/thread/start') return { snapshot: resumeFixture(path.endsWith('/start') ? 'new' : body.threadId), cursor: { generation: 1, seq: ++seq } };
     assert.fail(path);
   };
@@ -30,11 +30,24 @@ test('creating a project selects its native scope and new conversations inherit 
   assert.equal(f.dom.get('project-submit').disabled, true);
   const body = f.calls.at(-1).body; assert.equal(body.name, 'Demo'); assert.equal(body.rootPath, '/workspace'); assert.match(body.idempotencyKey, /^[a-f0-9-]{36}$/);
   finish({ project }); await delay(0);
-  assert.equal(f.dom.get('project-dialog').open, false); assert.equal(f.dom.get('project-title').textContent, 'Demo 的会话');
+  assert.equal(f.dom.get('project-dialog').open, false); assert.equal(f.dom.get('project-title').textContent, '全部会话'); assert.equal(f.dom.get('projects').children[0].children[0].getAttribute('aria-expanded'), 'true');
   assert.equal(f.dom.get('show-archived-threads').checked, false);
   assert.equal(f.calls.findLast(call => call.path === '/api/rpc' && call.body.method === 'thread/list').body.params.archived, false);
   f.dom.get('new-thread').click(); await delay(0);
   assert.deepEqual(f.calls.findLast(call => call.path === '/api/thread/start').body, { viewId: 'view', projectId: 'p' });
+});
+
+test('a created project beyond the first native page is revealed and expanded', async t => {
+  const f = await fixture(t, undefined, async (params, saved) => params.cursor ? { data: [project], nextCursor: null } :
+    { data: Array.from({ length: 20 }, (_, i) => ({ id: 'older-' + i, name: 'Older ' + i, roots: [] })), nextCursor: saved ? 'created-page' : null });
+  f.submit(); await delay(0);
+  const group = f.dom.get('projects').children.find(node => node.children[0]?.dataset.projectId === 'p');
+  assert.ok(group, 'Created project must be visible even when it is on a later native page');
+  assert.equal(group.children[0].getAttribute('aria-expanded'), 'true');
+  assert.equal(group.children[1].hidden, false);
+  assert.equal(f.dom.get('project-title').textContent, '全部会话');
+  f.dom.get('new-thread').click(); await delay(0);
+  assert.equal(f.calls.findLast(call => call.path === '/api/thread/start').body.projectId, 'p');
 });
 
 test('uncertain creation retries the same native request after closing and reopening the form', async t => {

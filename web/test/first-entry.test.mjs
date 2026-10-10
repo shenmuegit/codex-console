@@ -93,8 +93,8 @@ test('a missing initial link cannot create a conversation after the user chooses
   let release, started = false; const gate = new Promise(resolve => { release = resolve; });
   const f = fixture(t, 'https://fixture.test/?thread=missing', async (path, body) => { if (path === '/api/thread/open') { started = true; await gate; throw missing(body.threadId); } }, [{ id: 'p', name: 'Demo', roots: [{ path: '/demo' }] }]);
   const loading = f.chat.load(); for (let i = 0; i < 20 && !started; i++) await delay(0); assert.equal(started, true);
-  f.dom.get('projects').children[0].click(); await delay(0); release(); await loading;
-  assert.equal(f.dom.get('project-title').textContent, 'Demo 的会话');
+  f.dom.get('projects').children[0].children[0].click(); await delay(0); release(); await loading;
+  assert.equal(f.dom.get('project-title').textContent, '全部会话'); assert.equal(f.dom.get('projects').children[0].children[0].getAttribute('aria-current'), 'true');
   assert.equal(f.calls.some(call => call.path === '/api/thread/start'), false);
 });
 

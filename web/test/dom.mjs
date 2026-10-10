@@ -30,8 +30,8 @@ export function domFixture() {
     querySelector(selector) { return selector === '.work-layout' ? layout : nodes.findLast(node => node.id === selector.slice(1)) ?? null; } };
   const layout = new Element('div');
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  for (const match of html.matchAll(/<(\w+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
-    const node = new Element(match[1]); node.id = match[3]; node.hidden = /\bhidden\b/.test(match[2]); document.body.append(node);
+  for (const match of html.matchAll(/<(\w+)\b([^>]*\bid="([^"]+)"[^>]*)>([^<]*)/g)) {
+    const node = new Element(match[1]); node.id = match[3]; node.textContent = match[4]; node.hidden = /\bhidden\b/.test(match[2]); document.body.append(node);
   }
   const location = { href: 'https://fixture.test/?thread=t' };
   const globals = { document, location, history: { replaceState(_state, _title, url) { location.href = String(url); } },

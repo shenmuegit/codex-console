@@ -22,16 +22,21 @@ The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native
 updates; disconnections, pending sends and errors remain visible.
 
-The project list contains native projects only. The conversation area has one
-heading: All conversations, or the selected project's conversations. A labeled
-clear-filter icon beside the project heading returns to all conversations and
-focuses that heading; the archive switch stays on the same line. The heading
-updates even if the project list cannot refresh. Archived empty results are
-labeled explicitly. Selecting a project combines native project membership with
+Each native project is a collapsible group: click its name to load conversations
+immediately underneath it. Several projects can stay expanded; collapsed projects
+do not fetch conversations. Each group combines native project membership with
 older unassigned conversations whose cwd exactly matches any registered project
-root. Both native cursors are retained; results merge by recency in pages of 20.
-Threads explicitly assigned elsewhere are excluded from the cwd fallback, and
+root. Both native cursors are retained and merged newest first in pages of 20;
+threads explicitly assigned elsewhere are excluded from the cwd fallback, and
 existing membership still works when a thread's cwd differs from the current root.
+The bottom All conversations list always includes every project and unassigned
+history, ordered by latest update descending, with its own pagination. Expanding
+a project never filters that list. The archive switch applies to the bottom list
+and expanded groups; archived empty results are labeled explicitly. Conversation
+menus work in both locations, and project right-click menus keep their behavior.
+Expanding a project selects it for New conversation; collapsing the selected
+project clears that creation scope. Native updates refresh expanded groups while
+preserving their disclosure state; late replies from collapsed groups are ignored.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
 Successful creation selects the project scope and its unarchived conversations;
