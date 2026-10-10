@@ -84,8 +84,13 @@ text cannot be backfilled from their encrypted records.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
-The attachment plus opens the existing file/photo pickers. Existing-project
-name/root editing, directory mutation, logout and manual conversation refresh
+The attachment plus opens the existing file/photo pickers. Ctrl+V (Cmd+V on
+macOS) in the composer also uploads clipboard files and images through that
+same queue, with its size/type validation, previews, progress and retry/removal.
+Normal text paste stays native. Files remain with the conversation where they
+were pasted if navigation changes during upload. This requires the browser to
+provide clipboard File objects; a pasted path or URL alone is not an upload.
+Existing-project name/root editing, directory mutation, logout and manual conversation refresh
 controls remain absent. Owner-only project create/archive/delete endpoints require
 their own session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
 Native row menus require a current browser with Popover API support.

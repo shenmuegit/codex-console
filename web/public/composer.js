@@ -192,6 +192,16 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
     notify(state);
   }
   for (const input of [fileInput, photoInput]) input.addEventListener('change', () => { add([...input.files]); input.value = ''; }, { signal: abort.signal });
+  document.querySelector('#draft').addEventListener('paste', event => {
+    if (event.currentTarget.disabled || !getState()?.ready) return;
+    const clipboard = event.clipboardData, files = [...(clipboard?.files ?? [])];
+    if (!files.length) for (const item of clipboard?.items ?? []) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile(); if (file) files.push(file);
+    }
+    if (!files.length) return;
+    event.preventDefault(); add(files);
+  }, { signal: abort.signal });
   document.querySelector('#choose-files').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; fileInput.click(); }, { signal: abort.signal });
   document.querySelector('#choose-photos').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; photoInput.click(); }, { signal: abort.signal });
   function render(state) {
