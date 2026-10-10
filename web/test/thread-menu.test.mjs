@@ -57,6 +57,20 @@ test('cancelled empty and offline row renames do not send a native write', async
   assert.deepEqual(f.calls, []); assert.equal(f.chat.getState().draft, 'keep my current draft');
 });
 
+test('archived conversations require restoration before native rename', async t => {
+  const f = await fixture(t); f.menu(other); f.dom.get('thread-menu-archive').click(); await delay(0);
+  f.dom.get('show-archived-threads').checked = true; f.dom.event('show-archived-threads', 'change'); await delay(0);
+  f.menu(other); assert.equal(f.dom.get('thread-menu-rename').disabled, true);
+  assert.match(f.dom.get('thread-menu-rename').textContent, /恢复/);
+  f.dom.get('thread-menu-rename').click(); await delay(0);
+  assert.equal(f.calls.filter(call => call.path === '/api/thread/rename').length, 0);
+  f.dom.get('thread-menu-archive').click(); await delay(0);
+  f.dom.get('show-archived-threads').checked = false; f.dom.event('show-archived-threads', 'change'); await delay(0);
+  window.prompt = () => 'Restored title'; f.rename(other); await delay(0);
+  assert.equal(f.calls.filter(call => call.path === '/api/thread/rename').length, 1);
+  assert.equal(f.chat.getState().threadId, 'current'); assert.equal(f.chat.getState().draft, 'keep my current draft');
+});
+
 test('pending row rename cannot submit twice or replace newer navigation', async t => {
   let finish; const f = await fixture(t, false, undefined, new Promise(resolve => { finish = resolve; }));
   window.prompt = () => 'Later title'; f.rename(other); f.rename(other); await delay(0);

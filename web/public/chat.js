@@ -226,7 +226,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (menuTarget) closeThreadMenu();
     menuTarget = { ...item, archived }; menuTrigger = trigger;
     $('#thread-menu-archive').textContent = archived ? '恢复会话' : '归档会话';
-    $('#thread-menu-rename').disabled = $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(item.id);
+    $('#thread-menu-rename').textContent = archived ? '重命名（先恢复会话）' : '重命名';
+    $('#thread-menu-rename').disabled = archived || !online || busyThreads.has(item.id);
+    $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(item.id);
     trigger.setAttribute('aria-expanded', 'true'); threadMenu.hidden = false; threadMenu.showPopover();
     const rect = trigger.getBoundingClientRect();
     threadMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 232)) + 'px';
@@ -238,7 +240,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     catch { window.prompt('复制会话 ID', threadId); }
   }
   async function renameConversation(target, name) {
-    if (!online || busyThreads.has(target.id)) return false;
+    if (target.archived || !online || busyThreads.has(target.id)) return false;
     if (name === undefined) name = window.prompt('重命名会话', target.name ?? '');
     if (!name?.trim()) return false;
     name = name.trim(); busyThreads.add(target.id); draw();
@@ -425,7 +427,10 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#new-project').disabled = $('#project-submit').disabled = creatingProject || !online;
     $('#project-name').disabled = $('#project-root').disabled = creatingProject || Boolean(projectRequest?.unknown);
     $('#project-submit').textContent = creatingProject ? '创建中…' : projectRequest?.unknown ? '重试核对' : '创建项目';
-    if (menuTarget) $('#thread-menu-rename').disabled = $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
+    if (menuTarget) {
+      $('#thread-menu-rename').disabled = menuTarget.archived || !online || busyThreads.has(menuTarget.id);
+      $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || busyThreads.has(menuTarget.id);
+    }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name ?? '';

@@ -172,7 +172,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-124 Node checks passed; the production dependency audit reported zero vulnerabilities.
+125 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -193,6 +193,10 @@ replayed its key to the same project, and opened a chat using the native primary
 root. Creation cleared the archive filter and the conversation list matched a
 direct native read. Native listing omitted the new blank chat in this setup.
 The original chat cwd and host files were preserved; fixtures were cleaned.
+Real HTTPS rename checks changed another native conversation while preserving
+the selected chat/draft/settings, and confirmed `/rename` through an independent
+native read. Archived rename was rejected by the native endpoint. Disposable
+conversations were removed without inference.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop
@@ -423,6 +427,8 @@ Rename and `/rename` share the native `thread/name/set` action. A valid session
 view can rename a listed conversation without opening it; names are trimmed and
 validated as 1–160 characters. Cancel/blank input sends nothing, pending renames
 cannot submit twice, and native failures retain the current name and draft.
+Archived conversations disable Rename with a restore-first label, matching the
+native name endpoint's exclusion of archived threads.
 
 Conversation deletion still confirms once, reads fresh native active state,
 interrupts its matching turn and waits up to 30 seconds. Refusal, timeout or a
