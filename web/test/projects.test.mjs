@@ -97,7 +97,7 @@ test('old conversation cwd survives project rebinding and deletion keeps workspa
   f.peer.replyTo('thread/resume', snapshot); assert.equal((await opened).json.snapshot.thread.cwd, f.dir);
   assert.equal((await f.request('/api/thread/delete', { method: 'POST', cookie, body: { viewId, threadId: 't', confirmed: false } })).status, 400);
   const deleting = f.request('/api/thread/delete', { method: 'POST', cookie, body: { viewId, threadId: 't', confirmed: true } });
-  await waitCall(f.peer, 'thread/resume', 2); assert.deepEqual(f.peer.sent.at(-1).params, { threadId: 't', excludeTurns: true, initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'summary' } });
+  await waitCall(f.peer, 'thread/resume', 2); assert.deepEqual(f.peer.sent.at(-1).params, { threadId: 't', excludeTurns: true, initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'notLoaded' } });
   f.peer.replyTo('thread/resume', snapshot);
   await waitCall(f.peer, 'thread/delete'); f.peer.replyTo('thread/delete', {});
   // Release is allowed to unsubscribe, but must never call a host-file deletion API.

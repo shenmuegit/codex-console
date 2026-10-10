@@ -16,6 +16,33 @@ const snapshot = (items, nextCursor = 'older-items') => {
   result.historyKind = 'items'; result.initialTurnsPage.nextCursor = nextCursor; return result;
 };
 
+test('metadata-only resume prevents synthetic summary IDs from duplicating durable replies', async t => {
+  for (const older of [false, true]) await t.test(older ? 'reply on an older page' : 'reply on the latest page', async t => {
+    const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+    const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
+    const call = await waitCall(f.peer, 'thread/resume'), text = 'A single stored reply';
+    // Native active-turn summaries use synthetic IDs; item pages and live events use durable IDs.
+    const summary = call.params.initialTurnsPage.itemsView === 'notLoaded' ? [] : [message('item-31', text)];
+    const head = resumeFixture('t', [{ id: 'active', status: 'inProgress', itemsView: call.params.initialTurnsPage.itemsView, items: summary }]);
+    head.itemsBackwardsCursor = 'items'; f.peer.replyTo('thread/resume', head); await waitCall(f.peer, 'thread/items/list');
+    f.peer.notify('item/completed', { threadId: 't', turnId: 'active', item: message('independent', text) });
+    f.peer.replyTo('thread/items/list', { data: [{ turnId: 'active', item: message(older ? 'latest' : 'durable', older ? 'Latest reply' : text) }], nextCursor: older ? 'older-items' : null });
+    const response = await opening; assert.equal(response.status, 200);
+    const state = createChatState('t'); installSnapshot(state, response.json);
+    if (older) {
+      const loading = f.request('/api/thread/history', { method: 'POST', cookie, body: { viewId, threadId: 't', cursor: state.historyCursor } });
+      await waitCall(f.peer, 'thread/items/list', 2);
+      f.peer.replyTo('thread/items/list', { data: [{ turnId: 'active', item: message('durable', text) }], nextCursor: null });
+      const page = await loading; assert.equal(page.status, 200);
+      prependHistory(state, page.json.snapshot.initialTurnsPage, page.json.cursor);
+    }
+    const items = state.turns.flatMap(turn => turn.items);
+    assert.deepEqual(items.map(item => item.id), older ? ['durable', 'latest', 'independent'] : ['durable', 'independent']);
+    assert.equal(items.filter(item => item.text === text).length, 2, 'Distinct native replies with identical text remain visible');
+    assert.equal(state.turns[0].status, 'inProgress');
+  });
+});
+
 test('opening a large native history reads only the newest item page with tools and reasoning', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });

@@ -59,8 +59,9 @@ export function createCodexClient({ url, expectedHome }) {
 
   function resume(threadId) {
     const entry = threads.get(threadId);
+    // Active-turn summaries use synthetic item IDs that cannot be merged with durable item pages.
     const operation = send('thread/resume', { threadId, excludeTurns: true,
-      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'summary' } })
+      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'notLoaded' } })
       .finally(() => entry?.resumes.delete(operation));
     entry?.resumes.add(operation);
     return operation;

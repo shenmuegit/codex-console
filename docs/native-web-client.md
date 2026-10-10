@@ -99,9 +99,12 @@ Existing-project name/root editing, directory mutation, logout and manual conver
 controls remain absent. Owner-only project create/archive/delete endpoints require
 their own session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
 Native row menus require a current browser with Popover API support.
-Opening/reconnecting first reads lightweight native turn summaries, then the
+Opening/reconnecting first reads native turn metadata without summary items, then the
 newest 20 `thread/items/list` entries, including
 reasoning and tools. Live items received during loading are merged into the page.
+Active-turn summaries use synthetic item IDs, so their text is not mixed with
+durable history or SSE messages. Each native message appears once; distinct
+messages with identical text remain separate, including on older pages.
 Scrolling upward near the top fetches the next 20 through the opaque item cursor;
 concurrent requests are blocked and prepending preserves the reading position.
 The older-history button remains an accessible fallback. Snapshots travel over
