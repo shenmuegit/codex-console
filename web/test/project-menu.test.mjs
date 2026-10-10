@@ -7,7 +7,7 @@ import { resumeFixture } from './helpers.mjs';
 
 async function fixture(t, mutation, listProjects) {
   const dom = domFixture(), calls = [];
-  dom.get('thread-menu').append(...['copy', 'rename', 'archive', 'delete'].map(action => dom.get('thread-menu-' + action)));
+  dom.get('thread-menu').append(...['new', 'copy', 'rename', 'archive', 'delete'].map(action => dom.get('thread-menu-' + action)));
   const nav = dom.get('projects'), replace = nav.replaceChildren.bind(nav);
   nav.replaceChildren = (...items) => { if (nav.contains(dom.document.activeElement)) dom.document.activeElement = dom.document.body; replace(...items); };
   const projects = ['p', 'q'].map(id => ({ id, name: id === 'p' ? 'Demo' : 'Other', roots: [{ path: '/' + id }], metadata: {} }));
@@ -33,8 +33,9 @@ test('project right-click and keyboard menus target the clicked project without 
   assert.equal(f.dom.get('thread-menu').getAttribute('aria-label'), '项目选项');
   assert.equal(f.dom.get('thread-menu-copy').hidden, true); assert.equal(f.dom.get('thread-menu-rename').hidden, true);
   assert.equal(f.dom.get('thread-menu-archive').textContent, '归档项目'); assert.equal(f.dom.get('thread-menu-delete').textContent, '删除项目');
-  assert.equal(f.dom.document.activeElement, f.dom.get('thread-menu-archive'));
+  assert.equal(f.dom.document.activeElement, f.dom.get('thread-menu-new'));
   assert.ok(parseFloat(f.dom.get('thread-menu').style.left) <= 1048);
+  f.dom.event('thread-menu', 'keydown', { key: 'ArrowDown' }); assert.equal(f.dom.document.activeElement, f.dom.get('thread-menu-archive'));
   f.dom.event('thread-menu', 'keydown', { key: 'ArrowDown' }); assert.equal(f.dom.document.activeElement, f.dom.get('thread-menu-delete'));
   f.dom.event('thread-menu', 'keydown', { key: 'Escape' }); assert.equal(f.dom.document.activeElement, f.row('q'));
   for (const key of ['ContextMenu', 'F10']) {

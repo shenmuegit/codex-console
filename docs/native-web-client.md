@@ -33,7 +33,13 @@ The bottom All conversations list always includes every project and unassigned
 history, ordered by latest update descending, with its own pagination. Expanding
 a project never filters that list. The archive switch applies to the bottom list
 and expanded groups; archived empty results are labeled explicitly. Conversation
-menus work in both locations, and project right-click menus keep their behavior.
+menus work in both locations. Project and conversation context menus include
+New conversation: a project row or nested conversation supplies that project's
+native ID, expands its group, and shows the new unarchived conversation there.
+A global conversation menu uses the selected project. Right-click and Shift+F10
+open the same menu as the row's menu button. Creation is blocked while offline,
+for archived projects, or while another creation is pending; a late result never
+replaces newer project/chat navigation or its draft.
 Expanding a project selects it for New conversation; collapsing the selected
 project clears that creation scope. Native updates refresh expanded groups while
 preserving their disclosure state; late replies from collapsed groups are ignored.
