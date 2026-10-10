@@ -49,6 +49,11 @@ An authenticated visit without a thread ID prepares one native blank conversatio
 when the backend is online. File/photo pickers and model/effort selectors then
 work without first clicking New conversation. Its ID is recorded in the URL,
 so reload reopens it. Existing thread links and newer navigation take priority.
+If an initial link is missing from the current backend and has no saved draft,
+attachments or unconfirmed send, the page prepares a new conversation and
+replaces that stale URL. Initial permission, connection and unrelated native
+errors stay visible. Choosing another project or conversation while the missing
+link is being restored prevents automatic creation.
 This preparation sends no model turn. Creation failures stay visible in chat;
 the existing New conversation button can retry.
 
@@ -174,7 +179,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-127 Node checks passed; the production dependency audit reported zero vulnerabilities.
+139 Node checks passed; the production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation

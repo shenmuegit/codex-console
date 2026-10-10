@@ -603,7 +603,19 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       const version = opening, requested = new URL(location.href).searchParams.get('thread');
       await Promise.all([loadProjects(), loadThreads(), usage.loadModels()]);
       if (!alive || version !== opening || selected) return;
-      if (requested) await open(requested);
+      if (requested) {
+        const scope = project;
+        try { await open(requested); }
+        catch (e) {
+          const empty = selected && !selected.draft && !selected.pending && !selected.attachments.length;
+          // shortcut: Codex 0.159.2 uses generic errors, replace the text check when it exposes a missing-thread code.
+          if (alive && empty && online && project === scope && !selected.ready && selected.threadId === requested && e.code === -32600 &&
+              e.message === 'no rollout found for thread id ' + requested) {
+            selected = undefined; draw(); await newThread().catch(showError);
+          }
+          else showError(e);
+        }
+      }
       else if (online) await newThread().catch(showError);
     },
     onEvent(event) {
