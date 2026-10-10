@@ -333,6 +333,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     } finally { creatingProject = false; if (alive) draw(); }
     if (!alive) return;
     if ($('#project-dialog').open && project === currentProject && opening === version) {
+      $('#show-archived-threads').checked = false;
       $('#project-dialog').close(); await chooseProject(created); $('#new-thread').focus();
     } else await loadProjects();
   });

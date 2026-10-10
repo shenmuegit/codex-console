@@ -24,8 +24,10 @@ refresh, and archived empty results are labeled explicitly. Selecting a project
 filters native conversations by its ID.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
-Successful creation selects the project scope; New conversation then uses that
-native project ID. Existing conversations keep their working directories.
+Successful creation selects the project scope and its unarchived conversations;
+New conversation then uses that native project ID. Existing conversations keep
+their working directories. A late result after leaving the form preserves the
+current conversation scope and archive filter.
 Uncertain creation retries retain the native idempotency key and lock the input
 values until the result is confirmed, even if a later retry is not sent. Closing
 the form preserves newer navigation.
@@ -184,7 +186,9 @@ The reasoning check received native summary deltas through the real HTTPS/SSE
 path and retained the public summary after reopening its disposable conversation.
 Native project acceptance created a disposable project through the mounted form,
 replayed its key to the same project, and opened a chat using the native primary
-root. The original chat cwd and host files were preserved; fixtures were cleaned.
+root. Creation cleared the archive filter and the conversation list matched a
+direct native read. Native listing omitted the new blank chat in this setup.
+The original chat cwd and host files were preserved; fixtures were cleaned.
 
 The UI tool reported no enabled browser/native surfaces. No login click,
 authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop
