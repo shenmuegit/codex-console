@@ -20,11 +20,12 @@ The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native
 updates; disconnections, pending sends and errors remain visible.
 
-Projects and Conversations have separate headings. The project list contains
-native projects only; All conversations is a conversation-scope control. The
-conversation scope names its selected project even if the project list cannot
-refresh, and archived empty results are labeled explicitly. Selecting a project
-filters native conversations by its ID.
+The project list contains native projects only. The conversation area has one
+heading: All conversations, or the selected project's conversations. A labeled
+clear-filter icon beside the project heading returns to all conversations and
+focuses that heading; the archive switch stays on the same line. The heading
+updates even if the project list cannot refresh. Archived empty results are
+labeled explicitly. Selecting a project filters native conversations by its ID.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
 Successful creation selects the project scope and its unarchived conversations;

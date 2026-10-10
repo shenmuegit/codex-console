@@ -30,7 +30,7 @@ test('creating a project selects its native scope and new conversations inherit 
   assert.equal(f.dom.get('project-submit').disabled, true);
   const body = f.calls.at(-1).body; assert.equal(body.name, 'Demo'); assert.equal(body.rootPath, '/workspace'); assert.match(body.idempotencyKey, /^[a-f0-9-]{36}$/);
   finish({ project }); await delay(0);
-  assert.equal(f.dom.get('project-dialog').open, false); assert.equal(f.dom.get('project-title').textContent, '项目：Demo');
+  assert.equal(f.dom.get('project-dialog').open, false); assert.equal(f.dom.get('project-title').textContent, 'Demo 的会话');
   assert.equal(f.dom.get('show-archived-threads').checked, false);
   assert.equal(f.calls.findLast(call => call.path === '/api/rpc' && call.body.method === 'thread/list').body.params.archived, false);
   f.dom.get('new-thread').click(); await delay(0);
@@ -75,6 +75,6 @@ test('a late creation updates projects without replacing a newer conversation or
   f.dom.get('show-archived-threads').checked = true;
   f.dom.get('close-project').click(); await f.chat.open('other'); f.chat.getState().draft = 'keep this draft'; finish({ project }); await delay(0);
   assert.equal(f.chat.getState().threadId, 'other'); assert.equal(f.chat.getState().draft, 'keep this draft');
-  assert.equal(f.dom.get('project-title').textContent, '全部项目'); assert.equal(f.dom.get('projects').children.length, 1);
+  assert.equal(f.dom.get('project-title').textContent, '全部会话'); assert.equal(f.dom.get('projects').children.length, 1);
   assert.equal(f.dom.get('show-archived-threads').checked, true);
 });

@@ -407,8 +407,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   }
   function draw() {
     if (!alive) return;
-    $('#project-title').textContent = project ? '项目：' + project.name : '全部项目'; $('#project-title').title = $('#project-title').textContent;
-    $('#all-threads').setAttribute('aria-pressed', String(!project));
+    $('#project-title').textContent = project ? project.name + ' 的会话' : '全部会话'; $('#project-title').title = $('#project-title').textContent;
+    $('#all-threads').hidden = !project;
     $('#new-project').disabled = $('#project-submit').disabled = creatingProject || !online;
     $('#project-name').disabled = $('#project-root').disabled = creatingProject || Boolean(projectRequest?.unknown);
     $('#project-submit').textContent = creatingProject ? '创建中…' : projectRequest?.unknown ? '重试核对' : '创建项目';
@@ -559,7 +559,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
   }
   bind($('#new-thread'), 'click', newThread);
-  bind($('#all-threads'), 'click', () => chooseProject(null));
+  bind($('#all-threads'), 'click', () => { $('#project-title').focus(); return chooseProject(null); });
   bind($('#show-archived-threads'), 'change', () => loadThreads()); bind($('#close-info'), 'click', () => $('#info-dialog').close());
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
   bind($('#back-projects'), 'click', closeSidebar); bind(backdrop, 'click', closeSidebar);

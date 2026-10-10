@@ -24,18 +24,22 @@ async function fixture(t, { failProjectRefresh = false } = {}) {
 test('project navigation contains only native projects and conversation scope belongs to the conversation area', async t => {
   const { dom } = await fixture(t);
   assert.equal(dom.get('projects').children.length, 2);
-  assert.ok(dom.get('all-threads')); assert.equal(dom.get('all-threads').getAttribute('aria-pressed'), 'true');
-  assert.equal(dom.get('project-title').textContent, '全部项目');
+  assert.equal(dom.get('project-title').tagName, 'H2');
+  assert.equal(dom.get('all-threads').hidden, true);
+  assert.equal(dom.get('project-title').textContent, '全部会话');
 });
 
 test('project selection labels and filters conversations while archived empty results explain the filter', async t => {
   const { dom, reads } = await fixture(t);
   dom.get('projects').children.find(row => row.children.some(node => node.textContent === 'Demo')).click(); await delay(0);
-  assert.equal(dom.get('project-title').textContent, '项目：Demo');
+  assert.equal(dom.get('project-title').textContent, 'Demo 的会话');
+  assert.equal(dom.get('all-threads').hidden, false);
   assert.equal(reads.findLast(call => call.method === 'thread/list').params.projectId, 'p');
   assert.equal(dom.get('threads').children[0].dataset.threadId, 'project-chat');
-  dom.get('all-threads').click(); await delay(0);
-  assert.equal(dom.get('project-title').textContent, '全部项目');
+  dom.get('all-threads').focus(); dom.get('all-threads').click(); await delay(0);
+  assert.equal(dom.get('project-title').textContent, '全部会话');
+  assert.equal(dom.get('all-threads').hidden, true);
+  assert.equal(dom.document.activeElement, dom.get('project-title'));
   assert.equal(reads.findLast(call => call.method === 'thread/list').params.projectId, undefined);
   dom.get('show-archived-threads').checked = true; dom.event('show-archived-threads', 'change'); await delay(0);
   assert.match(dom.get('threads').children[0].textContent, /已归档会话/);
@@ -46,12 +50,12 @@ test('conversation scope stays accurate when the project list cannot refresh', a
   dom.get('projects').children[0].click(); await delay(0);
   assert.equal(dom.get('threads').children[0].dataset.threadId, 'project-chat');
   assert.equal(reads.findLast(call => call.method === 'thread/list').params.projectId, 'p');
-  assert.equal(dom.get('project-title').textContent, '项目：Demo');
-  assert.equal(dom.get('project-title').title, '项目：Demo');
-  assert.equal(dom.get('all-threads').getAttribute('aria-pressed'), 'false');
+  assert.equal(dom.get('project-title').textContent, 'Demo 的会话');
+  assert.equal(dom.get('project-title').title, 'Demo 的会话');
+  assert.equal(dom.get('all-threads').hidden, false);
   assert.match(dom.get('chat-error').textContent, /Project list unavailable/);
   dom.get('all-threads').click(); await delay(0);
   assert.equal(dom.get('threads').children[0].dataset.threadId, 'global-chat');
-  assert.equal(dom.get('project-title').textContent, '全部项目');
-  assert.equal(dom.get('all-threads').getAttribute('aria-pressed'), 'true');
+  assert.equal(dom.get('project-title').textContent, '全部会话');
+  assert.equal(dom.get('all-threads').hidden, true);
 });
