@@ -67,10 +67,14 @@ This preparation sends no model turn. Creation failures stay visible in chat;
 the existing New conversation button can retry.
 
 New turns request native automatic reasoning summaries because current model
-catalogs can default to no summary. The reasoning panel displays native public
-text as it arrives. An empty live item shows a waiting state; a completed empty
-item explains that no summary was provided. Older messages with no returned
-public text cannot be backfilled from their encrypted records.
+catalogs can default to no summary. The transcript follows the desktop activity layout: consecutive commands, tools
+and public reasoning are folded into one compact summary between chat messages.
+Expanding the summary exposes the original tool details and file downloads;
+status changes and older history keep existing expanded groups. Empty reasoning
+items occupy no row, and become visible when native public text arrives. Native
+subagent activity uses the desktop path-to-name formatting and lifecycle labels,
+with a link to the child conversation. Older messages with no returned public
+text cannot be backfilled from their encrypted records.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.

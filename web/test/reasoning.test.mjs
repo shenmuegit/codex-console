@@ -16,19 +16,19 @@ async function fixture(t, status, summary = [], content = []) {
   };
   const chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true);
   t.after(() => { chat.dispose(); dom.restore(); }); await chat.open('t');
-  return { chat, body: () => dom.get('messages').children[0].children[1],
+  return { chat, messages: dom.get('messages'), body: () => dom.get('messages').children[0].children[1].children[0].children[1],
     notify(seq, method, params) { chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq }, native: { method, params: { threadId: 't', turnId: 'turn', ...params } } }); } };
 }
 
-test('completed reasoning without public text explains the missing summary instead of rendering empty native HTML', async t => {
+test('completed reasoning without public text leaves no empty transcript row and retains native state', async t => {
   const f = await fixture(t, 'completed');
-  assert.match(f.body().children[0]?.textContent ?? '', /未.*摘要/);
+  assert.equal(f.messages.children.length, 0);
   const item = f.chat.getState().turns[0].items[0];
   assert.deepEqual(item.summary, []); assert.deepEqual(item.content, []); assert.equal(itemText(item), '');
 });
 
-test('empty live reasoning waits for a native summary and replaces its wait text when deltas arrive', async t => {
-  const f = await fixture(t, 'inProgress'); assert.match(f.body().children[0]?.textContent ?? '', /等待.*摘要/);
+test('empty live reasoning appears only when native summary deltas arrive', async t => {
+  const f = await fixture(t, 'inProgress'); assert.equal(f.messages.children.length, 0);
   f.notify(2, 'item/reasoning/summaryTextDelta', { itemId: 'reasoning', summaryIndex: 0, delta: '已检查输入边界。' }); await delay(0);
   assert.equal(f.body().children[0].textContent, '已检查输入边界。');
   f.notify(3, 'turn/completed', { turn: { id: 'turn', status: 'completed', itemsView: 'summary', items: [] } }); await delay(0);

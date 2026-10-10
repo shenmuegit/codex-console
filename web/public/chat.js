@@ -215,7 +215,7 @@ export { activeTurn };
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
-  const states = new Map(), messageNodes = new Map(), formNodes = new Map();
+  const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
   let selected, project, projectCursor, online = false, alive = true;
   let opening = 0, projectLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
@@ -479,7 +479,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   });
   function select(state) {
     if (selected) save(selected);
-    selected = state; setLevel('chat'); messageNodes.clear(); formNodes.clear();
+    selected = state; setLevel('chat'); messageNodes.clear(); activityNodes.clear(); formNodes.clear();
     completions.close(); if (menuTarget) closeThreadMenu();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
     if (narrow.matches) $('#thread-title').focus();
@@ -546,6 +546,57 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     bind(form, 'submit', event => { event.preventDefault(); return respond('accept'); });
     return form;
   }
+  function activityIcon(agent = false) {
+    const icon = element('span', null, 'activity-icon' + (agent ? ' activity-icon-agent' : ''));
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = agent ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a5 5 0 0 1 4 8c-1-3-4-4-7-3a5 5 0 0 1 3-5Zm9 9a5 5 0 0 1-8 4c3-1 4-4 3-7a5 5 0 0 1 5 3Zm-9 9a5 5 0 0 1-4-8c1 3 4 4 7 3a5 5 0 0 1-3 5ZM3 12a5 5 0 0 1 8-4c-3 1-4 4-3 7a5 5 0 0 1-5-3Z"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m7 8 4 4-4 4m7 0h3"/></svg>';
+    return icon;
+  }
+  function activityLabel(items) {
+    const working = items.some(item => item.status === 'inProgress' || item._incomplete), labels = [];
+    if (items.some(item => item.type === 'commandExecution')) labels.push(working ? '正在运行命令' : '运行了命令');
+    if (items.some(item => item.type === 'fileChange')) labels.push(working ? '正在编辑文件' : '编辑了文件');
+    if (items.some(item => item.type !== 'reasoning' && !['commandExecution', 'fileChange'].includes(item.type))) labels.push(working ? '正在调用工具' : '调用了工具');
+    const text = labels.join('，') || itemText(items.at(-1)).trim().split('\n')[0];
+    return text + (items.some(item => item.status === 'failed') ? ' · 失败' : items.some(item => item.status === 'declined') ? ' · 已拒绝' : items.some(item => item.status === 'interrupted') ? ' · 已中断' : '');
+  }
+  function renderMessage(item, role) {
+    if (role === 'subagent') {
+      let entry = messageNodes.get(item.id);
+      if (!entry) {
+        const node = element('article', null, 'message message-subagent'), header = element('header');
+        const label = element(/^[A-Za-z0-9_-]{1,64}$/.test(item.agentThreadId) ? 'a' : 'span');
+        if (label.tagName === 'A') { label.href = '/?thread=' + encodeURIComponent(item.agentThreadId); bind(label, 'click', event => { event.preventDefault(); return open(item.agentThreadId); }); }
+        header.append(activityIcon(true), label); node.append(header); node.dataset.itemId = item.id; node.setAttribute('aria-label', '子代理活动');
+        messageNodes.set(item.id, entry = { node, label });
+      }
+      const path = (item.agentPath ?? '').split('/').map(part => part.trim()).filter(part => part && part !== 'root').at(-1);
+      const name = path?.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      entry.label.textContent = (name ? name[0].toUpperCase() + name.slice(1) : '子代理') + ' ' + ({ started: '开始工作', interacted: '已更新', interrupted: '已中断', completed: '已完成' }[item.kind] ?? '活动');
+      return entry.node;
+    }
+    let entry = messageNodes.get(item.id), presentation = item._presentation;
+    if (!entry) {
+      const node = element(role === 'tool' ? 'details' : 'article', null, `message message-${role}`), header = element(role === 'tool' ? 'summary' : 'header'), body = element('div', null, 'message-body'), downloads = element('div', null, 'message-files');
+      node.dataset.itemId = item.id; node.setAttribute('aria-label', role === 'user' ? '你的消息' : role === 'assistant' ? 'Codex 回复' : '工具输出');
+      node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
+    }
+    entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
+    const text = itemText(item), html = presentation?.html;
+    if (html ? entry.html !== html : entry.text !== text || entry.html) {
+      if (html) entry.body.innerHTML = html; else { const plain = element('pre', text); entry.body.replaceChildren(plain); }
+      entry.html = html; entry.text = text;
+    }
+    if (entry.files !== presentation?.files) {
+      entry.downloads.replaceChildren();
+      for (const file of presentation?.files ?? []) {
+        if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; entry.downloads.append(image); }
+        if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
+      }
+      entry.files = presentation?.files;
+    }
+    return entry.node;
+  }
   function draw() {
     if (!alive) return;
     for (const group of projectGroups.values()) group.button.setAttribute('aria-current', String(project?.id === group.item.id));
@@ -573,36 +624,39 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#send-mode-label').hidden = !active; $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
-    const currentIds = new Set();
+    const currentIds = new Set(), currentActivities = new Set();
     let position = 0;
-    for (const turn of state?.turns ?? []) for (const item of turn.items ?? []) {
-      currentIds.add(item.id);
-      let entry = messageNodes.get(item.id), presentation = item._presentation;
-      const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
-      if (!entry) {
-        const node = element(role === 'tool' ? 'details' : 'article', null, `message message-${role}`), header = element(role === 'tool' ? 'summary' : 'header'), body = element('div', null, 'message-body'), downloads = element('div', null, 'message-files');
-        node.setAttribute('aria-label', role === 'user' ? '你的消息' : role === 'assistant' ? 'Codex 回复' : '工具输出');
-        node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
+    for (const turn of state?.turns ?? []) {
+      const groups = [];
+      for (const item of turn.items ?? []) {
+        if (item.type === 'reasoning' && !itemText(item).trim()) continue;
+        const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : item.type === 'subAgentActivity' ? 'subagent' : 'tool';
+        let group = groups.at(-1);
+        if (role !== 'tool' || group?.role !== 'tool') { group = { role, items: [] }; groups.push(group); }
+        group.items.push(item);
       }
-      entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改' }[item.type] ?? '工具' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
-      const nativeText = itemText(item), emptyReasoning = item.type === 'reasoning' && !nativeText.trim();
-      const text = emptyReasoning ? (turn.status === 'inProgress' ? '等待思考摘要…' : '模型未提供可显示的思考摘要。') : nativeText;
-      const html = emptyReasoning ? null : presentation?.html;
-      if (html ? entry.html !== html : entry.text !== text || entry.html) {
-        if (html) entry.body.innerHTML = html; else { const plain = element('pre', text); entry.body.replaceChildren(plain); }
-        entry.html = html; entry.text = text;
-      }
-      if (entry.files !== presentation?.files) {
-        entry.downloads.replaceChildren();
-        for (const file of presentation?.files ?? []) {
-          if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; entry.downloads.append(image); }
-          if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
+      for (const group of groups) {
+        let parent = $('#messages'), container, key, index = position;
+        if (group.role === 'tool') {
+          // Reuse any existing member's group when an older page prepends items to it.
+          key = group.items.map(item => messageNodes.get(item.id)?.group).find(id => activityNodes.has(id) && !currentActivities.has(id)) ?? group.items[0].id;
+          let activity = activityNodes.get(key);
+          if (!activity) {
+            const node = element('details', null, 'message message-activity'), header = element('summary', null, 'activity-summary'), label = element('span'), body = element('div', null, 'activity-items');
+            header.append(activityIcon(), label); node.append(header, body); activityNodes.set(key, activity = { node, label, body });
+          }
+          activity.label.textContent = activityLabel(group.items); activity.node.setAttribute('aria-label', activity.label.textContent);
+          currentActivities.add(key); parent = activity.body; container = activity.node; index = 0;
         }
-        entry.files = presentation?.files;
+        for (const item of group.items) {
+          currentIds.add(item.id); const node = renderMessage(item, group.role); messageNodes.get(item.id).group = key;
+          const following = parent.children[index++]; if (following !== node) parent.insertBefore(node, following ?? null);
+          container ??= node;
+        }
+        const following = $('#messages').children[position++]; if (following !== container) $('#messages').insertBefore(container, following ?? null);
       }
-      const following = $('#messages').children[position++];
-      if (following !== entry.node) $('#messages').insertBefore(entry.node, following ?? null);
     }
+    for (const [id, entry] of activityNodes) if (!currentActivities.has(id)) { entry.node.remove(); activityNodes.delete(id); }
     for (const [id, entry] of messageNodes) if (!currentIds.has(id)) { entry.node.remove(); messageNodes.delete(id); }
     for (const [key, native] of state?.requests ?? []) if (!formNodes.has(key)) { const form = nativeForm(key, native); formNodes.set(key, form); $('#native-requests').append(form); }
     for (const [key, form] of formNodes) if (!state?.requests.has(key)) { form.remove(); formNodes.delete(key); }
