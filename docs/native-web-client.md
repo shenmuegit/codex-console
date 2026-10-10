@@ -74,6 +74,22 @@ name/root editing, directory mutation, logout and manual conversation refresh
 controls remain absent. Owner-only project create/archive/delete endpoints require
 their own session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
 Native row menus require a current browser with Popover API support.
+Opening/reconnecting first reads lightweight native turn summaries, then the
+newest 20 `thread/items/list` entries, including
+reasoning and tools. Live items received during loading are merged into the page.
+Scrolling upward near the top fetches the next 20 through the opaque item cursor;
+concurrent requests are blocked and prepending preserves the reading position.
+The older-history button remains an accessible fallback. Snapshots travel over
+HTTPS; live deltas and file enrichment use SSE. Individual oversized tool payloads
+have a bounded display preview labeled Partial output; chat text is preserved and
+the original stored records are never trimmed. Markdown export streams item pages.
+Conversation references and legacy full-turn requests use native chat summaries
+so older clients cannot accidentally hydrate enormous tool histories.
+Legacy-format histories also use summary turn pages for opening and export;
+their backend does not support item paging.
+Already observed unfinished items survive resume. The native read API does not
+guarantee prefixes streamed before any web subscription; complete records arrive
+when the item finishes.
 Conversation archive always asks for confirmation that any running work will stop, including
 when the conversation list has not yet received its latest status.
 Restoring from a row menu preserves the current conversation, draft and archive
@@ -183,7 +199,7 @@ systemctl --user disable codex-console-native-web.service codex-console-native-b
 
 ## Release verification and UI limits
 
-139 Node checks passed; the production dependency audit reported zero vulnerabilities.
+173 Node checks passed. The initial release's production dependency audit reported zero vulnerabilities.
 The initial native web release's six Important findings and three findings
 promoted from Minor were fixed in nine independently verified and pushed commits.
 Mounted event checks cover duplicate commands, modified Enter and conversation
@@ -194,11 +210,15 @@ model/effort/context/compaction, weekly metadata, references and command effects
 Separate web/backend restart checks proved accepted work survives web restart,
 authoritative resync after backend restart and one native user message per UUID.
 Runtime proof files stay outside Git.
+History acceptance reopened a 3.4 GB original rollout through real HTTPS/SSE:
+the first page contained 20 items, upward scrolling added 20 without duplicates,
+and repeated scroll events issued one request. Only the web service was reloaded;
+the native backend and original desktop stayed running. No inference was requested.
 First-entry checks also exercised the mounted controllers against real HTTPS and
 the native backend: both settings were saved and text/PNG uploads retained exact
 bytes. The disposable conversation and uploads were removed; no inference ran.
 The reasoning check received native summary deltas through the real HTTPS/SSE
-path and retained the public summary after reopening its disposable conversation.
+path. Reopened history now loads reasoning and tools through native item pages.
 Native project acceptance created a disposable project through the mounted form,
 replayed its key to the same project, and opened a chat using the native primary
 root. Creation cleared the archive filter and the conversation list matched a
@@ -223,9 +243,8 @@ Static drawer renders at 320, 390, 706 and 1280 CSS px confirmed the width cap,
 outside close area, visible chat and absence of horizontal page overflow.
 The project form also fits a 390 px layout with 430 px of visible keyboard height.
 
-Known presentation limit: another page opening the same conversation can reset
-already loaded older pages to the latest 20-turn snapshot. Use **Load earlier
-history** again; the native history remains intact. This review minor is deferred.
+Another page opening the same conversation does not reset already loaded pages:
+each page receives its own HTTPS snapshot and shares the live event stream.
 
 ## Native connection
 

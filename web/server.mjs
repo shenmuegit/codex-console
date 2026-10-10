@@ -8,7 +8,7 @@ import { createAuth, checkOrigin } from './auth.mjs';
 import { createCodexClient } from './codex.mjs';
 import { realpath, stat } from 'node:fs/promises';
 import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, activeTurn } from './public/chat.js';
-import { renderTranscript } from './transcript.mjs';
+import { renderTranscript, boundedHistoryItem } from './transcript.mjs';
 import { createFiles } from './files.mjs';
 import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
@@ -71,7 +71,7 @@ function validateRead(method, p) {
     if (!id(p.threadId) || (p.includeTurns != null && p.includeTurns !== false) || (p.cursor != null && !text(p.cursor)) ||
         (p.limit != null && (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > 100)) ||
         (p.sortDirection != null && !['asc', 'desc'].includes(p.sortDirection)) ||
-        (p.itemsView != null && p.itemsView !== 'full')) throw error(400, 'INVALID_PARAMS', '会话参数不正确。');
+        (p.itemsView != null && !['summary', 'full'].includes(p.itemsView))) throw error(400, 'INVALID_PARAMS', '会话参数不正确。');
   } else throw error(403, 'RPC_DENIED', '浏览器不能调用这个原生接口。');
 }
 
@@ -180,6 +180,7 @@ export function createWebServer({ config, codex }) {
   if (origin.protocol !== 'https:' || origin.origin !== config.origin) throw error(500, 'INVALID_ORIGIN', '配置须包含完整 HTTPS 来源地址。');
   const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
+  const initialHistory = new WeakMap();
   const files = createFiles(config);
   let accountEpoch = 0;
   async function nativeModels() {
@@ -199,7 +200,7 @@ export function createWebServer({ config, codex }) {
     const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
     const pieces = []; let cursor, length = 0, truncated = false;
     do {
-      const page = await nativeRead('thread/turns/list', { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full', ...(cursor ? { cursor } : {}) });
+      const page = await nativeRead('thread/turns/list', { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary', ...(cursor ? { cursor } : {}) });
       for (const turn of page.data) for (const item of [...turn.items].reverse()) {
         const value = `${item.type}: ${itemText(item)}\n`, bytes = Buffer.from(value), left = 8192 - length;
         if (bytes.length > left) { pieces.push(bytes.subarray(0, left).toString('utf8')); truncated = true; length = 8192; break; }
@@ -292,7 +293,7 @@ export function createWebServer({ config, codex }) {
   function broadcast(event) {
     if (Buffer.byteLength(JSON.stringify(event)) + 64 > STREAM_LIMIT) {
       const threadId = event.threadId ?? event.native?.thread?.id ?? event.native?.threadId ?? event.native?.params?.threadId;
-      event = { cursor: event.cursor, kind: event.kind === 'snapshot' ? 'checkpoint' : event.kind === 'render' ? 'renderRequired' : 'resync',
+      event = { cursor: event.cursor, kind: event.kind === 'render' ? 'renderRequired' : 'resync',
         native: { threadId, reason: 'large-event-use-https' } };
     }
     for (const view of views.values()) for (const res of view.streams) writeEvent(res, event);
@@ -309,14 +310,26 @@ export function createWebServer({ config, codex }) {
   async function openThread(viewId, view, threadId) {
     const version = view.openVersion = (view.openVersion ?? 0) + 1;
     const previous = view.threadId; view.threadId = threadId;
+    if (!chats.has(threadId)) chats.set(threadId, createChatState(threadId));
     if (previous && previous !== threadId) { await codex.releaseThread(previous, viewId); discardIdle(previous); }
     if (version !== view.openVersion) throw error(409, 'VIEW_CHANGED', '已切换到其他会话。');
     try {
       const result = await codex.retainThread(threadId, viewId);
       if (version !== view.openVersion || views.get(viewId) !== view) throw error(409, 'VIEW_CHANGED', '页面已切换，请重新打开会话。');
-      return snapshotReply(result);
+      const history = initialHistory.get(result.result);
+      const reply = snapshotReply(history ? await history : result);
+      const snapshot = reply.snapshot;
+      const references = await files.issueTranscriptRefs(snapshot.thread, snapshot.initialTurnsPage?.data ?? snapshot.thread.turns ?? []);
+      if (version !== view.openVersion || views.get(viewId) !== view) throw error(409, 'VIEW_CHANGED', '已切换到其他会话。');
+      return { ...reply, snapshot: { ...snapshot, transcript: renderTranscript(snapshot.thread, [...(snapshot.initialTurnsPage?.data ?? snapshot.thread.turns ?? [])].reverse(), references) } };
     }
-    catch (e) { if (view.threadId === threadId) view.threadId = null; await codex.releaseThread(threadId, viewId).catch(() => {}); discardIdle(threadId); throw e; }
+    catch (e) {
+      if (version === view.openVersion || view.threadId !== threadId) {
+        if (version === view.openVersion) view.threadId = null;
+        await codex.releaseThread(threadId, viewId).catch(() => {}); discardIdle(threadId);
+      }
+      throw e;
+    }
   }
   function renderedLater(threadId, itemIds) {
     let pending = renderTimers.get(threadId);
@@ -349,8 +362,13 @@ export function createWebServer({ config, codex }) {
     if (event.kind === 'snapshot') {
       let state = chats.get(threadId);
       if (!state) chats.set(threadId, state = createChatState(threadId));
-      installSnapshot(state, { snapshot: event.native, cursor: event.cursor });
-      snapshots.set(event.native, { ...safe(event.native), transcript: renderTranscript(state.thread, state.turns) });
+      if (!event.native.historyKind) state.resumeCursor = event.cursor;
+      const pendingRequests = [...pending].filter(([, request]) => request.params.threadId === threadId);
+      installSnapshot(state, { snapshot: { ...event.native, pendingRequests: event.native.pendingRequests ?? pendingRequests }, cursor: event.cursor });
+      const snapshot = { ...safe(event.native), pendingRequests: [...state.requests], tokenUsage: state.tokenUsage, nativeError: state.error,
+        historyKind: event.native.historyKind ?? (event.native.itemsBackwardsCursor ? 'items' : 'turns'), transcript: renderTranscript(state.thread, state.turns) };
+      if (event.native.itemsBackwardsCursor) snapshot.initialTurnsPage = { ...snapshot.initialTurnsPage, nextCursor: null };
+      snapshots.set(event.native, snapshot);
       renderedLater(threadId, state.turns.flatMap(turn => turn.items.map(item => item.id)));
       reconcileWrites(state);
     } else {
@@ -458,7 +476,42 @@ export function createWebServer({ config, codex }) {
       pending.set(event.requestKey, native);
       updateChat({ ...event, native });
       broadcast({ ...event, native });
-    } else if (event.kind === 'snapshot') { updateChat(event); broadcast({ ...event, native: snapshots.get(event.native) }); }
+    } else if (event.kind === 'snapshot') {
+      updateChat(event);
+      const kind = event.native.thread.historyMode === 'legacy' ? 'turns' : event.native.itemsBackwardsCursor ? 'items' : null;
+      if (kind && [...views.values()].some(view => view.threadId === event.native.thread.id)) {
+        const history = codex.history(kind, { threadId: event.native.thread.id, limit: 20, sortDirection: 'desc', ...(kind === 'turns' ? { itemsView: 'summary' } : {}) });
+        initialHistory.set(event.native, history); history.catch(() => {});
+      }
+    } else if (event.kind === 'history') {
+      const state = chats.get(event.threadId); if (!state?.ready) return;
+      const turns = new Map();
+      const entries = event.historyKind === 'items' ? [...event.native.data].reverse() :
+        [...event.native.data].reverse().flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item })));
+      for (const entry of entries) {
+        let turn = turns.get(entry.turnId);
+        if (!turn) { const known = (event.historyKind === 'turns' ? event.native.data : state.turns).find(turn => turn.id === entry.turnId); turns.set(entry.turnId, turn = { ...(known ?? { id: entry.turnId, status: 'completed' }), items: [] }); }
+        turn.items.push({ ...boundedHistoryItem(entry.item), _cursor: event.cursor, _incomplete: false });
+      }
+      if (event.initial) for (const live of state.turns) {
+        const current = live.items.filter(item => (item._cursor?.seq ?? 0) > (state.resumeCursor?.seq ?? 0) || live.status === 'inProgress' && (item._incomplete || item.type === 'agentMessage'));
+        if (!current.length && live.status !== 'inProgress') continue;
+        let turn = turns.get(live.id); if (!turn) turns.set(live.id, turn = { ...live, items: [] });
+        for (const item of current) {
+          const index = turn.items.findIndex(existing => existing.id === item.id);
+          if (index < 0) turn.items.push(boundedHistoryItem(item));
+          else if ((item._cursor?.seq ?? 0) > (state.resumeCursor?.seq ?? 0)) turn.items[index] = boundedHistoryItem(item);
+        }
+      }
+      const snapshot = { thread: structuredClone(state.thread), model: state.settings.model, reasoningEffort: state.settings.effort,
+        cwd: state.settings.cwd, approvalPolicy: state.settings.approvalPolicy, sandbox: state.settings.sandbox, activePermissionProfile: state.settings.activePermissionProfile,
+        historyKind: event.historyKind, pendingRequests: [...state.requests], tokenUsage: state.tokenUsage, nativeError: state.error,
+        initialTurnsPage: { data: [...turns.values()].reverse(), nextCursor: event.native.nextCursor } };
+      if (event.initial) {
+        const enriched = { kind: 'snapshot', cursor: event.cursor, threadId: event.threadId, native: snapshot };
+        updateChat(enriched); snapshots.set(event.native, snapshots.get(snapshot));
+      } else snapshots.set(event.native, { ...safe(snapshot), transcript: renderTranscript(snapshot.thread, [...turns.values()]) });
+    }
     else if (/^(thread\/|turn\/|item\/|project\/|account\/rateLimits\/)/.test(event.native?.method) ||
              ['warning', 'error', 'serverRequest/resolved', 'account/updated'].includes(event.native?.method)) {
       if (event.native.method === 'serverRequest/resolved') {
@@ -494,15 +547,17 @@ export function createWebServer({ config, codex }) {
         const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="conversation.md"; filename*=UTF-8''${encodeURIComponent(threadId + '.md')}` });
         res.write(`# ${(thread.name || threadId).replace(/[\r\n]/g, ' ')}\n\nThread: ${threadId}\n\n`);
-        let cursor;
+        let cursor, previousTurn;
         do {
-          const page = await nativeRead('thread/turns/list', { threadId, limit: 20, sortDirection: 'asc', itemsView: 'full', ...(cursor ? { cursor } : {}) });
-          for (const turn of page.data) {
-            let chunk = `## Turn ${turn.id} · ${turn.status}\n\n`;
-            for (const item of turn.items) {
-              const value = itemText(item), fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map(value => value.length + 1)));
-              chunk += `### ${item.type}\n\n${fence}\n${value}\n${fence}\n\n`;
-            }
+          const legacy = thread.historyMode === 'legacy';
+          const page = await nativeRead(legacy ? 'thread/turns/list' : 'thread/items/list', { threadId, limit: 20, sortDirection: 'asc', ...(legacy ? { itemsView: 'summary' } : {}), ...(cursor ? { cursor } : {}) });
+          const entries = legacy ? page.data.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))) : page.data;
+          for (const entry of entries) {
+            if (res.destroyed) return;
+            const item = boundedHistoryItem(entry.item), value = itemText(item);
+            const fence = '`'.repeat((value.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length + 1), 3));
+            let chunk = previousTurn === entry.turnId ? '' : `## Turn ${entry.turnId}\n\n`; previousTurn = entry.turnId;
+            chunk += `### ${item.type}${item._historyTruncated ? ' · 部分输出' : ''}\n\n${fence}\n${value}\n${fence}\n\n`;
             if (!res.write(chunk)) await new Promise((resolve, reject) => {
               const cleanup = () => { res.off('drain', drained); res.off('close', closed); };
               const drained = () => { cleanup(); resolve(); }, closed = () => { cleanup(); reject(error(400, 'ABORTED', '导出已取消。')); };
@@ -591,7 +646,9 @@ export function createWebServer({ config, codex }) {
       } else if (url.pathname === '/api/rpc') {
         fields(body, ['method', 'params']); validateRead(body.method, body.params);
         const epoch = accountEpoch;
-        const result = await codex.rpc(body.method, body.params);
+        // Old tabs may request full history; never hydrate huge persisted tool outputs for display.
+        const params = body.method === 'thread/turns/list' ? { ...body.params, itemsView: 'summary' } : body.params;
+        const result = await codex.rpc(body.method, params);
         if (body.method === 'account/rateLimits/read' && epoch !== accountEpoch) throw error(409, 'USAGE_SUPERSEDED', '账号或模型已变化，请重新读取额度。');
         if (body.method === 'thread/turns/list') {
           const turns = structuredClone(result.result.data);
@@ -625,6 +682,14 @@ export function createWebServer({ config, codex }) {
         const turns = structuredClone(state.turns), thread = structuredClone(state.thread), cursor = state.cursor;
         const references = await files.issueTranscriptRefs(thread, turns);
         reply(res, 200, { kind: 'render', cursor, native: { threadId: body.threadId, items: renderTranscript(thread, turns, references).items } });
+      } else if (url.pathname === '/api/thread/history') {
+        fields(body, ['viewId', 'threadId', 'cursor']); const view = requireView(body.viewId, session);
+        if (!id(body.threadId) || !text(body.cursor) || !body.cursor) throw error(400, 'INVALID_HISTORY', '历史游标不正确。');
+        if (view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        const result = await codex.history('items', { threadId: body.threadId, cursor: body.cursor, limit: 20, sortDirection: 'desc' });
+        const response = snapshotReply(result), snapshot = response.snapshot;
+        const references = await files.issueTranscriptRefs(snapshot.thread, snapshot.initialTurnsPage.data);
+        reply(res, 200, { ...response, snapshot: { ...snapshot, transcript: renderTranscript(snapshot.thread, [...snapshot.initialTurnsPage.data].reverse(), references) } });
       } else if (url.pathname === '/api/thread/start') {
         fields(body, ['viewId', 'projectId', 'name']); const view = requireView(body.viewId, session);
         if ((body.projectId != null && !id(body.projectId)) ||

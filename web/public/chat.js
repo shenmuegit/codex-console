@@ -22,15 +22,40 @@ export function installSnapshot(state, { snapshot, cursor }) {
   if (snapshot.thread.id !== state.threadId || (state.generation != null && cursor.generation < state.generation) ||
       (state.ready && cursor.generation === state.cursor?.generation && cursor.seq <= state.cursor.seq)) return state;
   const buffered = state.buffer;
+  const completedIds = new Set(buffered.filter(event => event.cursor.generation === cursor.generation && event.cursor.seq <= cursor.seq && event.native?.method === 'item/completed').map(event => event.native.params.item.id));
+  const unfinished = state.turns.filter(turn => turn.status === 'inProgress').map(turn => ({ ...turn, items: turn.items.filter(item => item._incomplete && !completedIds.has(item.id)) }));
   state.thread = copy(snapshot.thread);
   state.settings = { model: snapshot.model, effort: snapshot.reasoningEffort, approvalPolicy: snapshot.approvalPolicy,
     sandbox: snapshot.sandbox, cwd: snapshot.cwd, activePermissionProfile: snapshot.activePermissionProfile };
   state.turns = stampItems(copy(snapshot.initialTurnsPage?.data ?? snapshot.thread.turns ?? []).reverse(), cursor, snapshot.transcript?.items);
-  state.error = state.turns.at(-1)?.error?.message ?? null;
+  const materializedIds = new Set(state.turns.flatMap(turn => turn.items.map(item => item.id)));
+  for (const live of unfinished) {
+    let turn = state.turns.find(turn => turn.id === live.id);
+    if (!turn && state.generation === cursor.generation && snapshot.thread.status?.type === 'active' && !state.turns.some(turn => turn.status === 'inProgress')) {
+      state.turns.push(turn = { ...live, items: [] });
+    }
+    if (turn?.status === 'inProgress') for (const item of live.items) {
+      if (!turn.items.some(existing => existing.id === item.id)) turn.items.push(copy(item));
+    }
+  }
+  state.error = snapshot.nativeError ?? state.turns.at(-1)?.error?.message ?? null;
+  if (snapshot.tokenUsage) state.tokenUsage = copy(snapshot.tokenUsage);
   state.historyCursor = snapshot.initialTurnsPage?.nextCursor ?? null;
+  state.historyKind = snapshot.historyKind ?? 'turns';
   state.cursor = cursor; state.generation = cursor.generation; state.ready = true; state.resync = false;
   state.buffer = []; state.bufferBytes = 0; state.requests.clear();
-  for (const event of buffered) if (event.cursor.generation === cursor.generation && event.cursor.seq > cursor.seq) applyNativeEvent(state, event);
+  for (const [key, request] of snapshot.pendingRequests ?? []) state.requests.set(key, request);
+  const activeIds = new Set(state.turns.filter(turn => turn.status === 'inProgress').map(turn => turn.id));
+  // Native summaries omit unfinished items; retain deltas already observed before that reply.
+  for (const event of buffered) {
+    const p = event.native?.params, id = p?.item?.id ?? p?.itemId;
+    if (event.kind !== 'notification' || (!p?.item && p?.delta == null) || event.cursor.generation !== cursor.generation || event.cursor.seq > cursor.seq || !activeIds.has(p?.turnId) || !id || materializedIds.has(id) || completedIds.has(id)) continue;
+    state.cursor = { ...event.cursor, seq: event.cursor.seq - 1 }; applyNativeEvent(state, event);
+  }
+  state.cursor = cursor;
+  for (const turn of state.turns) for (const item of turn.items) if (item._incomplete && !materializedIds.has(item.id)) item._cursor = cursor;
+  for (const event of buffered) if (event.cursor.generation === cursor.generation &&
+      (event.cursor.seq > cursor.seq || event.kind === 'render' && event.cursor.seq === cursor.seq)) applyNativeEvent(state, event);
   reconcilePending(state);
   return state;
 }
@@ -42,6 +67,21 @@ function reconcilePending(state) {
 }
 
 export function prependHistory(state, page, cursor = state.cursor) {
+  if (state.generation != null && cursor.generation !== state.generation) return state;
+  if (state.historyKind === 'items') {
+    const earlier = [];
+    for (const older of stampItems(copy(page.data).reverse(), cursor, page.transcript?.items)) {
+      const turn = state.turns.find(turn => turn.id === older.id);
+      if (!turn) { earlier.push(older); continue; }
+      const ids = new Set(older.items.map(item => item.id));
+      const loaded = older.items.map(item => {
+        const existing = turn.items.find(existing => existing.id === item.id);
+        return existing && (existing._cursor?.seq ?? 0) >= cursor.seq ? existing : item;
+      });
+      turn.items = [...loaded, ...turn.items.filter(item => !ids.has(item.id))];
+    }
+    state.turns.unshift(...earlier); state.historyCursor = page.nextCursor; reconcilePending(state); return state;
+  }
   const ids = new Set(state.turns.map(t => t.id));
   const older = stampItems(copy(page.data).reverse().filter(t => !ids.has(t.id)), cursor, page.transcript?.items);
   state.turns.unshift(...older); state.historyCursor = page.nextCursor;
@@ -59,16 +99,6 @@ export function applyNativeEvent(state, event) {
     return state;
   }
   if ((native?.threadId ?? p.threadId) !== state.threadId) return state;
-  if (kind === 'render') {
-    if (cursor.generation !== state.generation) return state;
-    for (const rendered of native.items ?? []) {
-      const item = state.turns.flatMap(t => t.items ?? []).find(item => item.id === rendered.id);
-      const floor = Math.max(item?._cursor?.seq ?? 0, item?._presentation?.cursor?.seq ?? 0);
-      if (item && rendered.cursor?.generation === state.generation && rendered.cursor.seq >= floor &&
-          (sameCursor(item._cursor, rendered.cursor) || (rendered.cursor.seq <= state.cursor.seq && rendered.text === itemText(item)))) item._presentation = rendered;
-    }
-    return state;
-  }
   if (state.generation != null && cursor.generation < state.generation) return state;
   if (state.generation != null && cursor.generation !== state.generation) {
     state.ready = false; state.resync = true; state.generation = cursor.generation; state.requests.clear();
@@ -77,6 +107,15 @@ export function applyNativeEvent(state, event) {
     state.bufferBytes += JSON.stringify(event).length * 3;
     if (state.bufferBytes > 1_048_576) { state.buffer = []; state.bufferBytes = 0; state.resync = true; }
     else state.buffer.push(event);
+    return state;
+  }
+  if (kind === 'render') {
+    for (const rendered of native.items ?? []) {
+      const item = state.turns.flatMap(t => t.items ?? []).find(item => item.id === rendered.id);
+      const floor = Math.max(item?._cursor?.seq ?? 0, item?._presentation?.cursor?.seq ?? 0);
+      if (item && rendered.cursor?.generation === state.generation && rendered.cursor.seq >= floor &&
+          (sameCursor(item._cursor, rendered.cursor) || (rendered.cursor.seq <= state.cursor.seq && rendered.text === itemText(item)))) item._presentation = rendered;
+    }
     return state;
   }
   if (cursor.seq <= state.cursor.seq) return state;
@@ -108,7 +147,7 @@ export function applyNativeEvent(state, event) {
       turn.items = existing;
       for (const item of p.turn.items ?? []) {
         const index = turn.items.findIndex(i => i.id === item.id);
-        const value = { ...copy(item), _cursor: cursor };
+        const value = { ...copy(item), _cursor: cursor, _incomplete: method !== 'turn/completed' };
         if (index < 0) turn.items.push(value); else turn.items[index] = value;
       }
     } else stampItems([turn], cursor);
@@ -117,12 +156,14 @@ export function applyNativeEvent(state, event) {
     let turn = state.turns.find(t => t.id === p.turnId);
     if (!turn) state.turns.push(turn = { id: p.turnId, status: 'inProgress', items: [] });
     let index = turn.items.findIndex(item => item.id === (p.item?.id ?? p.itemId));
+    if (index >= 0 && turn.items[index]._cursor?.generation === cursor.generation && turn.items[index]._cursor.seq >= cursor.seq) return state;
     if (p.item) {
-      const item = { ...copy(p.item), _cursor: cursor };
+      const item = { ...copy(p.item), _cursor: cursor, _incomplete: method !== 'item/completed' };
       if (index < 0) turn.items.push(item); else turn.items[index] = item;
     } else {
       if (index < 0) { turn.items.push({ id: p.itemId, type: method.includes('commandExecution') ? 'commandExecution' : method.includes('reasoning') ? 'reasoning' : 'agentMessage', text: '' }); index = turn.items.length - 1; }
       const item = turn.items[index];
+      item._incomplete = true;
       if (method === 'item/agentMessage/delta' || method === 'item/plan/delta') item.text = (item.text ?? '') + p.delta;
       if (method === 'item/commandExecution/outputDelta') item.aggregatedOutput = (item.aggregatedOutput ?? '') + p.delta;
       if (method === 'item/reasoning/summaryTextDelta') { item.summary ??= []; const i = p.summaryIndex ?? 0; item.summary[i] = (item.summary[i] ?? '') + p.delta; }
@@ -176,7 +217,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), formNodes = new Map();
   let selected, project, projectCursor, threadPages, online = false, alive = true;
-  let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false;
+  let opening = 0, projectLoad = 0, threadLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
   let creatingProject = false, projectRequest, archivedProjects = false;
@@ -410,6 +451,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     catch (e) { if (version === opening) throw e; return; }
     if (!alive || version !== opening) return;
     installSnapshot(state, result); save(state); draw();
+    if (state.presentationNeeded) { state.presentationNeeded = false; loadPresentation().catch(showError); }
     attachments.hydrate(state);
     await loadThreads();
   }
@@ -481,6 +523,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name ?? '';
     $('#older-history').hidden = !state?.historyCursor;
+    $('#older-history').disabled = Boolean(state?.historyLoading);
+    $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';
     const hasMessages = Boolean(state?.turns.some(t => t.items?.length)); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
@@ -629,13 +673,23 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#more-projects'), 'click', () => loadProjects(true)); bind($('#more-threads'), 'click', () => loadThreads(true));
   bind($('#back-projects'), 'click', closeSidebar); bind(backdrop, 'click', closeSidebar);
   bind($('#back-threads'), 'click', () => { layout.dataset.sidebarCollapsed = 'false'; setLevel('threads'); $('#new-thread').focus(); });
-  bind($('#older-history'), 'click', async () => {
-    const state = selected, button = $('#older-history'); if (!state?.historyCursor) return; button.disabled = true;
-    try { const response = await api('/api/rpc', { method: 'thread/turns/list', params: { threadId: state.threadId, cursor: state.historyCursor, limit: 20, sortDirection: 'desc', itemsView: 'full' } });
-      if (selected !== state) return; const top = feed.scrollTop, height = feed.scrollHeight;
-      prependHistory(state, response.result, response.cursor); draw(); feed.scrollTop = top + feed.scrollHeight - height;
-    } finally { button.disabled = false; }
-  });
+  async function loadOlderHistory() {
+    const state = selected, version = opening, cursor = state?.historyCursor;
+    if (!cursor || !state.ready || !online || state.historyLoading) return;
+    state.historyLoading = true; draw();
+    try {
+      const response = state.historyKind === 'items' ? await api('/api/thread/history', { viewId, threadId: state.threadId, cursor }) :
+        await api('/api/rpc', { method: 'thread/turns/list', params: { threadId: state.threadId, cursor, limit: 20, sortDirection: 'desc', itemsView: 'summary' } });
+      if (!alive || selected !== state || version !== opening || state.historyCursor !== cursor) return;
+      const top = feed.scrollTop, height = feed.scrollHeight;
+      prependHistory(state, response.snapshot ? { ...response.snapshot.initialTurnsPage, transcript: response.snapshot.transcript } : response.result, response.cursor);
+      draw(); feed.scrollTop = top + feed.scrollHeight - height; lastScrollTop = feed.scrollTop;
+    } catch (e) { if (alive && selected === state && version === opening) throw e; }
+    finally { state.historyLoading = false; if (alive && selected === state) draw(); }
+  }
+  bind($('#older-history'), 'click', loadOlderHistory);
+  bind(feed, 'scroll', () => { const up = feed.scrollTop < lastScrollTop; lastScrollTop = feed.scrollTop; if (up && feed.scrollTop <= 80) return loadOlderHistory(); });
+  bind(feed, 'wheel', event => { if (event.deltaY < 0 && feed.scrollTop <= 80) return loadOlderHistory(); });
   // Submit prevention must run synchronously, before the async action wrapper yields.
   $('#composer').addEventListener('submit', event => { event.preventDefault(); submit().catch(showError); }, { signal: abort.signal });
   draft.addEventListener('input', () => { if (selected) { selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
@@ -670,7 +724,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       const reconnected = event.kind === 'status' && event.native.online && !online;
       if (event.kind === 'status') online = event.native.online;
       if (reconnected) Promise.all([loadProjects(), loadThreads()]).catch(showError);
-      if (event.kind === 'renderRequired' && event.native.threadId === selected?.threadId) loadPresentation();
+      if (event.kind === 'renderRequired' && event.native.threadId === selected?.threadId) {
+        if (selected.ready) loadPresentation(); else selected.presentationNeeded = true;
+      }
       if (event.native?.method === 'project/changed' && event.native.params.changeType === 'deleted' && event.native.params.projectId === project?.id) {
         project = null; draw(); loadThreads().catch(showError);
       }

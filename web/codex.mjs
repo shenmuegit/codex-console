@@ -27,7 +27,7 @@ export function createCodexClient({ url, expectedHome }) {
     }
   };
 
-  function send(method, params, initializing = false) {
+  function send(method, params, initializing = false, historyKind) {
     if ((!online && !initializing) || socket?.readyState !== 1) {
       return Promise.reject(fault('NATIVE_DISCONNECTED', 'The native backend is offline.', { outcome: 'not-sent' }));
     }
@@ -37,7 +37,7 @@ export function createCodexClient({ url, expectedHome }) {
         pending.delete(id);
         reject(fault('NATIVE_TIMEOUT', 'The native reply timed out; reconcile before retrying.', { outcome: 'unknown' }));
       }, 30_000);
-      pending.set(id, { resolve, reject, timer, method, params });
+      pending.set(id, { resolve, reject, timer, method, params, historyKind });
       try { socket.send(JSON.stringify({ id, method, params })); }
       catch {
         clearTimeout(timer); pending.delete(id);
@@ -60,7 +60,7 @@ export function createCodexClient({ url, expectedHome }) {
   function resume(threadId) {
     const entry = threads.get(threadId);
     const operation = send('thread/resume', { threadId, excludeTurns: true,
-      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'full' } })
+      initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'summary' } })
       .finally(() => entry?.resumes.delete(operation));
     entry?.resumes.add(operation);
     return operation;
@@ -86,6 +86,10 @@ export function createCodexClient({ url, expectedHome }) {
           .find(turn => turn.status === 'inProgress')?.id ?? null;
         // Install the atomic native history checkpoint before any later delta or RPC awaiter.
         emit({ kind: 'snapshot', cursor: checkpoint, threadId, native: native.result });
+      }
+      if (call.historyKind) {
+        emit({ kind: 'history', cursor: checkpoint, threadId: call.params.threadId,
+          historyKind: call.historyKind, initial: !call.params.cursor && call.params.sortDirection === 'desc', native: native.result });
       }
       call.resolve({ result: native.result, cursor: checkpoint });
       return;
@@ -149,6 +153,7 @@ export function createCodexClient({ url, expectedHome }) {
   connect();
   return {
     rpc: send, status,
+    history(kind, params) { return send(kind === 'items' ? 'thread/items/list' : 'thread/turns/list', params, false, kind); },
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     retainThread(threadId, viewId) {
       let entry = threads.get(threadId);

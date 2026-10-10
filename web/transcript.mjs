@@ -3,6 +3,41 @@ import { itemText } from './public/chat.js';
 
 const markdown = new MarkdownIt({ html: false, linkify: false, typographer: false });
 const escape = markdown.utils.escapeHtml;
+
+export function boundedHistoryItem(item) {
+  if (['userMessage', 'agentMessage', 'plan'].includes(item.type)) return structuredClone(item);
+  // One tool record can exceed a whole page; bound its preview before cloning or rendering.
+  let remaining = 65_536, truncated = false;
+  function visit(value, depth = 0) {
+    if (remaining <= 0 || depth > 12) {
+      truncated = true;
+      return Array.isArray(value) ? [] : value && typeof value === 'object' ? {} : typeof value === 'string' ? '…（内容过大，已省略）' : value;
+    }
+    remaining -= 8;
+    if (typeof value === 'string') {
+      const text = value.slice(0, Math.max(0, remaining)); remaining -= text.length;
+      if (text.length === value.length) return text;
+      truncated = true; return text + '…（内容过大，已省略）';
+    }
+    if (Array.isArray(value)) {
+      const result = [];
+      for (const child of value) { if (result.length >= 100 || remaining <= 0) { truncated = true; break; } result.push(visit(child, depth + 1)); }
+      return result;
+    }
+    if (value && typeof value === 'object') {
+      const result = Object.create(null); let count = 0;
+      for (const key in value) if (Object.hasOwn(value, key)) {
+        if (++count > 100 || remaining <= 0) { truncated = true; break; }
+        const name = key.slice(0, 256); remaining -= name.length; if (name !== key) truncated = true;
+        result[name] = visit(value[key], depth + 1);
+      }
+      return result;
+    }
+    return value;
+  }
+  const result = visit(item);
+  return { ...result, id: item.id, type: item.type, status: item.status, _incomplete: item._incomplete, ...(truncated ? { _historyTruncated: true } : {}) };
+}
 markdown.validateLink = value => !/^(javascript:|vbscript:|data:)/i.test(value);
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
   const href = tokens[index].attrGet('href'), ref = env.files?.find(file => file.target === href);
@@ -40,7 +75,7 @@ export function renderTranscript(thread, turns, references = new Map()) {
   const items = turns.flatMap(turn => (turn.items ?? []).map(item => {
     const text = itemText(item), role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
     const label = role === 'user' ? '你' : role === 'assistant' ? 'Codex' : ({ reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用' }[item.type] ?? item.type);
-    return { id: item.id, turnId: turn.id, type: item.type, role, label, text, status: item.status ?? turn.status,
+    return { id: item.id, turnId: turn.id, type: item.type, role, label: label + (item._historyTruncated ? ' · 部分输出' : ''), text, status: item.status ?? turn.status,
       cursor: item._cursor, files: references.get(item.id) ?? [], html: role === 'assistant' ? markdown.render(text, { files: references.get(item.id) }) : `<pre>${escape(text)}</pre>` };
   }));
   return { items, html: items.map(item => `<article data-item-id="${escape(item.id)}"><strong>${escape(item.label)}</strong>${item.html}</article>`).join('') };

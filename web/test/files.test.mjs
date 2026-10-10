@@ -131,7 +131,7 @@ test('large native snapshots recover through HTTPS without repeatedly closing th
   for (let i = 0; i < 100 && !f.peer.sent.some(m => m.method === 'thread/resume'); i++) await delay(5);
   f.peer.replyTo('thread/resume', resumeFixture('t', [{ id: 'v', status: 'completed', items: [{ id: 'a', type: 'agentMessage', text }] }]));
   assert.equal((await pending).status, 200); await delay(130);
-  assert.equal(stream.res.destroyed, false); assert.match(stream.text(), /"kind":"checkpoint"/);
+  assert.equal(stream.res.destroyed, false); assert.doesNotMatch(stream.text(), /"kind":"(?:snapshot|checkpoint)"/);
   const rendered = await f.request('/api/thread/render', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
   assert.equal(rendered.status, 200); assert.equal(rendered.json.native.items[0].text, text);
   assert.ok(stream.text().length < 5000); stream.req.destroy();

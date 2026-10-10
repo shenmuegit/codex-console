@@ -91,7 +91,7 @@ test('workspace skills come from native discovery and referenced threads are onl
   const sent = f.request('/api/thread/send', { method: 'POST', cookie, body });
   await waitCall(f.peer, 'thread/read'); assert.equal(f.peer.sent.at(-1).params.threadId, 'ref');
   f.peer.replyTo('thread/read', { thread: { id: 'ref', name: 'Reference', cwd: f.dir } });
-  await waitCall(f.peer, 'thread/turns/list'); f.peer.replyTo('thread/turns/list', { data: [{ id: 'old', items: [{ id: 'msg', type: 'agentMessage', text: 'readonly snapshot' }] }], nextCursor: null });
+  await waitCall(f.peer, 'thread/turns/list'); assert.equal(f.peer.sent.at(-1).params.itemsView, 'summary'); f.peer.replyTo('thread/turns/list', { data: [{ id: 'old', items: [{ id: 'msg', type: 'agentMessage', text: 'readonly snapshot' }] }], nextCursor: null });
   await waitCall(f.peer, 'turn/start'); assert.equal(f.peer.sent.at(-1).params.threadId, 't'); assert.equal(Object.values(f.peer.sent.at(-1).params.additionalContext)[0].kind, 'untrusted');
   f.peer.replyTo('turn/start', { turn: { id: 'new', status: 'inProgress', items: [] } }); assert.equal((await sent).status, 200);
   assert.equal(f.peer.sent.some(m => ['turn/start', 'turn/steer', 'thread/queue/add'].includes(m.method) && m.params.threadId === 'ref'), false); stream.req.destroy();
@@ -140,10 +140,10 @@ test('dedicated rename/fork/export actions preserve full defaults and paginate n
   assert.equal((await fork).json.snapshot.thread.id, 'forked');
   const exported = f.request('/api/thread/export?threadId=forked', { cookie });
   await waitCall(f.peer, 'thread/read'); f.peer.replyTo('thread/read', { thread: { id: 'forked', name: 'Export' } });
-  await waitCall(f.peer, 'thread/turns/list'); assert.equal(f.peer.sent.at(-1).params.sortDirection, 'asc');
-  f.peer.replyTo('thread/turns/list', { data: [{ id: 'first', status: 'completed', items: [{ id: 'a', type: 'agentMessage', text: '第一页' }] }], nextCursor: 'opaque-export' });
-  await waitCall(f.peer, 'thread/turns/list', 2); assert.equal(f.peer.sent.at(-1).params.cursor, 'opaque-export');
-  f.peer.replyTo('thread/turns/list', { data: [{ id: 'second', status: 'completed', items: [{ id: 'b', type: 'agentMessage', text: '第二页' }] }], nextCursor: null });
+  await waitCall(f.peer, 'thread/items/list'); assert.equal(f.peer.sent.at(-1).params.sortDirection, 'asc');
+  f.peer.replyTo('thread/items/list', { data: [{ turnId: 'first', item: { id: 'a', type: 'agentMessage', text: '第一页' } }], nextCursor: 'opaque-export' });
+  await waitCall(f.peer, 'thread/items/list', 2); assert.equal(f.peer.sent.at(-1).params.cursor, 'opaque-export');
+  f.peer.replyTo('thread/items/list', { data: [{ turnId: 'second', item: { id: 'b', type: 'agentMessage', text: '第二页' } }], nextCursor: null });
   const result = await exported; assert.equal(result.status, 200); assert.match(result.headers['content-type'], /text\/markdown/); assert.ok(result.text.indexOf('第一页') < result.text.indexOf('第二页'));
   stream.req.destroy();
 });

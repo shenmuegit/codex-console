@@ -78,7 +78,7 @@ test('resume_checkpoint_orders_snapshot_and_deltas before promise callbacks', as
   assert.ok(events[0].cursor.seq < response.cursor.seq);
   assert.ok(events[2].cursor.seq > response.cursor.seq);
   const call = peer.sent.find(m => m.method === 'thread/resume');
-  assert.deepEqual(call.params, { threadId: 't', excludeTurns: true, initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'full' } });
+  assert.deepEqual(call.params, { threadId: 't', excludeTurns: true, initialTurnsPage: { limit: 20, sortDirection: 'desc', itemsView: 'summary' } });
 });
 
 test('active_thread_survives_last_view_close and unsubscribes only after matching completion', async t => {

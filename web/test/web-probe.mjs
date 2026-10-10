@@ -148,7 +148,7 @@ try {
     await api('/api/thread/stop', { viewId, threadId, turnId: longTurn });
     await waitFor(() => completion(longTurn), 'Interrupted native turn completed.');
     assert.equal(completion(longTurn).status, 'interrupted');
-    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary' } })).result;
     assert.equal(history.data.flatMap(t => t.items).filter(i => i.type === 'userMessage' && i.clientId === id).length, 1);
     report.webSend = true; report.secondNativeClient = true; report.closeReopenDuringWork = true;
     report.interrupt = true; report.stableMessageIdOnce = true; report.realThreadId = threadId;
@@ -165,7 +165,7 @@ try {
     const sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(),
       draft: { text: `Read the attached UTF-8 text file. Use a filesystem or command tool to copy its exact bytes to ${JSON.stringify(target)}. The photo is also an input validation check. Do not modify other files. Reply with a Markdown download link to that exact output file.`, uploadIds: [document.id, image.id] } });
     await waitFor(() => completion(sent.result.turn.id), 'Native attachment turn completed.'); assert.equal(completion(sent.result.turn.id).status, 'completed');
-    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary' } })).result;
     const user = history.data.flatMap(t => t.items).find(i => i.type === 'userMessage');
     assert.ok(user.content.some(p => p.type === 'localImage' && p.path.endsWith('content.png')));
     assert.ok(user.content.some(p => p.type === 'text' && p.text.includes('content.txt')));
@@ -219,7 +219,7 @@ try {
     const sent = await api('/api/thread/send', { viewId, threadId, mode: 'start', clientUserMessageId: randomUUID(), draft: { text, selections } });
     await waitFor(() => completion(sent.result.turn.id), 'Native composer turn completed.'); assert.equal(completion(sent.result.turn.id).status, 'completed');
     assert.ok(state.turns.flatMap(t => t.items).some(i => i.type === 'agentMessage' && i.text.includes(marker)));
-    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    const history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary' } })).result;
     const user = history.data.flatMap(t => t.items).find(i => i.type === 'userMessage');
     assert.ok(user.content.some(p => p.type === 'text' && p.text.includes('thread://' + referenceThreadId)));
     if (skill) assert.ok(user.content.some(p => p.type === 'skill' && p.path === skill.path));
@@ -264,7 +264,7 @@ try {
     installSnapshot(state, await api('/api/thread/open', { viewId, threadId }));
     await waitFor(() => completion(turnId), 'Accepted native work survived web process restart.');
     assert.equal(completion(turnId).status, 'completed');
-    let history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    let history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary' } })).result;
     assert.equal(history.data.flatMap(t => t.items).filter(i => i.type === 'userMessage' && i.clientId === messageId).length, 1);
     const before = (await api('/api/status')).generation;
     execFileSync('systemctl', ['--user', 'restart', 'codex-console-native-backend.service']);
@@ -272,7 +272,7 @@ try {
     for (let attempt = 0; attempt < 100; attempt++) { const status = await api('/api/status'); if (status.online && status.generation > before) { reconnected = true; break; } await delay(100); }
     assert.ok(reconnected, 'Gateway reinitialized against the restarted configured native backend.');
     installSnapshot(state, await api('/api/thread/open', { viewId, threadId }));
-    history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' } })).result;
+    history = (await api('/api/rpc', { method: 'thread/turns/list', params: { threadId, limit: 20, sortDirection: 'desc', itemsView: 'summary' } })).result;
     assert.equal(history.data.flatMap(t => t.items).filter(i => i.type === 'userMessage' && i.clientId === messageId).length, 1);
     await api('/api/thread/delete', { viewId, threadId, confirmed: true }); threadId = null;
     report.webRestartKeepsWork = true; report.backendRestartResync = true; report.restartDoesNotReplayWrites = true;
