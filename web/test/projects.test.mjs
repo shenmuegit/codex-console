@@ -44,11 +44,10 @@ test('a non-directory project root is rejected without creating a directory or p
   assert.equal(f.peer.sent.some(call => ['project/create', 'fs/createDirectory'].includes(call.method)), false);
 });
 
-test('browser project editing archiving and folder mutations remain denied without native side effects', async t => {
+test('browser project editing and folder mutations remain denied without native side effects', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
   const before = f.peer.sent.length;
   for (const [path, body] of [
-    ['/api/project/archive', { projectId: 'p', archived: true }],
     ['/api/project/save', { name: 'Forbidden', rootPath: f.dir, idempotencyKey: 'forbidden' }],
     ['/api/directory/create', { path: join(f.dir, 'forbidden') }],
   ]) {

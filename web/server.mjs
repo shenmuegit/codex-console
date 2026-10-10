@@ -551,7 +551,7 @@ export function createWebServer({ config, codex }) {
       }
       if (req.method !== 'POST') throw error(404, 'NOT_FOUND', '没有这个页面。');
       const body = await readJson(req);
-      if (['/api/project/save', '/api/project/archive', '/api/directory/create'].includes(url.pathname)) throw error(403, 'WORKSPACE_MANAGED_BY_CODEX', '项目和工作目录由 Codex 管理。');
+      if (['/api/project/save', '/api/directory/create'].includes(url.pathname)) throw error(403, 'WORKSPACE_MANAGED_BY_CODEX', '项目和工作目录由 Codex 管理。');
       if (url.pathname === '/api/logout') {
         auth.revoke(token);
         for (const [key, view] of views) if (view.session === session) releaseView(key, view);
@@ -571,6 +571,19 @@ export function createWebServer({ config, codex }) {
         try { canonical = await realpath(body.rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '请选择服务器上可访问的已有目录。'); }
         const result = await codex.rpc('project/create', { name: body.name.trim(), roots: [{ path: canonical }], idempotencyKey: body.idempotencyKey });
         reply(res, 200, { project: safe(result.result.project) });
+      } else if (url.pathname === '/api/project/archive') {
+        fields(body, ['viewId', 'projectId', 'archived']); requireView(body.viewId, session);
+        if (!id(body.projectId) || typeof body.archived !== 'boolean') throw error(400, 'INVALID_PROJECT', '请选择项目和归档状态。');
+        const project = (await codex.rpc('project/read', { projectId: body.projectId })).result.project;
+        const metadata = { ...project.metadata };
+        if (body.archived) metadata['codex-console.archived'] = 'true'; else delete metadata['codex-console.archived'];
+        // shortcut: native project/update replaces metadata, use a native archive or atomic patch when available.
+        const result = await codex.rpc('project/update', { projectId: body.projectId, metadata });
+        reply(res, 200, { project: safe(result.result.project) });
+      } else if (url.pathname === '/api/project/delete') {
+        fields(body, ['viewId', 'projectId', 'confirmed']); requireView(body.viewId, session);
+        if (!id(body.projectId) || body.confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认移除项目登记。');
+        await codex.rpc('project/delete', { projectId: body.projectId }); reply(res, 200, {});
       } else if (url.pathname === '/api/completions') {
         fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');

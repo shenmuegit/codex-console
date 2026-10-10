@@ -7,7 +7,7 @@ import { domFixture } from './dom.mjs';
 
 async function fixture(t, width = 390) {
   const dom = domFixture(); dom.resize(width);
-  dom.get('sidebar').append(...['back-projects', 'new-thread', 'new-project', 'projects', 'more-projects', 'show-archived-threads', 'all-threads', 'threads', 'more-threads', 'show-usage'].map(id => dom.get(id)));
+  dom.get('sidebar').append(...['back-projects', 'new-thread', 'new-project', 'show-archived-projects', 'projects', 'more-projects', 'show-archived-threads', 'all-threads', 'threads', 'more-threads', 'show-usage'].map(id => dom.get(id)));
   let seq = 0;
   const api = async (path, body) => {
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: ++seq } };

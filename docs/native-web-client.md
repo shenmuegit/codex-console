@@ -70,11 +70,11 @@ public text cannot be backfilled from their encrypted records.
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
 The attachment plus opens the existing file/photo pickers. Existing-project
-editing/archiving, directory mutation, logout and manual conversation refresh
-controls remain absent. The owner-only project-create endpoint requires its own
-session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
+name/root editing, directory mutation, logout and manual conversation refresh
+controls remain absent. Owner-only project create/archive/delete endpoints require
+their own session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
 Native row menus require a current browser with Popover API support.
-Archive always asks for confirmation that any running work will stop, including
+Conversation archive always asks for confirmation that any running work will stop, including
 when the conversation list has not yet received its latest status.
 Restoring from a row menu preserves the current conversation, draft and archive
 filter. Clicking the archived row itself restores and opens it unless a newer
@@ -421,9 +421,20 @@ real thread ID, send in both directions, then verify mobile navigation and copy.
 
 ## Native projects and working directories
 
-Projects and roots are read from Codex and shown without web archive overrides.
+Projects and roots are read from Codex. Right-click a project name, or use
+Shift+F10 / the keyboard menu key, for **Archive/Restore project** and **Delete
+project**. Opening the menu preserves the current conversation and draft. The
+project heading's archive toggle lists archived projects so they can be restored.
+Project archive hides the project in this console; it does not archive its chats
+or interrupt work. Because Codex has no native project archive RPC, this preference
+is stored in native metadata as `codex-console.archived: "true"`; other metadata
+is retained, and the original desktop does not consume this flag. Native metadata
+updates replace the map, so concurrent external metadata edits can race.
+Confirmed deletion calls native `project/delete`, detaches member threads to All
+conversations and keeps their history and workspace files. Neither action changes
+existing conversation working directories.
 The owner can create a native project from its name and an existing server
-directory. Existing-project editing, folder creation and directory picking remain
+directory. Existing-project name/root editing, folder creation and directory picking remain
 unavailable. Retired project/folder mutation routes return
 `WORKSPACE_MANAGED_BY_CODEX` before any native write; raw mutation RPCs stay denied.
 
