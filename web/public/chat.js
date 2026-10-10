@@ -426,6 +426,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       }
       if (!more) { if (menuTarget?.kind === 'thread' && group.list.contains(menuTrigger)) closeThreadMenu(); group.list.replaceChildren(); }
       for (const item of data) {
+        if (selected?.threadId === item.id && selected.thread && !selected.thread.name) {
+          Object.assign(selected.thread, { name: item.name, preview: item.preview }); scheduleDraw();
+        }
         const button = row(item.name || item.preview || '未命名会话', `${item.status?.type === 'active' ? '运行中 · ' : ''}${new Date(item.updatedAt * 1000).toLocaleString()}`, selected?.threadId === item.id, () => archived ? restore(item.id, true) : open(item.id));
         const container = element('div', null, 'conversation-row'); container.dataset.threadId = item.id;
         const actions = element('button', null, 'thread-actions'); actions.type = 'button';
@@ -628,8 +631,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
     if (state) state.online = online;
-    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || (state ? '正在打开会话…' : '新会话');
-    $('#thread-title').title = state?.thread?.name ?? '';
+    $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || state?.thread?.preview || (state && !state.ready ? '正在打开会话…' : '新会话');
+    $('#thread-title').title = state?.thread?.name || state?.thread?.preview || '';
     $('#older-history').hidden = !state?.historyCursor;
     $('#older-history').disabled = Boolean(state?.historyLoading);
     $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';

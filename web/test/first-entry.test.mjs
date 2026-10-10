@@ -16,7 +16,7 @@ function fixture(t, url = 'https://fixture.test/', before = async () => {}, proj
     ] : body.method === 'project/list' ? projects : [], nextCursor: null } };
     if (path === '/api/thread/start' || path === '/api/thread/open') {
       boundThread = path.endsWith('/start') ? 'new' : body.threadId;
-      const snapshot = resumeFixture(boundThread); if (path.endsWith('/start')) snapshot.thread.name = '新会话';
+      const snapshot = resumeFixture(boundThread); if (path.endsWith('/start')) snapshot.thread.name = null;
       return { snapshot, cursor: { generation: 1, seq: ++seq } };
     }
     if (path === '/api/thread/settings') return { settings: { model: 'other-model', effort: 'high', approvalPolicy: 'never', sandbox: { type: 'dangerFullAccess' } } };
@@ -31,6 +31,7 @@ test('first entry enables file photo model and effort controls on a native blank
   const f = fixture(t); await f.chat.load();
   for (const id of ['choose-files', 'choose-photos', 'model', 'effort', 'draft']) assert.ok(!f.dom.get(id).disabled, id + ' is usable on first entry');
   assert.equal(f.chat.getState()?.ready, true); assert.equal(f.chat.getState().threadId, 'new');
+  assert.equal(f.chat.getState().thread.name, null, 'First entry keeps the unnamed native thread');
   assert.equal(f.dom.get('thread-title').textContent, '新会话');
   assert.equal(f.calls.filter(call => call.path === '/api/thread/start').length, 1);
   let files = 0, photos = 0;
@@ -46,6 +47,18 @@ test('first entry enables file photo model and effort controls on a native blank
 test('an existing thread link opens that thread without creating another conversation', async t => {
   const f = fixture(t, 'https://fixture.test/?thread=existing'); await f.chat.load();
   assert.equal(f.chat.getState().threadId, 'existing'); assert.equal(f.calls.some(call => call.path === '/api/thread/start'), false);
+});
+
+test('unnamed chat headings follow native catalog previews and explicit native renames', async t => {
+  const dom = domFixture(), native = resumeFixture('t'); native.thread.name = null; native.thread.preview = 'Native initial preview';
+  const api = async (path, body) => path === '/api/thread/open' ? { snapshot: native, cursor: { generation: 1, seq: 1 } } :
+    { result: { data: body.method === 'thread/list' ? [{ ...native.thread, preview: 'Native catalog preview' }] : [], nextCursor: null } };
+  const chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); t.after(() => { chat.dispose(); dom.restore(); });
+  chat.connection(true); await chat.open('t');
+  assert.equal(chat.getState().thread.name, null); assert.equal(dom.get('thread-title').textContent, 'Native catalog preview');
+  assert.equal(dom.get('thread-title').title, 'Native catalog preview');
+  chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 2 }, native: { method: 'thread/name/updated', params: { threadId: 't', threadName: 'Explicit native name' } } });
+  await delay(0); assert.equal(dom.get('thread-title').textContent, 'Explicit native name');
 });
 
 const missing = id => Object.assign(new Error('no rollout found for thread id ' + id), { status: 422, code: -32600 });

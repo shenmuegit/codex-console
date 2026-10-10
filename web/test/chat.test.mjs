@@ -9,8 +9,8 @@ import { domFixture } from './dom.mjs';
 const cursor = seq => ({ generation: 1, seq });
 const message = (seq, delta) => ({ kind: 'notification', cursor: cursor(seq), native: { method: 'item/agentMessage/delta', params: { threadId: 't', turnId: 'turn', itemId: 'a', delta } } });
 const turn = (text = '') => ({ id: 'turn', status: 'inProgress', items: [{ id: 'a', type: 'agentMessage', text }], error: null });
-async function waitCall(peer, method) {
-  for (let i = 0; i < 100; i++) { if (peer.sent.some(m => m.method === method)) return; await delay(5); }
+async function waitCall(peer, method, count = 1) {
+  for (let i = 0; i < 100; i++) { if (peer.sent.filter(m => m.method === method).length >= count) return; await delay(5); }
   assert.fail(`Native call did not arrive: ${method}`);
 }
 async function open(f, cookie, viewId, turns = []) {
@@ -148,7 +148,7 @@ test('server Markdown never executes HTML/unsafe URLs and external images cannot
   assert.match(html, /&lt;script&gt;/); assert.match(html, /rel="noopener noreferrer"/);
 });
 
-test('new browser threads use full defaults and are named before their atomic resume', async t => {
+test('new browser threads retain native naming and full defaults through their atomic resume', async t => {
   const f = await httpsFixture(); t.after(() => f.close());
   const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const invalid = await f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, cwd: f.dir + '/missing-directory' } });
@@ -157,12 +157,37 @@ test('new browser threads use full defaults and are named before their atomic re
   await waitCall(f.peer, 'thread/start');
   const start = f.peer.sent.find(m => m.method === 'thread/start');
   assert.equal(start.params.approvalPolicy, 'never'); assert.equal(start.params.sandbox, 'danger-full-access');
-  f.peer.replyTo('thread/start', resumeFixture('t'));
-  await waitCall(f.peer, 'thread/name/set'); assert.equal(f.peer.sent.at(-1).params.name, '新会话');
-  f.peer.replyTo('thread/name/set', {});
-  await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', resumeFixture('t'));
-  const response = await pending; assert.equal(response.status, 200); assert.equal(response.json.snapshot.thread.id, 't');
+  const native = resumeFixture('t'); native.thread.name = null;
+  native.thread.gitInfo = { sha: 'native-sha', branch: 'native-branch', originUrl: null };
+  f.peer.replyTo('thread/start', native);
+  try {
+    await waitCall(f.peer, 'thread/section/move');
+    assert.deepEqual(f.peer.sent.at(-1).params, { threadId: 't', sectionId: null });
+    f.peer.replyTo('thread/section/move', {});
+    await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', native);
+    const response = await pending; assert.equal(response.status, 200); assert.equal(response.json.snapshot.thread.id, 't');
+    assert.equal(response.json.snapshot.thread.name, null);
+    assert.equal(f.peer.sent.some(call => call.method === 'thread/name/set'), false);
+    assert.equal(f.peer.sent.some(call => call.method === 'thread/metadata/update'), false);
+  } finally { f.client.close(); }
   stream.req.destroy();
+});
+
+test('failed blank-thread persistence retries the same native thread without naming it', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+  const native = resumeFixture('new'); native.thread.name = null;
+  const first = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId } });
+  await waitCall(f.peer, 'thread/start'); f.peer.replyTo('thread/start', native);
+  await waitCall(f.peer, 'thread/section/move'); f.peer.errorTo('thread/section/move', { code: -32600, message: 'Persistence failed' });
+  assert.equal((await first).status, 422);
+  const retry = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId } });
+  await waitCall(f.peer, 'thread/section/move', 2);
+  assert.deepEqual(f.peer.sent.at(-1).params, { threadId: 'new', sectionId: null });
+  f.peer.replyTo('thread/section/move', {});
+  await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', native);
+  const response = await retry; assert.equal(response.status, 200); assert.equal(response.json.snapshot.thread.name, null);
+  assert.equal(f.peer.sent.filter(call => call.method === 'thread/start').length, 1);
+  assert.equal(f.peer.sent.some(call => call.method === 'thread/name/set'), false);
 });
 
 test('HTTP resume snapshot stays pinned to its frame even when the following delta arrives before its awaiter', async t => {

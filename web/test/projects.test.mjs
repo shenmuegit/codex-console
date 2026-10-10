@@ -65,7 +65,7 @@ test('browser cwd overrides are rejected and new chats use the configured native
   assert.equal((await overriding).status, 400);
   const created = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId } });
   await waitCall(f.peer, 'thread/start'); assert.equal(f.peer.sent.at(-1).params.cwd, f.dir); f.peer.replyTo('thread/start', resumeFixture('new'));
-  await waitCall(f.peer, 'thread/name/set'); f.peer.replyTo('thread/name/set', {});
+  await waitCall(f.peer, 'thread/section/move'); f.peer.replyTo('thread/section/move', {});
   await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', resumeFixture('new'));
   assert.equal((await created).status, 200); stream.req.destroy();
 });
@@ -76,7 +76,7 @@ test('a new project chat derives its working directory from the native primary r
   const created = f.request('/api/thread/start', { method: 'POST', cookie, body: { viewId, projectId: 'p' } });
   await waitCall(f.peer, 'project/read'); f.peer.replyTo('project/read', { project: project([primary, secondary]) });
   await waitCall(f.peer, 'thread/start'); assert.equal(f.peer.sent.at(-1).params.cwd, primary); assert.equal(f.peer.sent.at(-1).params.projectId, 'p'); f.peer.replyTo('thread/start', resumeFixture('new'));
-  await waitCall(f.peer, 'thread/name/set'); f.peer.replyTo('thread/name/set', {});
+  await waitCall(f.peer, 'thread/section/move'); f.peer.replyTo('thread/section/move', {});
   await waitCall(f.peer, 'thread/resume'); f.peer.replyTo('thread/resume', resumeFixture('new'));
   assert.equal((await created).status, 200); stream.req.destroy();
 });

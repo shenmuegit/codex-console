@@ -813,16 +813,18 @@ export function createWebServer({ config, codex }) {
         const fingerprint = JSON.stringify([cwd, body.projectId, body.name]);
         if (view.creation?.fingerprint !== fingerprint && view.creation) throw error(409, 'CREATE_PENDING', '上一会话尚未确认，请先核对列表。');
         if (view.creation?.unknown) throw Object.assign(error(409, 'OUTCOME_UNKNOWN', '创建状态未知，请先核对会话列表。'), { outcome: 'unknown' });
-        if (!view.creation) view.creation = { fingerprint, threadId: null, promise: null };
+        if (!view.creation) view.creation = { fingerprint, thread: null, promise: null };
         const creation = view.creation;
         if (!creation.promise) creation.promise = (async () => {
           try {
-            if (!creation.threadId) creation.threadId = (await codex.rpc('thread/start', { cwd, approvalPolicy: 'never', sandbox: 'danger-full-access',
-              ...(body.projectId ? { projectId: body.projectId } : {}) })).result.thread.id;
-            await codex.rpc('thread/name/set', { threadId: creation.threadId, name: body.name?.trim() || '新会话' });
-            const result = await openThread(body.viewId, view, creation.threadId);
+            if (!creation.thread) creation.thread = (await codex.rpc('thread/start', { cwd, approvalPolicy: 'never', sandbox: 'danger-full-access',
+              ...(body.projectId ? { projectId: body.projectId } : {}) })).result.thread;
+            if (body.name) await codex.rpc('thread/name/set', { threadId: creation.thread.id, name: body.name.trim() });
+            // Preserve native section placement to persist blank history without assigning a name.
+            else await codex.rpc('thread/section/move', { threadId: creation.thread.id, sectionId: creation.thread.section?.id ?? null });
+            const result = await openThread(body.viewId, view, creation.thread.id);
             view.creation = null; return result;
-          } catch (e) { creation.promise = null; if (!creation.threadId && e.outcome === 'unknown') creation.unknown = true; throw e; }
+          } catch (e) { creation.promise = null; if (!creation.thread && e.outcome === 'unknown') creation.unknown = true; throw e; }
         })();
         reply(res, 200, await creation.promise);
       } else if (url.pathname === '/api/thread/send') {
