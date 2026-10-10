@@ -43,6 +43,11 @@ replaces newer project/chat navigation or its draft.
 Expanding a project selects it for New conversation; collapsing the selected
 project clears that creation scope. Native updates refresh expanded groups while
 preserving their disclosure state; late replies from collapsed groups are ignored.
+First entry reads project names over HTTP and refreshes the catalog after the
+first online SSE handshake, covering changes before the subscription became
+active. Repeated online status does not repeatedly refresh it; reconnection
+still reloads it. Older replies cannot overwrite newer names, and catalog
+refresh preserves the selected chat, draft and composer focus.
 New project opens a name and existing-server-directory form. The directory is
 checked through native metadata and canonicalized before native `project/create`.
 Successful creation selects the project scope and its unarchived conversations;

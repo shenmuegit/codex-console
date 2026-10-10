@@ -216,7 +216,7 @@ export { activeTurn };
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
-  let selected, project, projectCursor, online = false, alive = true;
+  let selected, project, projectCursor, online = false, alive = true, receivedStatus = false;
   let opening = 0, projectLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
   let shownNativeError;
@@ -829,9 +829,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     },
     onEvent(event) {
       if (!alive) return;
-      const reconnected = event.kind === 'status' && event.native.online && !online;
-      if (event.kind === 'status') online = event.native.online;
-      if (reconnected) Promise.all([loadProjects(), loadThreads()]).catch(showError);
+      const connected = event.kind === 'status' && event.native.online && (!receivedStatus || !online);
+      if (event.kind === 'status') { online = event.native.online; receivedStatus = true; }
+      if (connected) Promise.all([loadProjects(), loadThreads()]).catch(showError);
       if (event.kind === 'renderRequired' && event.native.threadId === selected?.threadId) {
         if (selected.ready) loadPresentation(); else selected.presentationNeeded = true;
       }
