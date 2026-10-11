@@ -241,3 +241,26 @@ Node fetch 直连最初超时，原因是没有使用本机已配置的 HTTP 代
 Node 24 的 `--use-env-proxy` 参数后恢复后端访问，客户端列表读取返回 HTTP
 200。server 端剩余缺口是完成受保护设备密钥的控制端注册，然后再试配对码并
 验证中继与 RPC 控制。本地创建并验证 TPM 密钥，不等于官方服务已登记该密钥。
+
+### 完成 server 的设备密钥注册
+
+一次性助手 `official-controller-test/enroll-controller.mjs` 已能创建 server
+自己的待注册控制端与受保护密钥，校验挑战的账号、client、用途、目标 origin
+和 path，并准备原生 `codex-device-key-sign-payload/v1` 证明。nonce 长度、
+audience、摘要长度、账号一致、注册 scope 和账号授权新鲜度的检查均通过。
+实际注册起始请求返回 200，并创建了密钥；当前等待所有者完成 OpenAI 账号
+授权，此时尚未宣称注册成功或建立连接。
+
+不触发注册的回归检查：
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/enroll-controller.mjs --self-test
+```
+
+准备进行账号授权时，以应用用户使用 `node --use-env-proxy` 运行助手。
+在 server 的浏览器中完成生成的官方授权链接；若使用另一台电脑的浏览器，
+从该电脑执行 `ssh -N -o ExitOnForwardFailure=yes -L 1455:localhost:1455 -L 1457:localhost:1457 <USER>@<HOST>`
+转发原生回调端口。回调仍仅在回环地址监听。参见官方的
+[SSH 回调转发说明](https://learn.chatgpt.com/docs/auth#fallback-forward-the-localhost-callback-over-ssh)。
+待注册密钥、授权链接及最终控制端凭据均以 600 权限保存在 Git 外，不替换已有
+Codex 日常登录凭据。

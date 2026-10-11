@@ -286,3 +286,29 @@ access; reading the client list returned HTTP 200. The remaining server-side
 gap is completion of protected-key controller enrollment, before retrying a
 pairing code and validating relay/RPC control. Creating and testing a local TPM
 key alone does not register that key with the official service.
+
+### Completing the server's device-key enrollment
+
+The disposable `official-controller-test/enroll-controller.mjs` helper now
+creates the server's own pending controller and protected key, checks the
+challenge's account/client/purpose/origin/path bindings, and prepares the native
+`codex-device-key-sign-payload/v1` proof. Guard checks passed for nonce length,
+audience, digest length, account matching, enrollment scope, and fresh account
+authorization. A live start returned 200 and created the key; registration is
+waiting for the owner's OpenAI account authorization. No successful enrollment
+or connection is claimed at this stage.
+
+Reproduce the guard checks without enrollment:
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/enroll-controller.mjs --self-test
+```
+
+Run the helper with `node --use-env-proxy` as the application user when ready
+for account authorization. Complete its generated official authorization link
+on the server's browser, or forward the native callback ports from the browser
+computer using `ssh -N -o ExitOnForwardFailure=yes -L 1455:localhost:1455 -L 1457:localhost:1457 <USER>@<HOST>`.
+The loopback callback remains private. See the official
+[SSH callback forwarding guidance](https://learn.chatgpt.com/docs/auth#fallback-forward-the-localhost-callback-over-ssh).
+Candidate keys, authorization links, and resulting controller credentials use
+mode 600 outside Git. Existing ordinary Codex login credentials are not replaced.
