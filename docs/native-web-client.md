@@ -104,6 +104,15 @@ feedback does not create a chat item or advance the SSE cursor. It gives way to
 streaming reply text or native input forms, resumes between commentary and further
 work, and disappears when the turn ends. Failed or uncertain submissions and queued
 messages do not invent a running turn; stale replies cannot leave the status stuck.
+Clicking **Steer** immediately shows the input in a temporary user bubble labeled
+**Steering…**. Native acknowledgement changes it to **Steered** without waiting
+for a queue refresh or the later native message event; composer steering uses the
+same feedback. The native message replaces the bubble by client message ID, so
+identical text from separate submissions stays separate. These current-page
+bubbles do not alter native history or the SSE cursor. Attachment names/placeholders
+remain visible until native previews arrive. Rejected steering retains the queue
+entry or draft; uncertain outcomes show **Steer status needs checking** and keep
+the existing recovery flow without automatically sending again.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.

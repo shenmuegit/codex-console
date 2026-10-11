@@ -1,6 +1,6 @@
 import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
-import { mountFollowups } from './followups.js';
+import { beginSteer, mountFollowups, settleSteer } from './followups.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
@@ -62,6 +62,10 @@ export function installSnapshot(state, { snapshot, cursor }) {
 }
 
 function reconcilePending(state) {
+  if (state.steers?.length) {
+    const delivered = new Set(state.turns.flatMap(turn => turn.items.filter(item => item.type === 'userMessage').map(item => item.clientId)));
+    state.steers = state.steers.filter(item => !delivered.has(item.clientId));
+  }
   if (state.pending && state.turns.some(t => t.items?.some(item => item.type === 'userMessage' && item.clientId === state.pending.id))) {
     settleSend(state, state.pending.id, { ok: true });
   }
@@ -126,7 +130,7 @@ export function applyNativeEvent(state, event) {
   if (method === 'serverRequest/resolved') state.requests.delete(`${cursor.generation}:${JSON.stringify(p.requestId)}`);
   if (method === 'thread/name/updated') state.thread.name = p.threadName ?? p.name;
   if (method === 'thread/status/changed') state.thread.status = p.status;
-  if (method === 'thread/deleted') { state.ready = false; state.deleted = true; state.turns = []; state.requests.clear(); return state; }
+  if (method === 'thread/deleted') { state.ready = false; state.deleted = true; state.turns = []; state.steers = []; state.requests.clear(); return state; }
   if (method === 'thread/archived') { state.ready = false; state.archived = true; state.requests.clear(); return state; }
   if (method === 'thread/settings/updated') {
     const s = p.threadSettings;
@@ -599,7 +603,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       node.dataset.itemId = item.id; node.setAttribute('aria-label', role === 'user' ? '你的消息' : role === 'assistant' ? 'Codex 回复' : '工具输出');
       node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
     }
-    const label = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
+    const label = `${item._delivery ?? presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
+    if (item._delivery && entry.delivery !== item._delivery) { entry.node.dataset.delivery = item._delivery; entry.header.setAttribute('role', 'status'); }
     if (entry.header.textContent !== label) entry.header.textContent = label;
     const text = messageText(item), html = presentation?.html;
     if (html ? entry.html !== html : entry.text !== text || entry.html) {
@@ -636,6 +641,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || (menuTarget.kind === 'project' ? busyProjects : busyThreads).has(menuTarget.id);
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    if (state) reconcilePending(state);
     const accepted = state?.acceptedTurn;
     if (accepted && (!state.ready || accepted.thread !== state.thread || accepted.cursor.generation !== state.generation || state.turns.some(turn => turn.id === accepted.id))) state.acceptedTurn = null;
     const last = active?.items.at(-1), streaming = last?.type === 'agentMessage' && last._incomplete && messageText(last).trim();
@@ -647,7 +653,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#older-history').hidden = !state?.historyCursor;
     $('#older-history').disabled = Boolean(state?.historyLoading);
     $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';
-    const hasMessages = Boolean(state?.turns.some(t => t.items?.length) || active || state?.acceptedTurn); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
+    const hasMessages = Boolean(state?.turns.some(t => t.items?.length) || active || state?.acceptedTurn || state?.steers?.length); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
@@ -657,7 +663,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
     const currentIds = new Set(), currentActivities = new Set();
     let position = 0;
-    for (const turn of state?.turns ?? []) {
+    // Pending steers are display-only; native IDs and the SSE cursor remain authoritative.
+    for (const turn of [...(state?.turns ?? []), { items: state?.steers ?? [] }]) {
       const groups = [];
       for (const item of turn.items ?? []) {
         if (item.type === 'reasoning' && !itemText(item).trim()) continue;
@@ -682,9 +689,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
         }
         for (const item of group.items) {
           currentIds.add(item.id); let entry = messageNodes.get(item.id);
-          if (!entry || entry.item !== item || entry.cursor !== item._cursor || entry.presentation !== item._presentation || entry.sourceFiles !== item._presentation?.files) {
+          if (!entry || entry.item !== item || entry.cursor !== item._cursor || entry.presentation !== item._presentation || entry.sourceFiles !== item._presentation?.files || entry.delivery !== item._delivery) {
             renderMessage(item, group.role); entry = messageNodes.get(item.id);
-            Object.assign(entry, { item, cursor: item._cursor, presentation: item._presentation, sourceFiles: item._presentation?.files });
+            Object.assign(entry, { item, cursor: item._cursor, presentation: item._presentation, sourceFiles: item._presentation?.files, delivery: item._delivery });
           }
           const node = entry.node; entry.group = key;
           const following = parent.children[index++]; if (following !== node) parent.insertBefore(node, following ?? null);
@@ -725,16 +732,18 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       return;
     }
     if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
-    const state = selected, submission = beginSend(state); save(state); draw(); $('#chat-error').textContent = '';
+    const state = selected, submission = beginSend(state), mode = activeTurn(state) ? followups.sendMode() : 'start';
+    const feedback = mode === 'steer' ? beginSteer(state, submission.id, [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n')) : null;
+    save(state); draw(); $('#chat-error').textContent = '';
     try {
       const response = await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
-        mode: activeTurn(state) ? followups.sendMode() : 'start', clientUserMessageId: submission.id });
+        mode, clientUserMessageId: submission.id });
       const turn = response.result?.turn;
       if (turn?.id && turn.status === 'inProgress' && state.ready && response.cursor?.generation === state.generation && response.cursor.seq > state.cursor.seq && !state.turns.some(existing => existing.id === turn.id)) {
         state.acceptedTurn = { id: turn.id, cursor: response.cursor, thread: state.thread };
       }
-      settleSend(state, submission.id, { ok: true });
-    } catch (e) { settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
+      settleSteer(state, feedback); settleSend(state, submission.id, { ok: true });
+    } catch (e) { settleSteer(state, feedback, e); settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
     finally { save(state); if (selected === state) draw(); }
   }
   function information(title, text) { $('#info-title').textContent = title; $('#info-body').textContent = text; $('#info-dialog').showModal(); }

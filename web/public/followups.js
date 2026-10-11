@@ -1,5 +1,15 @@
 import { displayNativeText } from './composer.js';
 
+export function beginSteer(state, clientId, text) {
+  const message = { id: 'steer:' + clientId, clientId, type: 'userMessage', content: [{ type: 'text', text }], _delivery: '正在引导…' };
+  (state.steers ??= []).push(message); return message;
+}
+export function settleSteer(state, message, error) {
+  if (!message) return;
+  if (error?.status && error.outcome !== 'unknown') state.steers = state.steers.filter(item => item !== message);
+  else message._delivery = error ? '引导状态待核对' : '已引导';
+}
+
 export function mountFollowups({ api, viewId, getState, onChange, onError }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController(), rows = new Map();
   const list = $('#queued-messages'), menu = $('#queue-menu');
@@ -33,18 +43,22 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
   async function action(state, item, kind, text) {
     if (!state.ready || !state.online || state.deleting || state.queueBusy || state.queueRecovery && kind !== 'restore') return;
     const transfer = ['steer', 'side'].includes(kind), operationId = crypto.randomUUID();
+    const feedback = kind === 'steer' ? beginSteer(state, item.clientUserMessageId, label(item)) : null;
+    state.queueBusy = true;
     if (transfer) { state.queueRecovery = { id: operationId, queuedSubmissionId: item.id, text: label(item) }; onChange(state); }
-    state.queueBusy = true; render();
+    render();
     try {
       const response = await api('/api/thread/queue', { viewId, threadId: state.threadId, queuedSubmissionId: item.id, action: kind,
         ...(kind !== 'delete' ? { operationId } : {}), ...(kind === 'restore' ? { recoveryId: state.queueRecovery.id } : {}), ...(text !== undefined ? { text } : {}) });
       if (transfer || kind === 'restore') state.queueRecovery = null;
+      settleSteer(state, feedback);
       if (kind !== 'update') state.queued = state.queued.filter(entry => entry.id !== item.id);
       if (alive && kind === 'side') {
         openSide(response.result.threadId);
       }
-      await load(state); return true;
+      load(state).catch(onError); return true;
     } catch (e) {
+      settleSteer(state, feedback, e);
       if (transfer && e.status && e.outcome !== 'unknown') state.queueRecovery = null;
       if (e.queueRecovery) state.queueRecovery = e.queueRecovery;
       if (alive && e.queueRecovery?.sideThreadId) openSide(e.queueRecovery.sideThreadId);
@@ -64,7 +78,7 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
     if (displayed !== state) { closeMenu(); rows.clear(); list.replaceChildren(); displayed = state; }
     if (target && (!state?.ready || !state.queued?.some(item => item.id === target.item.id))) closeMenu();
     list.hidden = !state?.queued?.length;
-    $('#queue-recovery').hidden = !state?.queueRecovery;
+    $('#queue-recovery').hidden = !state?.queueRecovery || Boolean(state.queueBusy);
     $('#queue-recovery-text').textContent = state?.queueRecovery ? '消息发送状态待核对：' + state.queueRecovery.text : '';
     $('#queue-recovery-restore').disabled = $('#queue-recovery-dismiss').disabled = disabled || Boolean(state?.queueBusy);
     let index = 0;
