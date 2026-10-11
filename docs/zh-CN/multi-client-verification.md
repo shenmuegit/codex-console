@@ -126,3 +126,27 @@ Codex 设备**。控制端注册、配对、连接和 RPC 路由均由 server �
 
 参见[官方远程连接要求](https://learn.chatgpt.com/docs/remote-connections)和
 [CLI 远程控制命令](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control)。
+
+### 后续：组件更新与 vTPM 实验
+
+已从签名的 OpenAI APT 仓库下载 Linux 包 `26.928.31416`，没有安装。软件包
+SHA-256 与 APT 元数据一致，设备密钥组件与已安装的 `26.928.21956` 组件字节
+完全相同。这项比较没有覆盖外部 Windows/macOS 的 `26.1007.21434` 构建。
+
+server 内核启用了 `CONFIG_TCG_VTPM_PROXY=m`，包含
+`tpm_vtpm_proxy.ko.xz`，驱动尚未加载。`swtpm` 安装模拟结果为新增三个包，
+没有升级或删除。sudo 能力检查和具体的 `modprobe` 尝试都要求密码，因此
+本轮没有安装软件包或加载模块。
+
+两个一次性助手已放在仓库外的
+`~/.local/state/codex-console-web/official-controller-test/`：
+`prepare-vtpm-test.sh` 准备隔离软件 vTPM，加密状态由 `tss` 独立持有；
+`check-device-key.cjs` 检查原生密钥创建、公钥读取、SHA-256 签名验签和临时
+密钥清理。语法检查通过；普通用户执行准备脚本在写入前被拒绝，缺少设备时
+密钥检查在创建前正确报告失败。实际 vTPM 启动及签名成功路径仍待管理员执行。
+
+sudo 认证用于取得这一步所需的 OS 管理员权限。官方账号授权、控制端注册和
+设备配对是随后独立的步骤。软件 vTPM 实验不能证明物理 TPM 的保护能力，
+也不能证明官方中继会接受此控制端。参见
+[Linux vTPM 驱动](https://docs.kernel.org/security/tpm/tpm_vtpm_proxy.html)和
+[swtpm 文档](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod)。

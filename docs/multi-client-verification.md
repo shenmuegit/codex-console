@@ -147,3 +147,32 @@ support for a third-party server controller.
 
 See [official remote connection requirements](https://learn.chatgpt.com/docs/remote-connections)
 and [CLI remote-control commands](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control).
+
+### Follow-up: component update and vTPM experiment
+
+The signed OpenAI APT repository's Linux package `26.928.31416` was downloaded
+without installing it. Its package SHA-256 matched APT metadata, and its device
+key addon was byte-identical to the installed `26.928.21956` addon. This component
+comparison does not cover the external Windows/macOS `26.1007.21434` build.
+
+The server kernel enables `CONFIG_TCG_VTPM_PROXY=m` and includes
+`tpm_vtpm_proxy.ko.xz`. The driver is not loaded. Installing `swtpm` was simulated:
+three new packages, no upgrades or removals. Both the sudo capability check and
+the scoped `modprobe` attempt required a password, so no package or module was
+installed or loaded by this experiment.
+
+Two disposable helpers are prepared outside Git under
+`~/.local/state/codex-console-web/official-controller-test/`:
+`prepare-vtpm-test.sh` provisions an isolated software vTPM with encrypted state
+owned by `tss`; `check-device-key.cjs` checks native creation, public-key lookup,
+SHA-256 signature verification, and temporary-key cleanup. Syntax checks passed.
+The unprivileged setup invocation stopped before any state changes, and the
+missing-device key check correctly failed before creating a key. Actual vTPM
+startup and positive signing checks remain pending administrator execution.
+
+Sudo authentication grants the OS privileges needed for that setup. Official
+account authorization, controller enrollment, and device pairing are separate
+later steps. A software vTPM experiment is not evidence of physical TPM protection
+or acceptance by the official relay. See the
+[Linux vTPM driver](https://docs.kernel.org/security/tpm/tpm_vtpm_proxy.html) and
+[swtpm documentation](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod).
