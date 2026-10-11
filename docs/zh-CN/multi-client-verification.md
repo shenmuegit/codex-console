@@ -203,3 +203,21 @@ node ~/.local/state/codex-console-web/official-controller-test/check-device-key.
 管理员初始化助手拒绝覆盖已有 TPM 或状态目录。目前是本次启动期间运行的
 实验，尚未配置重启后自动启动。控制端的账号授权、注册、配对和网页命令到达
 另一台主机仍待验证。
+
+### 控制端账号授权探针
+
+复用了已安装桌面的 OAuth 二次授权助手，探针放在仓库外的
+`official-controller-test/authorize-controller.mjs`。本地检查确认官方授权
+地址、远程控制注册 scope、PKCE S256、错误回调 state 拒绝、缺少授权码拒绝，
+以及取消时不交换令牌。复现本地检查：
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/authorize-controller.mjs --self-test
+```
+
+实际尝试仅在 localhost 监听回调，选择已有账号工作区。内置浏览器加载官方
+登录页的操作超时，没有核验到可用的授权页面。随后取消探针，删除临时链接，
+确认回调端口已释放。没有取得二次授权令牌，没有注册控制端，也没有配对设备。
+服务器管理员密码与所需的 ChatGPT 账号重新认证相互独立。官方配对要求同一
+ChatGPT 账号与工作区，项目目录可以不同。这个探针依赖指定版本的打包代码，
+不能证明存在受官方支持的自定义控制端公开 API。

@@ -238,3 +238,26 @@ The administrator setup helper refuses to replace an existing TPM or state
 directory. This is a running experiment for the current boot; automatic startup
 after reboot is not configured. Controller account authorization, enrollment,
 pairing, and delivery of Web commands to another host remain unverified.
+
+### Controller account authorization probe
+
+The installed desktop's OAuth step-up helper was reused in a disposable probe
+outside Git, `official-controller-test/authorize-controller.mjs`. Its guard
+check confirmed the official issuer, remote-control enrollment scope, PKCE S256,
+rejection of an incorrect callback state, rejection of a missing code, and
+cancellation without a token exchange. Reproduce this local check with:
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/authorize-controller.mjs --self-test
+```
+
+The real attempt bound only a localhost callback and selected the existing
+account workspace. The in-app browser's attempts to load the official login
+page timed out; no successful authorization page was verified. The probe was
+cancelled, its temporary link removed, and the callback port verified free.
+No step-up token was obtained, no controller was enrolled, and no device was
+paired. The server administrator password is separate from this required
+ChatGPT account reauthentication. Official pairing requires the same ChatGPT
+account and workspace; project directories can differ. This probe reuses
+version-specific packaged code and does not establish a supported public API
+for a custom controller.
