@@ -133,6 +133,18 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
   .side-chat { height: 100%; }
 }
 .composer-surface { position: relative; border: 1px solid var(--border); border-radius: 24px; padding: 12px 12px 8px; background: var(--surface); box-shadow: 0 1px 4px #00000008; }
+.goal-status { margin: 0 10px -16px; padding: 8px 12px 24px; border: 1px solid var(--border); border-radius: 22px 22px 0 0; background: var(--surface); }
+.goal-status-heading { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.goal-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.goal-title { min-width: 0; padding: 0; background: transparent; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#goal-progress { white-space: nowrap; }
+.goal-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; flex: 0 0 auto; }
+.goal-actions .icon-button { width: 26px; min-height: 26px; padding: 4px; color: var(--muted); }
+.goal-actions .icon-button svg { width: 16px; height: 16px; }
+#goal-details { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
+#goal-error { margin: 6px 0 0; }
+.goal-mode { display: inline-flex; align-items: center; gap: 5px; margin-left: 5px; padding: 5px 8px; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; }
+#goal-toggle[data-action="pause"] .goal-play, #goal-toggle[data-action="resume"] .goal-pause { display: none; }
 #draft { display: block; width: 100%; min-height: 68px; max-height: 32dvh; field-sizing: content; resize: none; overflow-y: auto; border: 0; outline: 0; border-radius: 12px; padding: 4px 4px 12px; background: transparent; line-height: 1.55; }
 #draft::placeholder { color: var(--muted); opacity: 1; }
 .composer-surface:focus-within { border-color: color-mix(in srgb, var(--text) 25%, transparent); }
@@ -213,8 +225,6 @@ dialog::backdrop { background: #0006; }
 .project-form input { width: 100%; min-height: 44px; padding: 8px 10px; }
 .project-form p { margin: 0; }
 #info-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
-#goal-summary { white-space: pre-wrap; line-height: 1.7; }
-#goal-objective { width: 100%; padding: 10px; resize: vertical; }
 #weekly-usage section { border-bottom: 1px solid var(--border); padding: 12px 0; }
 #weekly-usage h3 { margin: 0; font-size: 13px; font-weight: 500; }
 #weekly-usage p { margin: 6px 0; font-size: 13px; }

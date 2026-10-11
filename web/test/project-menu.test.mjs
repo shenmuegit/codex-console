@@ -13,6 +13,7 @@ async function fixture(t, mutation, listProjects) {
   const projects = ['p', 'q'].map(id => ({ id, name: id === 'p' ? 'Demo' : 'Other', roots: [{ path: '/' + id }], metadata: {} }));
   const api = async (path, body) => {
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } };
+    if (path === '/api/thread/goal' && body.action === 'get') return { result: { goal: null }, cursor: { generation: 1, seq: 2 } };
     if (path === '/api/rpc') return { result: body.method === 'project/list' && listProjects ? await listProjects(body.params) : { data: body.method === 'project/list' ? projects : [], nextCursor: null } };
     calls.push({ path, body }); await mutation;
     const project = projects.find(p => p.id === body.projectId);

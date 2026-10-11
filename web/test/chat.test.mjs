@@ -82,6 +82,7 @@ test('mounted slash submission locks synchronously and preserves newer drafts on
   t.after(() => { chat?.dispose(); dom.restore(); });
   const api = async (path, body) => {
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: cursor(1) };
+    if (path === '/api/thread/goal' && body.action === 'get') return { result: { goal: null }, cursor: cursor(2) };
     if (path === '/api/rpc') return { result: { data: [], nextCursor: null } };
     calls.push(path); return new Promise((resolve, reject) => { resolveCommand = resolve; rejectCommand = reject; });
   };

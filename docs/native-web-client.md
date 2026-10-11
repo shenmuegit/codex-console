@@ -700,21 +700,26 @@ its existing confirmation. Fork uses full defaults and defers automatic inherite
 goal continuation. Export downloads paginated native history as Markdown without
 writing a host file. There is no invented commands/list or read_thread tool.
 
-`/goal` opens the native goal editor and shows its status, token usage/budget and
-elapsed time. `/goal <objective>` creates or updates the current goal;
-`/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` manage it. Saving an
-edited objective preserves the native status and budget. Clearing asks for
-confirmation, keeps chat history and does not interrupt an already-running turn.
-Goal updates and clearing arrive through the existing SSE connection without
-replacing the objective being edited. Switching conversations, reconnecting or a
-conflicting objective update invalidates the editor; unknown write outcomes must
-be checked by reopening it, with no automatic retry. Goals are bound to the open
-view through a dedicated authenticated gateway; unrestricted native writes remain
-denied. New and resumed goals can start native work immediately. Objectives use
-the native 4000-character limit. Attachments and bound references must first be
-sent as ordinary chat messages; goal commands keep them intact and explain this
-limit. Existing token budgets are displayed and preserved, with no new budget
-settings added.
+`/goal` selects goal mode in the existing chat composer: the goal chip appears,
+the placeholder asks for a measurable objective, and focus stays in the same input.
+Send the objective with the usual send button or keyboard action. After acceptance,
+the chip disappears and an inline goal bar above the composer shows the native
+status and elapsed time, with pause/resume, clear and inline details controls.
+`/goal edit` fills the same input with the current objective; `/goal <objective>`
+and `/goal pause|resume|clear` remain available. Editing preserves native status
+and budget. Clear keeps its confirmation, chat history and already-running turns.
+
+Opening a conversation reads its current goal once. Native updates and clearing
+arrive through SSE; unrelated chat deltas leave the goal bar's DOM intact. The
+elapsed clock advances locally while the native goal is active and connected,
+then reconciles with native cumulative time. Drafts and goal mode stay scoped to
+the conversation. Failed writes preserve the draft; uncertain writes or conflicting
+changes require the inline check action, which reads without retrying mutations.
+An accepted objective is reconciled before the draft is cleared. Goals remain
+bound to the open view through the authenticated gateway. New/resumed goals can
+start native work immediately. The native 4000-character limit remains; attachments
+and bound references must first be sent as ordinary messages. Existing budgets
+are shown in inline details and preserved, with no new budget settings.
 
 Command submission locks before awaiting native work, so double Enter/click
 cannot create duplicate forks or compactions. Failed commands preserve the draft;

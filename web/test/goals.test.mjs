@@ -9,114 +9,136 @@ import { httpsFixture, resumeFixture } from './helpers.mjs';
 const goal = (overrides = {}) => ({ threadId: 't', objective: '完成项目检查', status: 'active', tokenBudget: 10000, tokensUsed: 1200, timeUsedSeconds: 65, createdAt: 1, updatedAt: 2, ...overrides });
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 async function chatFixture(t, initial = goal(), handler) {
-  const dom = domFixture(), calls = []; let current = initial, seq = 5, chat;
+  const dom = domFixture(), calls = [], goals = new Map([['t', initial]]); let seq = 5, chat;
   const api = async (path, body) => {
     calls.push({ path, body });
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } };
     if (path === '/api/thread/goal') {
       if (handler) return handler(body);
-      if (body.action === 'set') current = goal({ ...current, objective: body.objective });
+      let current = goals.get(body.threadId) ?? null;
+      if (body.action === 'set') current = goal({ ...current, threadId: body.threadId, objective: body.objective });
       if (body.action === 'pause' || body.action === 'resume') current = { ...current, status: body.action === 'pause' ? 'paused' : 'active' };
       if (body.action === 'clear') current = null;
-      return { result: { goal: current }, cursor: { generation: 1, seq: seq++ } };
+      goals.set(body.threadId, current); return { result: { goal: current }, cursor: { generation: 1, seq: seq++ } };
     }
     return { result: { data: [], nextCursor: null } };
   };
-  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.open('t');
+  chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true); await chat.open('t'); await delay(0);
   t.after(() => { chat.dispose(); dom.restore(); });
-  return { dom, chat, calls, async command(text) { chat.getState().draft = dom.get('draft').value = text; dom.get('draft').setSelectionRange(text.length, text.length); dom.event('composer', 'submit'); await delay(0); }, writes: () => calls.filter(call => call.path === '/api/thread/goal' && call.body.action !== 'get') };
+  return { dom, chat, calls, input(text) { chat.getState().draft = dom.get('draft').value = text; dom.get('draft').setSelectionRange(text.length, text.length); dom.event('draft', 'input'); },
+    async command(text) { this.input(text); dom.event('composer', 'submit'); await delay(0); }, writes: () => calls.filter(call => call.path === '/api/thread/goal' && call.body.action !== 'get') };
 }
 
 test('slash goal can be found by its Chinese description and parses objective text', async t => {
   assert.deepEqual(commandAction('/goal 完成项目检查'), { command: 'goal', args: '完成项目检查' });
   const dom = domFixture(), state = { ready: true, generation: 1, settings: {}, selections: [] }; dom.get('draft').value = '/目标'; dom.get('draft').setSelectionRange(3, 3);
   const menu = mountCompletions({ api: async () => assert.fail('Commands are local'), getState: () => state, onChange() {} });
-  t.after(() => { menu.dispose(); dom.restore(); }); await menu.refresh();
-  assert.match(dom.get('completion-menu').textContent, /goal.*目标/);
+  t.after(() => { menu.dispose(); dom.restore(); }); await menu.refresh(); assert.match(dom.get('completion-menu').textContent, /goal.*目标/);
 });
 
-test('bare goal opens the native objective and usage without sending a chat message', async t => {
-  const f = await chatFixture(t); await f.command('/goal');
-  assert.equal(f.calls.some(call => call.path === '/api/thread/goal'), true); assert.equal(f.calls.some(call => call.path === '/api/thread/send'), false);
-  assert.equal(f.dom.get('goal-dialog').open, true); assert.equal(f.dom.get('goal-objective').value, '完成项目检查');
-  assert.match(f.dom.get('goal-summary').textContent, /进行中/); assert.match(f.dom.get('goal-summary').textContent, /1,200/); assert.match(f.dom.get('goal-summary').textContent, /10,000/);
+test('choosing goal enters the existing composer immediately with a goal chip and no modal', async t => {
+  const f = await chatFixture(t, null); f.input('/go'); await delay(0); f.dom.event('draft', 'keydown', { key: 'Enter' }); await delay(0);
+  assert.equal(f.dom.get('goal-mode').hidden, false); assert.match(f.dom.get('draft').placeholder, /描述你的目标/);
+  assert.equal(f.dom.get('draft').value, ''); assert.equal(f.dom.document.activeElement, f.dom.get('draft'));
+  assert.equal(f.dom.get('goal-dialog'), null); assert.equal(f.calls.some(call => call.path === '/api/thread/send'), false); assert.equal(f.writes().length, 0);
 });
 
-test('a new objective saves once and the edit command focuses the objective', async t => {
-  const f = await chatFixture(t, null); await f.command('/goal');
-  f.dom.get('goal-objective').value = '  新目标  '; f.dom.event('goal-form', 'submit'); f.dom.event('goal-form', 'submit'); await delay(0);
+test('sending a goal from the composer writes once, clears goal mode, and shows the inline status bar', async t => {
+  const writing = deferred(); const f = await chatFixture(t, null, async body => body.action === 'get' ? { result: { goal: null }, cursor: { generation: 1, seq: 5 } } : writing.promise);
+  await f.command('/goal'); f.input('  新目标  '); f.dom.event('composer', 'submit'); f.dom.event('composer', 'submit'); await delay(0);
   assert.deepEqual(f.writes().map(call => call.body), [{ viewId: 'view', threadId: 't', action: 'set', objective: '新目标' }]);
-  assert.equal(f.dom.get('goal-objective').value, '新目标');
-  await f.command('/goal edit'); assert.equal(f.dom.document.activeElement, f.dom.get('goal-objective'));
+  writing.resolve({ result: { goal: goal({ objective: '新目标' }) }, cursor: { generation: 1, seq: 6 } }); await delay(0);
+  assert.equal(f.dom.get('goal-mode').hidden, true); assert.equal(f.dom.get('draft').value, ''); assert.equal(f.dom.get('goal-status').hidden, false);
+  assert.equal(f.dom.get('draft').placeholder, '与 Codex 协作');
+  assert.match(f.dom.get('goal-title').textContent, /进行中的目标/); assert.match(f.dom.get('goal-progress').textContent, /继续/);
+  await f.command('继续聊天'); assert.equal(f.calls.filter(call => call.path === '/api/thread/send').length, 1);
 });
 
-test('editing a paused goal preserves native status and budget rather than resuming it', async t => {
-  const f = await chatFixture(t, goal({ status: 'paused' })); await f.command('/goal 新的目标文字');
-  assert.deepEqual(f.writes().at(-1).body, { viewId: 'view', threadId: 't', action: 'set', objective: '新的目标文字' });
-  assert.match(f.dom.get('goal-summary').textContent, /已暂停/); assert.match(f.dom.get('goal-summary').textContent, /10,000/);
+test('existing native goals load into the status bar when the conversation opens', async t => {
+  const f = await chatFixture(t); assert.equal(f.dom.get('goal-status').hidden, false); assert.equal(f.dom.get('goal-mode').hidden, true);
+  assert.match(f.dom.get('goal-details').textContent, /完成项目检查/); assert.match(f.dom.get('goal-details').textContent, /1,200.*10,000/);
+  f.dom.get('goal-expand').click(); assert.equal(f.dom.get('goal-details').hidden, false);
 });
 
-test('goal pause and resume use goal operations, and clear requires confirmation', async t => {
-  const f = await chatFixture(t); await f.command('/goal pause'); await f.command('/goal resume');
-  assert.deepEqual(f.writes().map(call => call.body.action), ['pause', 'resume']);
-  window.confirm = () => false; await f.command('/goal clear'); assert.equal(f.writes().length, 2);
-  window.confirm = () => true; await f.command('/goal clear'); assert.equal(f.writes().at(-1).body.action, 'clear'); assert.match(f.dom.get('goal-summary').textContent, /尚未设置/);
+test('edit fills the shared composer and preserves native paused status and budget when sent', async t => {
+  const f = await chatFixture(t, goal({ status: 'paused' })); await f.command('/goal edit');
+  assert.equal(f.dom.get('draft').value, '完成项目检查'); assert.equal(f.dom.get('goal-mode').hidden, false);
+  await f.command('新的目标文字'); assert.deepEqual(f.writes().at(-1).body, { viewId: 'view', threadId: 't', action: 'set', objective: '新的目标文字' });
+  assert.match(f.dom.get('goal-title').textContent, /已暂停/); assert.match(f.dom.get('goal-details').textContent, /10,000/);
 });
 
-test('goal SSE updates usage without replacing a locally edited objective, and cleared goals stay cleared', async t => {
-  const f = await chatFixture(t); await f.command('/goal'); f.dom.get('goal-objective').value = '未保存的修改'; f.dom.event('goal-objective', 'input');
+test('inline pause/resume/clear operate on the goal without entering goal mode', async t => {
+  const f = await chatFixture(t); f.dom.get('goal-toggle').click(); await delay(0); f.dom.get('goal-toggle').click(); await delay(0);
+  assert.deepEqual(f.writes().map(call => call.body.action), ['pause', 'resume']); assert.equal(f.dom.get('goal-mode').hidden, true);
+  window.confirm = () => false; f.dom.get('goal-clear').click(); await delay(0); assert.equal(f.writes().length, 2);
+  window.confirm = () => true; f.dom.get('goal-clear').click(); await delay(0); assert.equal(f.writes().at(-1).body.action, 'clear'); assert.equal(f.dom.get('goal-status').hidden, true);
+});
+
+test('goal mode can be cancelled without losing the draft and stays scoped to its conversation', async t => {
+  const f = await chatFixture(t, null); await f.command('/goal'); f.input('保留的草稿');
+  await f.chat.open('other'); assert.equal(f.dom.get('goal-mode').hidden, true); await f.chat.open('t'); await delay(0);
+  assert.equal(f.dom.get('goal-mode').hidden, false); assert.equal(f.dom.get('draft').value, '保留的草稿');
+  f.dom.get('goal-mode').click(); assert.equal(f.dom.get('goal-mode').hidden, true); assert.equal(f.dom.get('draft').value, '保留的草稿');
+});
+
+test('goal SSE updates usage without replacing the composer draft, and conflicting changes require checking', async t => {
+  const f = await chatFixture(t); await f.command('/goal edit'); f.input('未保存的修改');
   f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 20 }, native: { method: 'thread/goal/updated', params: { threadId: 't', turnId: null, goal: goal({ tokensUsed: 2400 }) } } }); await delay(0);
-  assert.match(f.dom.get('goal-summary').textContent, /2,400/); assert.equal(f.dom.get('goal-objective').value, '未保存的修改');
+  assert.match(f.dom.get('goal-details').textContent, /2,400/); assert.equal(f.dom.get('draft').value, '未保存的修改');
   f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 21 }, native: { method: 'thread/goal/cleared', params: { threadId: 't' } } }); await delay(0);
-  assert.match(f.dom.get('goal-summary').textContent, /尚未设置/); assert.equal(f.dom.get('goal-save').disabled, true);
+  assert.equal(f.dom.get('send').disabled, true); assert.equal(f.dom.get('goal-check').hidden, false);
 });
 
 test('a late goal read cannot overwrite a newer goal notification', async t => {
-  const response = deferred(), f = await chatFixture(t, null, () => response.promise); await f.command('/goal');
+  const response = deferred(), f = await chatFixture(t, null, () => response.promise);
   f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 20 }, native: { method: 'thread/goal/updated', params: { threadId: 't', goal: goal({ tokensUsed: 2400 }) } } });
   response.resolve({ result: { goal: goal() }, cursor: { generation: 1, seq: 10 } }); await delay(0);
-  assert.match(f.dom.get('goal-summary').textContent, /2,400/);
+  assert.match(f.dom.get('goal-details').textContent, /2,400/);
 });
 
-test('ordinary message deltas keep the unchanged goal summary DOM intact', async t => {
-  const f = await chatFixture(t); await f.command('/goal'); const summary = f.dom.get('goal-summary').firstChild;
+test('ordinary message deltas keep the unchanged goal title and progress DOM intact', async t => {
+  const f = await chatFixture(t), title = f.dom.get('goal-title').firstChild, progress = f.dom.get('goal-progress').firstChild;
   f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 20 }, native: { method: 'item/agentMessage/delta', params: { threadId: 't', turnId: 'turn', itemId: 'message', delta: '回答' } } }); await delay(0);
-  assert.equal(f.dom.get('goal-summary').firstChild, summary);
+  assert.equal(f.dom.get('goal-title').firstChild, title); assert.equal(f.dom.get('goal-progress').firstChild, progress);
 });
 
 test('empty native mutation replies are reconciled with one read and never another write', async t => {
-  let reads = 0;
-  const f = await chatFixture(t, null, async body => body.action === 'get' ? { result: { goal: ++reads === 1 ? null : goal({ objective: '新目标' }) }, cursor: { generation: 1, seq: reads * 5 } } : { result: {}, cursor: { generation: 1, seq: 6 } });
-  await f.command('/goal 新目标'); assert.equal(f.writes().length, 1); assert.equal(reads, 2); assert.equal(f.dom.get('goal-objective').value, '新目标');
+  let reads = 0; const f = await chatFixture(t, null, async body => body.action === 'get' ? { result: { goal: ++reads === 1 ? null : goal({ objective: '新目标' }) }, cursor: { generation: 1, seq: reads * 5 } } : { result: {}, cursor: { generation: 1, seq: 6 } });
+  await f.command('/goal'); await f.command('新目标'); assert.equal(f.writes().length, 1); assert.equal(reads, 2); assert.equal(f.dom.get('draft').value, '');
 });
 
-test('switching conversations or disconnecting invalidates a pending goal command', async t => {
+test('switching conversations or disconnecting invalidates a goal command still waiting for its read', async t => {
   for (const change of ['thread', 'connection']) await t.test(change, async t => {
     const response = deferred(), f = await chatFixture(t, null, () => response.promise); await f.command('/goal 不应发送');
     if (change === 'thread') await f.chat.open('other'); else f.chat.connection(false);
-    response.resolve({ result: { goal: null }, cursor: { generation: 1, seq: 5 } }); await delay(0);
-    assert.equal(f.writes().length, 0); assert.notEqual(f.dom.get('goal-dialog').open, true);
+    response.resolve({ result: { goal: null }, cursor: { generation: 1, seq: 5 } }); await delay(0); assert.equal(f.writes().length, 0);
   });
 });
 
-test('failed goal writes keep the objective for correction and never send a model message', async t => {
+test('failed goal writes keep the objective in the composer for correction', async t => {
   const f = await chatFixture(t, null, async body => { if (body.action === 'get') return { result: { goal: null }, cursor: { generation: 1, seq: 5 } }; throw Object.assign(Error('原生目标不可用'), { status: 400 }); });
-  await f.command('/goal 不能丢失的目标'); assert.equal(f.dom.get('goal-objective').value, '不能丢失的目标'); assert.match(f.dom.get('goal-error').textContent, /原生目标不可用/);
+  await f.command('/goal'); await f.command('不能丢失的目标'); assert.equal(f.dom.get('draft').value, '不能丢失的目标'); assert.equal(f.dom.get('goal-mode').hidden, false); assert.match(f.dom.get('goal-error').textContent, /原生目标不可用/);
   assert.equal(f.calls.some(call => call.path === '/api/thread/send'), false);
 });
 
-test('failed initial goal reads and uncertain writes disable mutations until the goal is reopened', async t => {
-  for (const phase of ['get', 'set']) await t.test(phase, async t => {
-    const f = await chatFixture(t, null, async body => { if (body.action === phase) throw Object.assign(Error('连接中断'), { status: 503, outcome: 'unknown' }); return { result: { goal: null }, cursor: { generation: 1, seq: 5 } }; });
-    await f.command('/goal 保留目标'); assert.equal(f.dom.get('goal-save').disabled, true);
-    const count = f.writes().length; f.dom.event('goal-form', 'submit'); await delay(0); assert.equal(f.writes().length, count);
-  });
+test('uncertain goal writes require an explicit read and reconcile an accepted objective without retrying', async t => {
+  let accepted = false; const f = await chatFixture(t, null, async body => { if (body.action === 'get') return { result: { goal: accepted ? goal({ objective: '保留目标' }) : null }, cursor: { generation: 1, seq: accepted ? 9 : 5 } }; accepted = true; throw Object.assign(Error('连接中断'), { status: 503, outcome: 'unknown' }); });
+  await f.command('/goal'); await f.command('保留目标'); assert.equal(f.dom.get('send').disabled, true); assert.equal(f.dom.get('goal-check').hidden, false);
+  f.dom.event('composer', 'submit'); await delay(0); assert.equal(f.writes().length, 1);
+  f.dom.get('goal-check').click(); await delay(0); assert.equal(f.writes().length, 1); assert.equal(f.dom.get('draft').value, ''); assert.equal(f.dom.get('goal-mode').hidden, true);
+});
+
+test('checking an uncertain write uses the newer accepted SSE goal even when the read reply is older', async t => {
+  const writing = deferred(), f = await chatFixture(t, null, async body => body.action === 'get' ? { result: { goal: null }, cursor: { generation: 1, seq: 5 } } : writing.promise);
+  await f.command('/goal'); await f.command('保留目标');
+  f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 20 }, native: { method: 'thread/goal/updated', params: { threadId: 't', goal: goal({ objective: '保留目标' }) } } });
+  writing.resolve(Promise.reject(Object.assign(Error('连接中断'), { status: 503, outcome: 'unknown' }))); await delay(0);
+  f.dom.get('goal-check').click(); await delay(0); assert.equal(f.dom.get('draft').value, ''); assert.equal(f.dom.get('goal-mode').hidden, true); assert.equal(f.writes().length, 1);
 });
 
 test('goal objectives never silently discard attached files or bound mentions', async t => {
-  const f = await chatFixture(t); f.chat.getState().attachments.push({ id: 'upload', status: 'complete' }); await f.command('/goal 带附件的目标');
-  assert.equal(f.writes().length, 0); assert.equal(f.calls.some(call => call.path === '/api/thread/send'), false); assert.equal(f.chat.getState().attachments.length, 1);
-  assert.match(f.dom.get('chat-error').textContent, /先.*会话消息/);
+  const f = await chatFixture(t); await f.command('/goal'); f.chat.getState().attachments.push({ id: 'upload', status: 'complete' }); await f.command('带附件的目标');
+  assert.equal(f.writes().length, 0); assert.equal(f.calls.some(call => call.path === '/api/thread/send'), false); assert.equal(f.chat.getState().attachments.length, 1); assert.match(f.dom.get('goal-error').textContent, /先.*会话消息/);
 });
 
 test('native goal gateway validates the opened view, actions and objective before any mutation', async t => {

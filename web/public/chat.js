@@ -270,7 +270,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit() });
   const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   const imageViewer = mountImageViewer();
-  const goals = mountGoals({ api, viewId, getState: () => selected });
+  const goals = mountGoals({ api, viewId, getState: () => selected, onChange: state => { save(state); if (selected === state) draw(); } });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -359,7 +359,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.kind === 'project' ? changeProject(target, 'delete') : deleteConversation(target.id); });
   function save(state) {
     try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
-      queueRecovery: state.queueRecovery,
+      queueRecovery: state.queueRecovery, goalMode: state.goalMode, goalPending: state.goalPending,
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
   function stateFor(threadId) {
@@ -369,6 +369,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       try { const saved = JSON.parse(sessionStorage.getItem(`codex-draft:${threadId}`));
         if (typeof saved?.text === 'string') state.draft = saved.text;
         if (Array.isArray(saved?.selections)) state.selections = saved.selections;
+        state.goalMode = saved?.goalMode === true;
+        if (typeof saved?.goalPending?.text === 'string' && typeof saved.goalPending.objective === 'string') state.goalPending = saved.goalPending;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
         if (typeof saved?.queueRecovery?.id === 'string' && typeof saved.queueRecovery.queuedSubmissionId === 'string') state.queueRecovery = saved.queueRecovery;
         if (Array.isArray(saved?.attachments)) state.attachments = saved.attachments.filter(a => typeof a.id === 'string' && typeof a.name === 'string').map(a => ({ ...a, status: 'complete' }));
@@ -545,6 +547,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     catch (e) { if (version === opening) throw e; return; }
     if (!alive || version !== opening) return;
     installSnapshot(state, result); save(state); draw();
+    goals.load(state, true);
     followups.load(state).catch(showError);
     if (state.presentationNeeded) { state.presentationNeeded = false; loadPresentation().catch(showError); }
     attachments.hydrate(state);
@@ -654,7 +657,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
-    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || Boolean(state.acceptedTurn) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
+    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || Boolean(state.acceptedTurn) || state.commandPending || (state.goalMode && !commandAction(state.draft) && goals.blocked(state)) || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
@@ -731,6 +734,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       } finally { state.commandPending = false; save(state); if (selected === state) draw(); }
       return;
     }
+    if (selected.goalMode) { await goals.submit(selected); return; }
     if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state), mode = activeTurn(state) ? followups.sendMode() : 'start';
     const feedback = mode === 'steer' ? beginSteer(state, submission.id, [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n')) : null;
@@ -773,7 +777,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (command === 'rename') return renameConversation({ id: selected.threadId, name: selected.thread?.name }, args || undefined);
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
     if (command === 'delete') return deleteConversation(selected.threadId);
-    if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
+    if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); goals.load(state, true); await loadThreads(); return; }
     if (command === 'export') { const link = element('a'); link.href = '/api/thread/export?threadId=' + encodeURIComponent(selected.threadId); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
   function clearSelectedThread(threadId) {
@@ -813,7 +817,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       started = true;
       const result = await api('/api/thread/start', { viewId, ...(scope ? { projectId: scope.id } : {}) });
       if (!alive || version !== opening || project !== scope) return false;
-      const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads();
+      const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); goals.load(state, true); await loadThreads();
     } catch (e) { if (!alive || version !== opening || project !== scope) return false; throw e;
     } finally {
       button.disabled = false; draw();
