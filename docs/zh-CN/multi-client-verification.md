@@ -221,3 +221,23 @@ node ~/.local/state/codex-console-web/official-controller-test/authorize-control
 服务器管理员密码与所需的 ChatGPT 账号重新认证相互独立。官方配对要求同一
 ChatGPT 账号与工作区，项目目录可以不同。这个探针依赖指定版本的打包代码，
 不能证明存在受官方支持的自定义控制端公开 API。
+
+### server 提交所有者提供的配对码
+
+已安装桌面的手动输入码流程调用
+`POST /wham/remote/control/client/pair`，请求包含 `client_id` 和
+`manual_pairing_code`。码由所有者的**被控设备**提供，server 是提交该码的
+控制端。打包界面把八位字母数字规范化为 `XXXX-XXXX`，显示输入框之前要求
+控制端已有 client ID。
+
+2026-10-11，server 已将所有者提供的码提交到这个接口。先通过官方注册起始
+请求取得新建的待注册控制端 ID，没有复用其他设备的 ID。配对请求返回 HTTP
+403，`Remote-control client key material missing`，没有建立连接。随后以 HTTP
+204 删除此次待注册测试身份，再次读取确认仍为原有四个已激活客户端，没有
+遗留待注册测试身份。连接码、账号凭据和客户端标识均未写入 Git；脱敏证明
+保存在仓库外的 `official-controller-test/pairing-code-proof.json`。
+
+Node fetch 直连最初超时，原因是没有使用本机已配置的 HTTP 代理。启用已安装
+Node 24 的 `--use-env-proxy` 参数后恢复后端访问，客户端列表读取返回 HTTP
+200。server 端剩余缺口是完成受保护设备密钥的控制端注册，然后再试配对码并
+验证中继与 RPC 控制。本地创建并验证 TPM 密钥，不等于官方服务已登记该密钥。

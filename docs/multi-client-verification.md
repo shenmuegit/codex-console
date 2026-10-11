@@ -261,3 +261,28 @@ ChatGPT account reauthentication. Official pairing requires the same ChatGPT
 account and workspace; project directories can differ. This probe reuses
 version-specific packaged code and does not establish a supported public API
 for a custom controller.
+
+### Server submission of an owner-provided pairing code
+
+The installed desktop's manual code input calls
+`POST /wham/remote/control/client/pair` with `client_id` and
+`manual_pairing_code`. The owner supplies the **controlled device's** code;
+the server is the controller submitting it. The packaged UI normalizes eight
+alphanumeric characters into `XXXX-XXXX` and requires a controller client ID
+before showing this input.
+
+On 2026-10-11, the server submitted an owner-provided code to this exact endpoint.
+An official enrollment-start request first assigned a new pending controller ID;
+no other device's ID was reused. The pairing request returned HTTP 403,
+`Remote-control client key material missing`. It did not establish a connection.
+The pending test controller was deleted with HTTP 204, and a subsequent read
+confirmed the original four active clients with no pending test client.
+The code, account credentials, and client identifiers are not recorded in Git.
+Sanitized proof is outside Git in `official-controller-test/pairing-code-proof.json`.
+
+Direct Node fetch initially timed out while ignoring this host's configured
+HTTP proxy. Using the installed Node 24 `--use-env-proxy` option restored backend
+access; reading the client list returned HTTP 200. The remaining server-side
+gap is completion of protected-key controller enrollment, before retrying a
+pairing code and validating relay/RPC control. Creating and testing a local TPM
+key alone does not register that key with the official service.
