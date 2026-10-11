@@ -1,3 +1,8 @@
+export function scopeHostPath(path, host = 'local') {
+  if (host === 'local') return path;
+  const url = new URL(path, 'https://host-scope.invalid'); url.searchParams.set('host', host); return url.pathname + url.search;
+}
+
 export function formatNativePath(path) {
   return /\s/u.test(path) && !path.includes('"') ? `"${path}"` : path;
 }
@@ -237,7 +242,7 @@ export function mountImageViewer() {
   return { dispose() { abort.abort(); dialog.close(); image.removeAttribute('src'); opener = null; } };
 }
 
-export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes }) {
+export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes, selectedHost = 'local' }) {
   const fileInput = document.querySelector('#file-input'), photoInput = document.querySelector('#photo-input');
   const container = document.querySelector('#attachments'), abort = new AbortController(), records = new Set();
   let queue = Promise.resolve(), alive = true, renderedState, renderedKey, renderedRecords = [];
@@ -246,7 +251,7 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
   function sendBytes(record) {
     return new Promise((resolve, reject) => {
       const xhr = record.xhr = new XMLHttpRequest();
-      xhr.open('PUT', `/api/uploads/${encodeURIComponent(record.id)}?viewId=${encodeURIComponent(viewId)}`);
+      xhr.open('PUT', scopeHostPath(`/api/uploads/${encodeURIComponent(record.id)}?viewId=${encodeURIComponent(viewId)}`, selectedHost));
       xhr.withCredentials = true; xhr.responseType = 'json'; xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       let updated = 0;
       xhr.upload.onprogress = event => { if (performance.now() - updated < 100) return; updated = performance.now();

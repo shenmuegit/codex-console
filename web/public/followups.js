@@ -1,4 +1,4 @@
-import { displayNativeText } from './composer.js';
+import { scopeHostPath, displayNativeText } from './composer.js';
 
 export function beginSteer(state, clientId, text) {
   const message = { id: 'steer:' + clientId, clientId, type: 'userMessage', content: [{ type: 'text', text }], _delivery: '正在引导…' };
@@ -10,7 +10,7 @@ export function settleSteer(state, message, error) {
   else message._delivery = error ? '引导状态待核对' : '已引导';
 }
 
-export function mountFollowups({ api, viewId, getState, onChange, onError }) {
+export function mountFollowups({ api, viewId, selectedHost = 'local', getState, onChange, onError }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController(), rows = new Map();
   const list = $('#queued-messages'), menu = $('#queue-menu');
   const menuButtons = ['#queue-menu-edit', '#queue-menu-side', '#queue-menu-toggle'].map($);
@@ -26,7 +26,7 @@ export function mountFollowups({ api, viewId, getState, onChange, onError }) {
   }
   function setMode(value) { mode = value; try { sessionStorage.setItem('codex-follow-up-mode', value); } catch {} }
   function openSide(threadId) {
-    $('#side-chat-frame').src = '/?thread=' + encodeURIComponent(threadId) + '&side=1';
+    $('#side-chat-frame').src = scopeHostPath('/?thread=' + encodeURIComponent(threadId) + '&side=1', selectedHost);
     $('#side-chat').hidden = false; $('#close-side-chat').focus();
   }
   async function load(state) {

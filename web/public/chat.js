@@ -1,4 +1,4 @@
-import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
+import { scopeHostPath, displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
 import { createRequestCard } from './requests.js';
@@ -253,7 +253,7 @@ function appendRenderedText(body, text) {
 }
 
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
-export function mountChat({ api, viewId, uploadLimitBytes }) {
+export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local' }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
   let selected, project, projectCursor, online = false, alive = true, receivedStatus = false;
@@ -265,10 +265,10 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
   const projectGroups = new Map(), allThreads = { list: $('#threads'), more: $('#more-threads'), load: 0 };
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
-  const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
+  const attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit() });
-  const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
+  const followups = mountFollowups({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   const imageViewer = mountImageViewer();
   const goals = mountGoals({ api, viewId, getState: () => selected });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
@@ -357,8 +357,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#thread-menu-rename'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return renameConversation(target); });
   bind($('#thread-menu-archive'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.kind === 'project' ? changeProject(target, 'archive') : target.archived ? restore(target.id) : archiveConversation(target); });
   bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.kind === 'project' ? changeProject(target, 'delete') : deleteConversation(target.id); });
+  const draftKey = threadId => selectedHost === 'local' ? `codex-draft:${threadId}` : `codex-draft:host:${encodeURIComponent(selectedHost)}:${threadId}`;
   function save(state) {
-    try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
+    try { sessionStorage.setItem(draftKey(state.threadId), JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
       queueRecovery: state.queueRecovery,
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
@@ -366,7 +367,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     let state = states.get(threadId);
     if (!state) {
       states.set(threadId, state = createChatState(threadId));
-      try { const saved = JSON.parse(sessionStorage.getItem(`codex-draft:${threadId}`));
+      try { const saved = JSON.parse(sessionStorage.getItem(draftKey(threadId)));
         if (typeof saved?.text === 'string') state.draft = saved.text;
         if (Array.isArray(saved?.selections)) state.selections = saved.selections;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
@@ -570,7 +571,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       if (!entry) {
         const node = element('article', null, 'message message-subagent'), header = element('header');
         const label = element(/^[A-Za-z0-9_-]{1,64}$/.test(item.agentThreadId) ? 'a' : 'span');
-        if (label.tagName === 'A') { label.href = '/?thread=' + encodeURIComponent(item.agentThreadId); bind(label, 'click', event => { event.preventDefault(); return open(item.agentThreadId); }); }
+        if (label.tagName === 'A') { label.href = scopeHostPath('/?thread=' + encodeURIComponent(item.agentThreadId), selectedHost); bind(label, 'click', event => { event.preventDefault(); return open(item.agentThreadId); }); }
         header.append(activityIcon(true), label); node.append(header); node.dataset.itemId = item.id; node.setAttribute('aria-label', '子代理活动');
         messageNodes.set(item.id, entry = { node, label });
       }
@@ -592,6 +593,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const text = messageText(item), html = presentation?.html;
     if (typeof html === 'string' && (entry.html !== html || entry.unformatted)) {
       const template = document.createElement('template'); template.innerHTML = html;
+      for (const link of template.content.querySelectorAll('a[href]')) {
+        const href = link.getAttribute('href'); if (/^\/\?thread=[A-Za-z0-9_-]+$/.test(href)) link.setAttribute('href', scopeHostPath(href, selectedHost));
+      }
       patchChildren(entry.body, template.content);
       entry.html = html; entry.plain = null; entry.text = text; entry.unformatted = entry.waitingForHtml = false;
     } else if (entry.text !== text) {
@@ -613,9 +617,9 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (entry.filesKey !== filesKey) {
       entry.downloads.replaceChildren();
       for (const file of files) {
-        if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) {
+        if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.imageHref)) {
           if (!entry.html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
-        } else if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
+        } else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
       }
       entry.filesKey = filesKey;
     }
@@ -774,7 +778,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
     if (command === 'delete') return deleteConversation(selected.threadId);
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); await loadThreads(); return; }
-    if (command === 'export') { const link = element('a'); link.href = '/api/thread/export?threadId=' + encodeURIComponent(selected.threadId); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
+    if (command === 'export') { const link = element('a'); link.href = scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
   function clearSelectedThread(threadId) {
     if (selected?.threadId !== threadId) return;

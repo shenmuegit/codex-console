@@ -21,7 +21,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
   const Socket = globalThis.WebSocket;
   const pending = new Map(), requests = new Map(), threads = new Map(), listeners = new Set();
   let socket, closed = false, online = false, generation = 0, seq = 0, serial = 0;
-  let opening, retry, backoff = 500;
+  let opening, retry, backoff = 500, nativeInfo;
   const cursor = () => ({ generation, seq });
   const status = () => ({ online, generation, endpoint: endpoint.href });
   const emit = event => {
@@ -126,6 +126,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
           capabilities: { experimentalApi: true } }, true);
         if (expectedHome && initialized.result.codexHome !== expectedHome) { connection.close(); return; }
         if (socket !== connection || connection.readyState !== 1 || closed) return;
+        nativeInfo = Object.freeze({ codexHome: initialized.result.codexHome, platformFamily: initialized.result.platformFamily, platformOs: initialized.result.platformOs });
         connection.send(JSON.stringify({ method: 'initialized', params: {} }));
         clearTimeout(opening); online = true; backoff = 500;
         emit({ kind: 'status', cursor: cursor(), native: status() });
@@ -140,7 +141,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
     connection.addEventListener('error', () => connection.close());
     connection.addEventListener('close', () => {
       if (socket !== connection) return;
-      clearTimeout(opening); online = false; requests.clear();
+      clearTimeout(opening); online = false; nativeInfo = undefined; requests.clear();
       for (const call of pending.values()) {
         clearTimeout(call.timer);
         call.reject(fault('NATIVE_DISCONNECTED', 'Connection lost; reconcile before retrying.', { outcome: 'unknown' }));
@@ -156,7 +157,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
 
   connect();
   return {
-    rpc: send, status,
+    rpc: send, status, info: () => nativeInfo,
     history(kind, params) { return send(kind === 'items' ? 'thread/items/list' : 'thread/turns/list', params, false, kind); },
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     retainThread(threadId, viewId) {

@@ -135,9 +135,49 @@ The server connects paired hosts through a pool with separate native clients,
 view maps, event streams, and private state namespaces. Child Web handlers share
 the owner's login and enforce it before routing. An unknown host never falls
 back to the local backend; account changes close existing remote clients.
-The local APIs remain available. The current full suite passes 361 tests.
+The local APIs remain available. The current full suite passes 374 tests.
 
-Remote filesystem/attachment handling and host-scoped browser drafts still need
-integration before live remote editing is advertised. This Web entry does not
-prove successful live enrollment or pairing; owner authorization and tests
-against official hosts remain mandatory completion gates.
+Remote filesystem and browser host scoping are now implemented with fixture
+coverage described below. This Web entry does not prove successful live
+enrollment or pairing; owner authorization and tests against official hosts
+remain mandatory completion gates.
+
+## Remote paths, attachments, and browser drafts
+
+The selected host's native initialization supplies `platformFamily` and
+`codexHome`. Unix and Windows paths use that host's path rules, including drive
+and UNC paths; remote paths are never resolved or opened on the server filesystem.
+Remote project creation, thread creation, completions, and composer references
+use native filesystem RPCs. Creating a remote thread requires a selected native
+project; the server's configured local workspace is not a remote default.
+
+`fs/watch` currently echoes its requested path in the inspected native source,
+despite the protocol comment describing a canonical path. We therefore check
+`fs/getMetadata` on every ancestor and reject missing paths and symbolic links.
+Downloads recheck scope and native timestamps before and after reading. The
+native RPCs expose neither an inode nor an atomic no-follow file handle, so these
+checks cannot provide the same atomic replacement protection as local downloads.
+Remote files are read as complete Base64 RPC results rather than streamed from
+a remote file descriptor. Large files can exceed the current relay implementation's
+32 MiB message bound; such failures do not authorize a local-file fallback.
+
+Uploads retain the existing bounded server staging, filename/image validation,
+and local no-follow checks in a private state namespace per host. Sending an
+attachment transfers its exact bytes through native `fs/writeFile` to
+`<remote codexHome>/console-uploads/<opaque upload ID>/content[.ext]`, and passes
+that remote path to the native composer. A retry verifies existing bytes instead
+of overwriting a changed attachment. Remote uploads are capped at 24,000,000
+bytes (or a lower configured cap) to fit Base64 and JSON inside our relay bound;
+the existing local cap is unchanged. Completed staging and remote copies remain
+for conversation reuse; no automatic remote deletion is implemented.
+
+Upload requests, reference downloads, photo previews, Markdown thread links,
+subagent links, exports, and side chats retain `host`. Drafts, attachment IDs,
+and pending recovery are stored under a host-specific browser key even when
+thread IDs collide. Existing local draft keys remain readable. Unknown IDs on
+another host fail closed; a remote path cannot authorize reading server files.
+
+Run `node --test test/remote-filesystem.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
+and `npm test` from `web/`. The Unix/Windows filesystem and browser tests use
+fixtures, not paired official clients. Live read/write/event, concurrent-host,
+and reconnect verification remains an owner-authorized gate.

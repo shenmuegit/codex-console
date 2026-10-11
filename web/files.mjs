@@ -3,6 +3,8 @@ import { mkdir, open, rename, rm, realpath, lstat } from 'node:fs/promises';
 import { join, resolve, basename, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { createHostFilesystem } from './host-filesystem.mjs';
 import { collectTargets } from './transcript.mjs';
 import { formatNativePath } from './public/composer.js';
 
@@ -30,11 +32,14 @@ function targetPath(target, cwd, encoded) {
   } catch { return null; }
 }
 
-export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generatedRoots = [] }) {
+export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generatedRoots = [], remoteHost, codex }) {
   if (!Number.isSafeInteger(uploadLimitBytes) || uploadLimitBytes < 1 || uploadLimitBytes > 1_073_741_824) throw fail(500, 'INVALID_UPLOAD_LIMIT', '上传上限须在 1 字节到 1 GiB 之间。');
+  const remoteFs = remoteHost ? createHostFilesystem(codex) : null;
+  if (remoteFs) uploadLimitBytes = Math.min(uploadLimitBytes, 24_000_000);
+  const hostHref = href => remoteHost ? href + '?host=' + encodeURIComponent(remoteHost.id) : href;
   mkdirSync(join(stateDir, 'uploads'), { recursive: true, mode: 0o700 });
   const root = realpathSync(join(stateDir, 'uploads')), uploads = new Map(), byPath = new Map(), refs = new Map(), refKeys = new Map();
-  const generated = generatedRoots.map(path => { try { return realpathSync(path); } catch { return resolve(path); } });
+  const generated = remoteFs ? [] : generatedRoots.map(path => { try { return realpathSync(path); } catch { return resolve(path); } });
   for (const id of readdirSync(root)) {
     if (!validId(id)) continue;
     try {
@@ -43,7 +48,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
       if (meta.status !== 'complete') { rmSync(dir, { recursive: true, force: true }); continue; }
       if (meta.id !== id || !validName(meta.name) || !/^content(?:\.[A-Za-z0-9_-]{1,16})?$/.test(meta.storedName)) continue;
-      meta.dir = dir; meta.path = join(dir, meta.storedName); uploads.set(id, meta); byPath.set(meta.path, meta);
+      meta.dir = dir; meta.path = join(dir, meta.storedName); uploads.set(id, meta); byPath.set(meta.path, meta); if (meta.remotePath) byPath.set(meta.remotePath, meta);
     } catch { /* Incomplete/corrupt metadata cannot authorize a file reference. */ }
   }
   async function store(meta) {
@@ -78,11 +83,64 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       if (existing && refs.has(existing)) return { ...refs.get(existing).public, target };
       if (refs.size >= 4096) { const oldest = refs.keys().next().value; refKeys.delete(refs.get(oldest).key); refs.delete(oldest); }
       const id = randomBytes(24).toString('base64url');
-      const publicRef = { id, name: known?.name ?? name ?? basename(opened.actual), href: `/api/files/${id}`,
-        ...(opened.imageMime ? { imageHref: `/api/images/${id}`, imageMime: opened.imageMime } : {}) };
+      const publicRef = { id, name: known?.name ?? name ?? basename(opened.actual), href: hostHref(`/api/files/${id}`),
+        ...(opened.imageMime ? { imageHref: hostHref(`/api/images/${id}`), imageMime: opened.imageMime } : {}) };
       refs.set(id, { key, path: opened.actual, roots, dev: String(opened.stat.dev), ino: String(opened.stat.ino), public: publicRef }); refKeys.set(key, id);
       return { ...publicRef, target };
     } finally { await opened.handle.close(); }
+  }
+  async function checkedRemote(path, roots, pin) {
+    try {
+      const actual = await remoteFs.checkedPath(path), metadata = await remoteFs.read('fs/getMetadata', { path: actual });
+      if (remoteFs.paths().relative(path, actual) !== '' || !roots.some(root => remoteFs.within(actual, root)) || !metadata.isFile || metadata.isSymlink ||
+          pin && (metadata.createdAtMs !== pin.createdAtMs || metadata.modifiedAtMs !== pin.modifiedAtMs)) throw new Error();
+      return { actual, metadata };
+    } catch { throw fail(409, 'UNSAFE_REFERENCE', '远端文件已变化或不在允许的目录中，请刷新会话。'); }
+  }
+  async function issueRemote(path, roots, target) {
+    const checked = await checkedRemote(path, roots), key = `remote\0${checked.actual}\0${checked.metadata.createdAtMs}\0${checked.metadata.modifiedAtMs}`;
+    const existing = refKeys.get(key);
+    if (existing && refs.has(existing)) return { ...refs.get(existing).public, target };
+    const id = randomBytes(24).toString('base64url');
+    if (refs.size >= 4096) { const oldest = refs.keys().next().value; refKeys.delete(refs.get(oldest).key); refs.delete(oldest); }
+    const publicRef = { id, name: byPath.get(path)?.name ?? remoteFs.paths().basename(path), href: hostHref(`/api/files/${id}`) };
+    // shortcut: native fs has no atomic no-follow read or inode, recheck scope/timestamps until those RPCs exist.
+    const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+    await checkedRemote(path, roots, checked.metadata);
+    const mime = imageMime(data.subarray(0, 64));
+    if (mime) Object.assign(publicRef, { imageHref: hostHref(`/api/images/${id}`), imageMime: mime });
+    refs.set(id, { remote: true, key, path: checked.actual, roots, ...checked.metadata, public: publicRef }); refKeys.set(key, id);
+    return { ...publicRef, target };
+  }
+  async function transfer(meta, file) {
+    const home = await remoteFs.directory(codex.info?.()?.codexHome), paths = remoteFs.paths();
+    const base = paths.join(home, 'console-uploads');
+    const { entries: homeEntries } = await remoteFs.read('fs/readDirectory', { path: home });
+    if (!homeEntries.some(entry => (paths.sep === '\\' ? entry.fileName.toLowerCase() : entry.fileName) === 'console-uploads')) await remoteFs.read('fs/createDirectory', { path: base, recursive: false });
+    await remoteFs.directory(base);
+    const directory = paths.join(base, meta.id);
+    if (!meta.remotePath) {
+      const { entries } = await remoteFs.read('fs/readDirectory', { path: base });
+      if (entries.some(entry => entry.fileName === meta.id)) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已存在。');
+      await remoteFs.read('fs/createDirectory', { path: directory, recursive: false });
+    }
+    if (paths.relative(directory, await remoteFs.directory(directory)) !== '' || !remoteFs.within(directory, home)) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
+    const path = paths.join(directory, meta.storedName);
+    if (meta.remotePath) {
+      if (meta.remotePath !== path) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
+      const checked = await checkedRemote(path, [directory]);
+      const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+      await checkedRemote(path, [directory], checked.metadata);
+      if (!data.equals(await file.handle.readFile())) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
+    } else {
+      // A new random directory cannot authorize an existing file or symlink.
+      const { entries } = await remoteFs.read('fs/readDirectory', { path: directory });
+      if (entries.length) throw fail(409, 'UNSAFE_REFERENCE', '远端附件目标已存在。');
+      await remoteFs.read('fs/writeFile', { path, dataBase64: (await file.handle.readFile()).toString('base64') });
+      await checkedRemote(path, [directory]);
+      meta.remotePath = path; await store(meta); byPath.set(path, meta);
+    }
+    return path;
   }
   async function describeUpload(id, threadId) {
     const meta = uploads.get(id);
@@ -94,6 +152,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       href: reference.href, ...(reference.imageHref ? { imageHref: reference.imageHref, imageMime: reference.imageMime } : {}) };
   }
   return {
+    uploadLimitBytes,
     async beginUpload({ threadId, name, size, mime }) {
       if (!validName(name)) throw fail(400, 'INVALID_FILENAME', '文件名不能包含路径或控制字符。');
       if (typeof threadId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(threadId) || !Number.isSafeInteger(size) || size < 0 ||
@@ -142,18 +201,21 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       const input = [];
       for (const id of ids) {
         await describeUpload(id, threadId); const meta = uploads.get(id), file = await checkedFile(meta.path, [root], meta);
-        await file.handle.close();
-        if (meta.imageMime && file.imageMime !== meta.imageMime) throw fail(409, 'UNSAFE_REFERENCE', '照片内容已变化，请重新上传。');
-        if (meta.imageMime) input.push({ type: 'localImage', path: meta.path });
-        else { const text = formatNativePath(meta.path); input.push({ type: 'text', text,
+        let path;
+        try {
+          if (meta.imageMime && file.imageMime !== meta.imageMime) throw fail(409, 'UNSAFE_REFERENCE', '照片内容已变化，请重新上传。');
+          path = remoteFs ? await transfer(meta, file) : meta.path;
+        } finally { await file.handle.close(); }
+        if (meta.imageMime) input.push({ type: 'localImage', path });
+        else { const text = formatNativePath(path); input.push({ type: 'text', text,
           text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(text) }, placeholder: meta.name }] }); }
       }
       return input;
     },
     async issueTranscriptRefs(thread, turns) {
       const result = new Map(); let cwd;
-      try { cwd = await realpath(thread.cwd); if (cwd !== resolve(thread.cwd)) cwd = null; } catch {}
-      const roots = [...(cwd ? [cwd] : []), ...generated, root];
+      try { cwd = remoteFs ? await remoteFs.checkedPath(thread.cwd) : await realpath(thread.cwd); if (remoteFs ? remoteFs.paths().relative(thread.cwd, cwd) !== '' : cwd !== resolve(thread.cwd)) cwd = null; } catch {}
+      const roots = remoteFs ? [...(cwd ? [cwd] : []), ...[...uploads.values()].filter(meta => meta.remotePath).map(meta => remoteFs.paths().dirname(meta.remotePath))] : [...(cwd ? [cwd] : []), ...generated, root];
       for (const turn of turns) for (const item of turn.items ?? []) {
         const candidates = collectTargets(item);
         if (item.type === 'userMessage') for (const part of item.content ?? []) {
@@ -163,15 +225,24 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
             for (const element of part.text_elements ?? []) {
               const raw = Buffer.from(part.text).subarray(element.byteRange.start, element.byteRange.end).toString('utf8');
               const path = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
-              if (path.startsWith('/')) candidates.push({ target: path, encoded: false });
+              if (remoteFs ? remoteFs.valid(path) : path.startsWith('/')) candidates.push({ target: path, encoded: false });
             }
           }
         }
         const issued = [], seen = new Set();
         for (const candidate of candidates) {
-          const path = targetPath(candidate.target, cwd ?? '/', candidate.encoded);
-          if (!path || seen.has(path) || !roots.some(root => within(path, root))) continue;
-          try { const ref = await issue(path, roots, undefined, candidate.target); issued.push(ref); seen.add(path); } catch { /* Unsafe/missing targets remain plain text. */ }
+          let path;
+          if (remoteFs) {
+            try {
+              let target = candidate.target;
+              if (/^file:/i.test(target)) { const url = new URL(target); if (url.hostname && url.hostname !== 'localhost') throw new Error(); target = decodeURIComponent(url.pathname); if (remoteFs.paths().sep === '\\' && /^\/[A-Za-z]:/.test(target)) target = target.slice(1); }
+              else { if (/^sandbox:\//i.test(target)) target = target.slice(8); else if (/^[a-z][a-z0-9+.-]*:/i.test(target) && !/^[A-Za-z]:[\\/]/.test(target)) throw new Error(); if (candidate.encoded) target = decodeURIComponent(target.split(/[?#]/, 1)[0]); }
+              if (target.includes('\0') || !cwd && !remoteFs.valid(target)) throw new Error();
+              path = remoteFs.paths().resolve(cwd ?? remoteFs.paths().parse(target).root, target);
+            } catch { continue; }
+          } else path = targetPath(candidate.target, cwd ?? '/', candidate.encoded);
+          if (!path || seen.has(path) || !roots.some(root => remoteFs ? remoteFs.within(path, root) : within(path, root))) continue;
+          try { const ref = remoteFs ? await issueRemote(path, roots, candidate.target) : await issue(path, roots, undefined, candidate.target); issued.push(ref); seen.add(path); } catch { /* Unsafe/missing targets remain plain text. */ }
         }
         result.set(item.id, issued);
       }
@@ -180,6 +251,12 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     async openReference(id) {
       const ref = validId(id) && refs.get(id);
       if (!ref) throw fail(404, 'UNKNOWN_REFERENCE', '文件链接已失效，请重新打开会话。');
+      if (ref.remote) {
+        const checked = await checkedRemote(ref.path, ref.roots, ref);
+        const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+        await checkedRemote(ref.path, ref.roots, ref);
+        return { name: ref.public.name, size: data.length, imageMime: imageMime(data.subarray(0, 64)), handle: { async close() {}, async readFile() { return data; }, createReadStream() { return Readable.from([data]); } } };
+      }
       const file = await checkedFile(ref.path, ref.roots, ref);
       return { ...file, name: ref.public.name, size: Number(file.stat.size) };
     },

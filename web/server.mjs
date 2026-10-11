@@ -10,6 +10,7 @@ import { realpath, stat, readFile, writeFile, rename, unlink } from 'node:fs/pro
 import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, activeTurn } from './public/chat.js';
 import { renderTranscript, boundedHistoryItem } from './transcript.mjs';
 import { createFiles } from './files.mjs';
+import { absoluteHostPath, createHostFilesystem } from './host-filesystem.mjs';
 import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
 import { encodeComposer, utf8Range, updateQueuedInput, displayNativeText } from './public/composer.js';
@@ -37,7 +38,7 @@ const error = (status, code, message) => Object.assign(new Error(message), { sta
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = (v, max = 8192) => typeof v === 'string' && v.length <= max && !v.includes('\0');
 const id = v => text(v, 128) && /^[A-Za-z0-9_-]+$/.test(v);
-const absolutePath = path => text(path) && path.startsWith('/') && !path.split('/').includes('..');
+const absolutePath = absoluteHostPath;
 const secretKeys = new Set(['accesstoken', 'refreshtoken', 'idtoken', 'apikey', 'authorization', 'authtoken', 'bearertoken', 'password', 'passwordhash', 'tokens']);
 function safe(value) {
   if (Array.isArray(value)) return value.map(safe);
@@ -190,7 +191,11 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
   const initialHistory = new WeakMap();
   const queueLocks = new Set(), recoveryDir = join(config.stateDir, 'queue-recovery');
-  const files = createFiles(config);
+  const remoteFs = config.remoteHost ? createHostFilesystem(codex) : null;
+  const files = createFiles({ ...config, codex });
+  const nativePaths = () => remoteFs?.paths() ?? { resolve, join, relative, basename: path => path.split('/').at(-1) };
+  const inside = (path, cwd) => remoteFs ? remoteFs.within(path, cwd) : path === cwd || path.startsWith(cwd === '/' ? '/' : cwd + '/');
+  const canonicalPath = path => remoteFs ? remoteFs.checkedPath(path) : realpath(path);
   let accountEpoch = 0;
   async function nativeModels() {
     const models = []; let cursor;
@@ -230,11 +235,11 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       let entity;
       if (['file', 'directory'].includes(selection.kind)) {
         if (!absolutePath(selection.path)) throw error(400, 'INVALID_PATH', '引用路径不正确。');
-        const cwd = await realpath(state.thread.cwd), path = await realpath(selection.path);
-        if (path !== cwd && !path.startsWith(cwd === '/' ? '/' : cwd + '/')) throw error(403, 'REFERENCE_SCOPE', '文件引用须在会话实际工作目录中。');
+        const cwd = await canonicalPath(state.thread.cwd), path = await canonicalPath(selection.path);
+        if (!inside(path, cwd)) throw error(403, 'REFERENCE_SCOPE', '文件引用须在会话实际工作目录中。');
         const metadata = await nativeRead('fs/getMetadata', { path });
         if (selection.kind === 'file' ? !metadata.isFile : !metadata.isDirectory) throw error(409, 'REFERENCE_CHANGED', '引用文件或目录已变化。');
-        entity = { path, name: path.split('/').at(-1) };
+        entity = { path, name: nativePaths().basename(path) };
       } else if (selection.kind === 'skill') {
         skills ??= await skillsAt(state.thread.cwd); const skill = skills.find(skill => skill.enabled && skill.path === selection.path);
         if (!skill) throw error(422, 'SKILL_UNAVAILABLE', '技能不在当前工作目录的原生目录中。'); entity = { name: skill.name, path: skill.path };
@@ -266,16 +271,16 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       for (const skill of await skillsAt(state.thread.cwd)) if (match(skill.name)) items.push({ kind: 'skill', path: skill.path, name: skill.name, label: '$' + skill.name, disabled: !skill.enabled });
       return { items, unavailable };
     }
-    const cwd = state.thread.cwd, slash = query.lastIndexOf('/'), search = query.length > 0 && slash < 0;
-    const path = slash < 0 ? cwd : resolve(cwd, query.slice(0, slash + 1)), needle = slash < 0 ? query : query.slice(slash + 1);
+    const cwd = state.thread.cwd, slash = Math.max(query.lastIndexOf('/'), remoteFs?.paths().sep === '\\' ? query.lastIndexOf('\\') : -1), search = query.length > 0 && slash < 0;
+    const path = slash < 0 ? cwd : nativePaths().resolve(cwd, query.slice(0, slash + 1)), needle = slash < 0 ? query : query.slice(slash + 1);
     const calls = await Promise.allSettled([
-      search ? nativeRead('fuzzyFileSearch', { query, roots: [cwd], cancellationToken: 'web-completion:' + viewId }) : path === cwd || path.startsWith(cwd === '/' ? '/' : cwd + '/') ? nativeRead('fs/readDirectory', { path }) : Promise.reject(new Error('目录不在当前工作区。')),
+      search ? nativeRead('fuzzyFileSearch', { query, roots: [cwd], cancellationToken: 'web-completion:' + viewId }) : inside(path, cwd) ? remoteFs ? (async () => { const actual = await canonicalPath(path), root = await canonicalPath(cwd); if (!inside(actual, root)) throw error(403, 'REFERENCE_SCOPE', '目录不在当前工作区。'); return nativeRead('fs/readDirectory', { path: actual }); })() : nativeRead('fs/readDirectory', { path }) : Promise.reject(new Error('目录不在当前工作区。')),
       nativeRead('thread/list', { limit: 20, modelProviders: [], ...(query ? { searchTerm: query } : {}) }), appsAt(state.threadId), pluginsAt(cwd),
     ]);
     for (let index = 0; index < calls.length; index++) if (calls[index].status === 'rejected') unavailable.push({ kind: ['文件', '会话', '应用', '插件'][index], message: calls[index].reason.message });
     if (calls[0].status === 'fulfilled') {
-      const entries = search ? calls[0].value.files.map(file => ({ fileName: file.file_name, path: resolve(cwd, file.path), isDirectory: file.match_type === 'directory' })) : calls[0].value.entries.filter(entry => entry.fileName.toLocaleLowerCase().includes(needle.toLocaleLowerCase())).map(entry => ({ ...entry, path: join(path, entry.fileName) }));
-      for (const entry of entries) if (entry.path === cwd || entry.path.startsWith(cwd === '/' ? '/' : cwd + '/')) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: entry.path, name: entry.fileName, label: '@' + (relative(cwd, entry.path) || '.') });
+      const entries = search ? calls[0].value.files.map(file => ({ fileName: file.file_name, path: nativePaths().resolve(cwd, file.path), isDirectory: file.match_type === 'directory' })) : calls[0].value.entries.filter(entry => entry.fileName.toLocaleLowerCase().includes(needle.toLocaleLowerCase())).map(entry => ({ ...entry, path: nativePaths().join(path, entry.fileName) }));
+      for (const entry of entries) if (inside(entry.path, cwd)) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: entry.path, name: entry.fileName, label: '@' + (nativePaths().relative(cwd, entry.path) || '.') });
     }
     if (calls[1].status === 'fulfilled') for (const thread of calls[1].value.data) if (thread.id !== state.threadId) items.push({ kind: 'thread', id: thread.id, name: [...(thread.name || thread.preview || thread.id)].slice(0, 160).join(''), label: '@' + (thread.name || thread.preview || thread.id) });
     if (calls[2].status === 'fulfilled') for (const app of calls[2].value) if (match(app.name)) items.push({ kind: 'app', id: app.id, name: app.name, label: '@' + app.name, disabled: !app.callable });
@@ -288,7 +293,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(value));
   };
   const publicStatus = () => ({ online: codex.status().online, generation: codex.status().generation,
-    uploadLimitBytes: config.uploadLimitBytes ?? 33_554_432 });
+    uploadLimitBytes: files.uploadLimitBytes });
   const cookieToken = req => (req.headers.cookie ?? '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
   const cookie = (token, age) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
   function requireView(viewId, session) {
@@ -777,11 +782,11 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         views.set(viewId, { session, threadId: null, streams: new Set() }); reply(res, 200, { viewId });
       } else if (url.pathname === '/api/project/create') {
         fields(body, ['viewId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
-        if (!text(body.name, 160) || !body.name.trim() || !absolutePath(body.rootPath) || !id(body.idempotencyKey)) throw error(400, 'INVALID_PROJECT', '请输入项目名称、服务器绝对目录和有效操作标识。');
+        if (!text(body.name, 160) || !body.name.trim() || !absolutePath(body.rootPath) || !id(body.idempotencyKey)) throw error(400, 'INVALID_PROJECT', '请输入项目名称、所选主机绝对目录和有效操作标识。');
         const metadata = (await codex.rpc('fs/getMetadata', { path: body.rootPath })).result;
-        if (!metadata.isDirectory) throw error(400, 'INVALID_DIRECTORY', '请选择服务器上可访问的已有目录。');
+        if (!metadata.isDirectory) throw error(400, 'INVALID_DIRECTORY', '请选择所选主机上可访问的已有目录。');
         let canonical;
-        try { canonical = await realpath(body.rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '请选择服务器上可访问的已有目录。'); }
+        try { canonical = await canonicalPath(body.rootPath); } catch { throw error(400, 'INVALID_DIRECTORY', '请选择所选主机上可访问的已有目录。'); }
         const result = await codex.rpc('project/create', { name: body.name.trim(), roots: [{ path: canonical }], idempotencyKey: body.idempotencyKey });
         reply(res, 200, { project: safe(result.result.project) });
       } else if (url.pathname === '/api/project/archive') {
@@ -852,13 +857,13 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         fields(body, ['viewId', 'projectId', 'name']); const view = requireView(body.viewId, session);
         if ((body.projectId != null && !id(body.projectId)) ||
             (body.name != null && (!text(body.name, 160) || !body.name.trim()))) throw error(400, 'INVALID_THREAD', '项目或会话名称不正确。');
-        let rootPath = config.workspace ?? config.generatedRoots?.[0];
+        let rootPath = remoteFs ? null : config.workspace ?? config.generatedRoots?.[0];
         if (body.projectId) {
           const { project } = (await codex.rpc('project/read', { projectId: body.projectId })).result;
           rootPath = project.roots?.[0]?.path;
         }
         let cwd;
-        try { if (!text(rootPath) || !rootPath.startsWith('/')) throw new Error(); cwd = await realpath(rootPath); if (!(await stat(cwd)).isDirectory()) throw new Error(); }
+        try { if (!absolutePath(rootPath)) throw new Error(); cwd = remoteFs ? await remoteFs.directory(rootPath) : await realpath(rootPath); if (!remoteFs && !(await stat(cwd)).isDirectory()) throw new Error(); }
         catch { throw error(400, 'INVALID_DIRECTORY', 'Codex 项目或默认工作目录不可用。'); }
         const fingerprint = JSON.stringify([cwd, body.projectId, body.name]);
         if (view.creation?.fingerprint !== fingerprint && view.creation) throw error(409, 'CREATE_PENDING', '上一会话尚未确认，请先核对列表。');

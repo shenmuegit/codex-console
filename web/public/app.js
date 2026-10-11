@@ -1,12 +1,13 @@
 import { mountChat } from './chat.js';
 import { mountConnections } from './connections.js';
+import { scopeHostPath } from './composer.js';
 const $ = selector => document.querySelector(selector);
 if (new URL(location.href).searchParams.get('side') === '1') document.body.dataset.sideChat = 'true';
 let events, chat, connections;
 const selectedHost = new URL(location.href).searchParams.get('host') ?? 'local';
 const hostPath = path => {
   if (selectedHost === 'local' || path.startsWith('/api/controller/') || ['/api/login', '/api/logout'].includes(path)) return path;
-  const url = new URL(path, location.href); url.searchParams.set('host', selectedHost); return url.pathname + url.search;
+  return scopeHostPath(path, selectedHost);
 };
 if (window.visualViewport) {
   const viewport = () => document.documentElement.style.setProperty('--app-height', `${window.visualViewport.height}px`);
@@ -33,7 +34,7 @@ async function connected() {
   connections.refresh();
   const status = await api('/api/status');
   const { viewId } = await api('/api/view', {});
-  chat?.dispose(); chat = mountChat({ api, viewId, uploadLimitBytes: status.uploadLimitBytes });
+  chat?.dispose(); chat = mountChat({ api, viewId, selectedHost, uploadLimitBytes: status.uploadLimitBytes });
   chat.connection(status.online);
   events?.close(); events = new EventSource(hostPath('/api/events?viewId=' + encodeURIComponent(viewId)));
   events.onmessage = event => {

@@ -178,3 +178,10 @@ test('a native request that never replies rejects after the real default deadlin
   t.after(() => client.close());
   await assert.rejects(client.rpc('model/list', {}), { code: 'NATIVE_TIMEOUT', outcome: 'unknown' });
 });
+
+test('native filesystem info is read-only and discarded on disconnect', async t => {
+  const { client, peer } = await connectedFixture(); t.after(() => client.close());
+  assert.deepEqual(client.info(), { codexHome: '/tmp/codex-fixture-home', platformFamily: 'unix', platformOs: 'linux' });
+  assert.throws(() => { client.info().platformFamily = 'windows'; }, TypeError);
+  peer.disconnect(); assert.equal(client.info(), undefined);
+});
