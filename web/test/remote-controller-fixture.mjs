@@ -80,7 +80,8 @@ export async function fixture(t, options = {}) {
     if (request.method === 'DELETE' && url.pathname.endsWith('/clients/server-created-client')) return new Response(null, { status: options.deleteStatus ?? 204 });
     assert.fail('Unexpected official endpoint: ' + url.pathname);
   };
-  const controller = await createRemoteController({ authFile, stateDir, deviceKey, fetch });
+  const controller = await createRemoteController({ authFile, stateDir, deviceKey, fetch,
+    refreshAccount: options.refreshAccount ? () => options.refreshAccount({ authFile }) : undefined });
   t.after(() => controller.close());
   async function authorize(instance = controller) {
     const attempt = await instance.startAuthorization();

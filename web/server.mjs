@@ -669,6 +669,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         if (req.method === 'GET' && url.pathname === '/api/controller/status') {
           const state = controller ? await controller.status() : { enrolled: false, phase: 'unconfigured' };
           reply(res, 200, { available: Boolean(controller), enrolled: state.enrolled === true, phase: state.phase,
+            ...(state.enrollmentPreserved === true ? { enrollmentPreserved: true } : {}),
             ...(state.errorCode ? { errorCode: state.errorCode } : {}) }); return;
         }
         if (!['/api/controller/authorize', '/api/controller/callback', '/api/controller/pair', '/api/controller/hosts'].includes(url.pathname)) {
@@ -940,7 +941,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       if (res.headersSent) { res.destroy(); return; }
       const status = e.status ?? ({ ORIGIN_DENIED: 403, LOGIN_DENIED: 401, LOGIN_THROTTLED: 429, STALE_NATIVE_REQUEST: 409, NATIVE_DISCONNECTED: 503, NATIVE_TIMEOUT: 504,
         INVALID_CALLBACK: 400, INVALID_PAIRING_CODE: 400, CALLBACK_USED: 409, AUTH_NOT_STARTED: 409, AUTH_IN_PROGRESS: 409,
-        CONTROLLER_EXISTS: 409, CONTROLLER_NOT_ENROLLED: 409, ACCOUNT_CHANGED: 409, DEVICE_KEY_UNAVAILABLE: 503, CLEANUP_REQUIRED: 503,
+        CONTROLLER_EXISTS: 409, CONTROLLER_NOT_ENROLLED: 409, ACCOUNT_CHANGED: 409, DEVICE_KEY_UNAVAILABLE: 503, CLEANUP_REQUIRED: 503, CLEANUP_RECORD_FAILED: 503, AUTH_REQUIRED: 503, AUTH_REFRESH_FAILED: 503,
         REMOTE_HOST_NOT_PAIRED: 404,
       }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
       reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}), ...(e.queueRecovery ? { queueRecovery: e.queueRecovery } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
@@ -969,7 +970,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const sharedAuth = createAuth({ passwordHash: config.passwordHash });
     const controller = config.remoteController ? await createRemoteController({ authFile: join(config.backendHome, 'auth.json'),
       stateDir: config.remoteController.stateDir ?? join(config.stateDir, 'controller'),
-      deviceKey: createRequire(import.meta.url)(config.remoteController.deviceKeyModule) }) : null;
+      deviceKey: createRequire(import.meta.url)(config.remoteController.deviceKeyModule), refreshAccount: () => codex.refreshAccount() }) : null;
     const relay = controller ? createRemoteRelay({ controller }) : null;
     const hosts = controller ? createRemoteHostPool({ config, sharedAuth, controller, relay, createServer: createWebServer }) : null;
     const controls = controller ? { status: () => controller.status(), startAuthorization: () => controller.startAuthorization(),

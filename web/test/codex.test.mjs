@@ -185,3 +185,21 @@ test('native filesystem info is read-only and discarded on disconnect', async t 
   assert.throws(() => { client.info().platformFamily = 'windows'; }, TypeError);
   peer.disconnect(); assert.equal(client.info(), undefined);
 });
+
+test('internal account renewal uses the fixed native credential manager call and never exports its token', async t => {
+  const { client, peer, flush } = await connectedFixture(); t.after(() => client.close());
+  const renewal = client.refreshAccount(); await flush();
+  assert.deepEqual(peer.sent.at(-1).params, { includeToken: false, refreshToken: true });
+  assert.equal(peer.sent.at(-1).method, 'getAuthStatus');
+  peer.replyTo('getAuthStatus', { authMethod: 'chatgpt', authToken: 'must-not-export', requiresOpenaiAuth: true });
+  assert.equal(await renewal, undefined);
+  const revoked = client.refreshAccount(), rejected = assert.rejects(revoked, { code: 'AUTH_REQUIRED' });
+  peer.replyTo('getAuthStatus', { authMethod: null, authToken: null, requiresOpenaiAuth: true });
+  await rejected;
+});
+
+test('account renewal cannot run through a remote host socket factory', async t => {
+  const socket = Object.assign(new EventTarget(), { readyState: 0, close() {} });
+  const client = createCodexClient({ socketFactory: () => socket }); t.after(() => client.close());
+  await assert.rejects(client.refreshAccount(), { code: 'INVALID_TRANSPORT' });
+});

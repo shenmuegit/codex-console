@@ -228,3 +228,28 @@ cleanup keeps a private retry marker for restart, without replacing another
 operation’s marker. `CLEANUP_RECORD_FAILED` explicitly signals that storage
 failed and administrator recovery is needed; do not start another enrollment
 while the owned candidate remains unresolved.
+
+Base account credentials are checked for a finite `exp` and renewed before
+HTTP requests or relay handshakes. Production renewal uses the server’s existing
+loopback native credential manager through a fixed internal `getAuthStatus`
+call with `includeToken: false` and `refreshToken: true`; it neither runs desktop
+JavaScript nor edits `auth.json` directly. Concurrent renewals share one operation.
+The controller re-reads the private cache and verifies account/workspace and
+owner before continuing with the original enrollment and key. Browsers cannot
+call this legacy native method or obtain its token.
+
+Expired/rejected credentials report `authenticationRequired`; a failed native
+renewal reports `authenticationUnavailable`. The public `enrollmentPreserved`
+flag disables another enrollment. Restore ordinary official server account
+sign-in if it was revoked, then refresh the Web device dialog. A 401 rejects
+the original request with an unknown outcome; renewal does not replay pairing
+or another mutation. Reconcile before an explicit retry. Private enrollment
+and protected keys survive account errors and account changes. Tests use fake
+credentials; live owner login and official-device interoperability remain
+separate verification gates.
+
+For this local remote-controller identity binding, the JWT workspace claim
+must match the selected workspace in the private cache before membership is
+trusted, including after renewal. Matching-workspace legacy `user_id` remains
+a fallback. This rule does not redefine ordinary Codex authentication or its
+external-token workspace-header override; ordinary login files are preserved.

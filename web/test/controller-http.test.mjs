@@ -79,3 +79,18 @@ test('an unconfigured controller reports its setup state without breaking existi
   assert.equal((await f.request('/api/status', { cookie })).status, 200);
   assert.equal((await f.request('/api/controller/authorize', { method: 'POST', cookie, body: {} })).status, 503);
 });
+
+test('recoverable controller account state is public while native renewal and token export stay private', async t => {
+  const controller = controllerFixture();
+  controller.status = async () => ({ enrolled: false, enrollmentPreserved: true, phase: 'authenticationRequired',
+    errorCode: 'AUTH_REQUIRED', authToken: 'private-token' });
+  controller.pair = async () => { throw Object.assign(new Error('Restore official server account sign-in.'), { code: 'AUTH_REQUIRED', outcome: 'unknown' }); };
+  const f = await httpsFixture({ controller }); t.after(() => f.close()); const cookie = await f.login();
+  assert.deepEqual((await f.request('/api/controller/status', { cookie })).json,
+    { available: true, enrolled: false, enrollmentPreserved: true, phase: 'authenticationRequired', errorCode: 'AUTH_REQUIRED' });
+  const pair = await f.request('/api/controller/pair', { method: 'POST', cookie, body: { code: 'ABCD-1234' } });
+  assert.equal(pair.status, 503); assert.equal(pair.json.error.outcome, 'unknown');
+  assert.match(pair.json.error.message, /official server account sign-in/);
+  const native = await f.request('/api/rpc', { method: 'POST', cookie, body: { method: 'getAuthStatus', params: { includeToken: true, refreshToken: true } } });
+  assert.equal(native.status, 403); assert.equal(native.json.error.code, 'RPC_DENIED');
+});

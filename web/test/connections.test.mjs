@@ -39,3 +39,13 @@ test('device names are rendered as text and selection delegates the exact paired
   picker.value = 'host-a'; dom.event('host-picker', 'change');
   assert.equal(selected, 'host-a');
 });
+
+test('preserved enrollment with revoked account login explains recovery and disables new enrollment', async t => {
+  const dom = domFixture();
+  const connections = mountConnections({ selectHost() {}, api: async () => ({ available: true, enrolled: false,
+    enrollmentPreserved: true, phase: 'authenticationRequired', errorCode: 'AUTH_REQUIRED' }) });
+  t.after(() => { connections.dispose(); dom.restore(); }); await connections.refresh();
+  assert.match(dom.get('controller-state').textContent, /官方账号登录/);
+  assert.equal(dom.get('controller-authorize').disabled, true);
+  assert.equal(dom.get('pair-submit').disabled, true);
+});

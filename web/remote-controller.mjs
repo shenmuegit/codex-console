@@ -8,7 +8,7 @@ const base = 'https://chatgpt.com/backend-api';
 const enrollmentPath = '/codex/remote/control/client/enroll/finish';
 const refreshPath = '/codex/remote/control/client/refresh/finish';
 const scope = 'remote_control_controller_websocket';
-const fault = (code, message) => Object.assign(new Error(message), { code });
+const fault = (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra });
 const text = (value, max = 256) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\s\0]/.test(value);
 const digest = value => createHash('sha256').update(value).digest('base64url');
 const keyIdentity = key => ({ algorithm: key.algorithm, keyId: key.keyId,
@@ -27,7 +27,7 @@ function owners(auth) {
   const value = auth.claims['https://api.openai.com/auth'] ?? {};
   const principal = value.chatgpt_account_user_id ?? value.account_user_id;
   const account = value.chatgpt_account_id ?? value.account_id;
-  const result = text(principal) ? [principal] : [];
+  const result = account === auth.accountId && text(principal) ? [principal] : [];
   if (account === auth.accountId && text(value.user_id) && !result.includes(value.user_id)) result.push(value.user_id);
   return result;
 }
@@ -74,7 +74,7 @@ function validateStepUp(token, record, accountId) {
   }
 }
 
-export async function createRemoteController({ authFile, stateDir, deviceKey, fetch: requestFetch = globalThis.fetch }) {
+export async function createRemoteController({ authFile, stateDir, deviceKey, refreshAccount, fetch: requestFetch = globalThis.fetch }) {
   const repo = dirname(dirname(fileURLToPath(import.meta.url)));
   const external = path => {
     if (typeof path !== 'string' || !isAbsolute(path)) return false;
@@ -82,6 +82,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     return location === '..' || location.startsWith('../');
   };
   if (!external(authFile) || !external(stateDir) ||
+      (refreshAccount !== undefined && typeof refreshAccount !== 'function') ||
       !['createDeviceKey', 'getDeviceKeyPublic', 'signDeviceKey', 'deleteDeviceKey'].every(name => typeof deviceKey?.[name] === 'function')) {
     throw fault('INVALID_CONTROLLER_CONFIG', 'Use external private state and a protected device-key component.');
   }
@@ -100,7 +101,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
   };
   const owner = { pid: process.pid, bootId, started: await processStart(process.pid) };
   let state = await load(recordPath), pending = await load(pendingPath), attempt, authorizing, refreshing, closed = false;
-  let starting = false, startingDone, finishStarting, closing;
+  let starting = false, startingDone, finishStarting, closing, renewing, rejectedToken;
   let phase = state ? 'ready' : pending ? 'cleanupRequired' : 'unconfigured', errorCode;
 
   async function load(path) {
@@ -124,7 +125,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     } catch { throw fault('STATE_WRITE_FAILED', 'The controller state could not be saved atomically.'); }
     finally { if (created) await rm(temporary, { force: true }).catch(() => {}); }
   }
-  async function auth() {
+  async function readAuth() {
     try {
       const info = await lstat(authFile);
       if (!info.isFile() || !external(await realpath(authFile)) || info.uid !== process.getuid() || (info.mode & 0o077) || info.size > 1_048_576) throw new Error();
@@ -135,7 +136,35 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
       return current;
     } catch { throw fault('AUTH_REQUIRED', 'The server needs private Codex account credentials.'); }
   }
+  const sameAccount = (previous, current) => previous.accountId === current.accountId &&
+    owners(previous).every(owner => owners(current).includes(owner));
+  const fresh = current => Number.isFinite(current.claims.exp) && current.claims.exp > Date.now() / 1000 + 30 && current.token !== rejectedToken;
+  async function auth() {
+    const current = await readAuth();
+    if (state && (state.accountId !== current.accountId || !owners(current).includes(state.enrollment?.accountUserId))) {
+      throw fault('ACCOUNT_CHANGED', 'The saved controller belongs to another server account.');
+    }
+    if (fresh(current)) return current;
+    if (!refreshAccount) throw fault('AUTH_REQUIRED', 'Restore the server’s official Codex account sign-in, then refresh; controller enrollment is preserved.');
+    if (!renewing) {
+      renewing = (async () => {
+        try { await refreshAccount(); }
+        catch (error) {
+          if (error.code === 'AUTH_REQUIRED') throw fault('AUTH_REQUIRED', 'Restore the server’s official Codex account sign-in, then refresh; controller enrollment is preserved.');
+          throw fault('AUTH_REFRESH_FAILED', 'The native account credential manager could not renew sign-in; retry after restoring the server backend.');
+        }
+      })().finally(() => { renewing = null; });
+    }
+    await renewing;
+    const latest = await readAuth();
+    if (!sameAccount(current, latest)) throw fault('ACCOUNT_CHANGED', 'The server account changed during credential renewal; controller enrollment is preserved.');
+    if (!fresh(latest)) throw fault('AUTH_REQUIRED', 'Restore the server’s official Codex account sign-in, then refresh; controller enrollment is preserved.');
+    return latest;
+  }
   async function request(path, current, { body, method = body ? 'POST' : 'GET', cleanup = false } = {}) {
+    const latest = await auth();
+    if (!sameAccount(current, latest)) throw fault('ACCOUNT_CHANGED', 'The server account changed before the remote request.');
+    current = latest;
     let response;
     try {
       response = await requestFetch(base + path, { method, redirect: 'error',
@@ -143,7 +172,15 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
           originator: 'codex-console', 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),
         signal: cleanup ? AbortSignal.timeout(20_000) : AbortSignal.any([stopped.signal, AbortSignal.timeout(20_000)]) });
       if (cleanup && (response.ok || response.status === 404)) { await response.body?.cancel(); return { removed: true }; }
-      if (!response.ok) { await response.body?.cancel(); throw fault('REMOTE_REQUEST_FAILED', `Official remote-control request failed (${response.status}).`); }
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (response.status === 401) {
+          const cached = await readAuth().catch(() => null);
+          if (!cached || cached.token === current.token) rejectedToken = current.token;
+          throw fault('AUTH_REQUIRED', 'Official account credentials were rejected; restore server sign-in and reconcile before retrying.', { outcome: 'unknown' });
+        }
+        throw fault('REMOTE_REQUEST_FAILED', `Official remote-control request failed (${response.status}).`);
+      }
       const reader = response.body.getReader(), chunks = []; let length = 0;
       try {
         for (;;) {
@@ -155,7 +192,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
       } finally { reader.releaseLock(); }
       return JSON.parse(Buffer.concat(chunks).toString('utf8'));
     } catch (error) {
-      if (error.code === 'REMOTE_REQUEST_FAILED') throw error;
+      if (['REMOTE_REQUEST_FAILED', 'AUTH_REQUIRED'].includes(error.code)) throw error;
       throw fault('REMOTE_REQUEST_FAILED', 'The official remote-control request did not complete.');
     }
   }
@@ -268,7 +305,8 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
       if (starting || authorizing) return { enrolled: false, phase, ...(errorCode ? { errorCode } : {}) };
       if (state) {
         try { await enrolled(); return { enrolled: true, phase: 'ready' }; }
-        catch (error) { return { enrolled: false, phase: 'unavailable', errorCode: error.code }; }
+        catch (error) { return { enrolled: false, enrollmentPreserved: true,
+          phase: error.code === 'AUTH_REQUIRED' ? 'authenticationRequired' : error.code === 'AUTH_REFRESH_FAILED' ? 'authenticationUnavailable' : 'unavailable', errorCode: error.code }; }
       }
       return { enrolled: false, phase, ...(errorCode ? { errorCode } : {}) };
     },
@@ -329,6 +367,8 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
       } catch (error) {
         errorCode = error.code ?? 'CONTROLLER_ERROR';
         if (candidate && !committed && await cleanup(candidate, current)) phase = pending ? 'cleanupRequired' : 'unconfigured';
+        if (!candidate && error.code === 'AUTH_REQUIRED') phase = 'authenticationRequired';
+        if (!candidate && error.code === 'AUTH_REFRESH_FAILED') phase = 'authenticationUnavailable';
         throw error;
       } finally { starting = false; finishStarting(); startingDone = null; }
     },
@@ -365,7 +405,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     async session() {
       const { current, record } = await enrolled();
       const expires = validateSession(state.session, record, true);
-      if (expires > Date.now() / 1000 + 30) return relaySession(current, record, state.session);
+      if (expires > Date.now() / 1000 + 30) return relaySession(await auth(), record, state.session);
       if (!refreshing) {
         refreshing = (async () => {
           const started = await request('/codex/remote/control/client/refresh/start', current, { body: { client_id: record.clientId } });
@@ -382,14 +422,14 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
         })().finally(() => { refreshing = null; });
       }
       await refreshing;
-      return relaySession(current, record, state.session);
+      return relaySession(await auth(), record, state.session);
     },
     async close() {
       if (closing) return closing;
       closed = true; stopped.abort(); attempt?.cancel();
       closing = (async () => {
         if (startingDone) await startingDone;
-        await Promise.allSettled([authorizing, refreshing].filter(Boolean));
+        await Promise.allSettled([authorizing, refreshing, renewing].filter(Boolean));
       })();
       return closing;
     },

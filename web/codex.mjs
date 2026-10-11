@@ -158,6 +158,11 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
   connect();
   return {
     rpc: send, status, info: () => nativeInfo,
+    async refreshAccount() {
+      if (socketFactory) throw fault('INVALID_TRANSPORT', 'Account renewal requires the server-owned loopback backend.');
+      const { result } = await send('getAuthStatus', { includeToken: false, refreshToken: true });
+      if (result?.authMethod !== 'chatgpt') throw fault('AUTH_REQUIRED', 'The server needs official Codex account sign-in.');
+    },
     history(kind, params) { return send(kind === 'items' ? 'thread/items/list' : 'thread/turns/list', params, false, kind); },
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     retainThread(threadId, viewId) {

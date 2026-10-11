@@ -3,6 +3,8 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   let alive = true, enrolled = false, timer, generation = 0;
   const states = { ready: 'server 已就绪，输入被控端连接码即可添加设备。', unconfigured: 'server 尚未完成首次授权。',
     starting: '正在准备官方账号确认…', authorizing: '等待完成官方账号确认。', enrolling: '正在登记 server 控制端…',
+    authenticationRequired: 'server 官方账号登录已失效，请恢复官方账号登录后刷新；已有控制端身份保留。',
+    authenticationUnavailable: 'server 账号续期暂时失败，请检查原生后台后刷新；已有控制端身份保留。',
     cleanupRequired: '上次设置尚未清理完成，请稍后重试或联系管理员。', unavailable: '控制端账号或密钥不可用，请检查 server 状态。' };
   function error(value) { if (alive) $('connections-error').textContent = value?.message ?? '连接操作失败。'; }
   async function refresh() {
@@ -13,7 +15,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
       enrolled = status.enrolled;
       $('controller-state').textContent = status.available ? states[status.phase] ?? '控制端正在处理。' : '管理员尚未准备 server 控制端。';
       $('controller-setup').hidden = enrolled;
-      $('controller-authorize').disabled = !status.available || ['starting', 'authorizing', 'enrolling'].includes(status.phase);
+      $('controller-authorize').disabled = !status.available || status.enrollmentPreserved === true || ['starting', 'authorizing', 'enrolling'].includes(status.phase);
       $('pair-submit').disabled = !enrolled;
       if (enrolled) {
         $('controller-auth-link').hidden = true; $('controller-auth-link').removeAttribute('href');

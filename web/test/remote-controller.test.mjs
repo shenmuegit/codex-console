@@ -262,3 +262,131 @@ test('initial marker disk failure reports lost cleanup persistence and never cre
   assert.equal(f.calls.filter(c => c.method === 'DELETE').length, 1);
   assert.equal((await controller.status()).errorCode, 'CLEANUP_RECORD_FAILED');
 });
+
+const writeAccount = (authFile, token, account = 'workspace-one') => writeFile(authFile,
+  JSON.stringify({ tokens: { account_id: account, access_token: token } }), { mode: 0o600 });
+
+test('expired base credentials join one renewal and refresh the original relay identity from the renewed cache', async t => {
+  let renewals = 0, release;
+  const renewed = jwt({ ...accessClaims(), exp: Date.now() / 1000 + 7200 });
+  const f = await fixture(t);
+  await f.authorize(); await f.controller.close();
+  const path = join(f.stateDir, 'enrollment.json'), saved = JSON.parse(await readFile(path, 'utf8'));
+  saved.session.expires_at = '2000-01-01T00:00:00Z'; await writeFile(path, JSON.stringify(saved), { mode: 0o600 });
+  await writeAccount(f.authFile, jwt({ ...accessClaims(), exp: 1 }));
+  const controller = await createRemoteController({ authFile: f.authFile, stateDir: f.stateDir, deviceKey: f.deviceKey, fetch: f.fetch,
+    refreshAccount: async () => { ++renewals; await new Promise(resolve => { release = resolve; }); await writeAccount(f.authFile, renewed); } });
+  t.after(() => controller.close());
+  const before = f.calls.length;
+  const operations = Promise.all([controller.session(), controller.pair('ABCD-1234'), controller.listHosts()]);
+  const deadline = Date.now() + 1000;
+  while (!release && Date.now() < deadline) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof release, 'function', 'Expired credentials must invoke the native account renewal hook');
+  await new Promise(resolve => setImmediate(resolve)); release();
+  const [session, pair, hosts] = await operations;
+  assert.equal(renewals, 1);
+  assert.equal(session.headers.Authorization, 'Bearer ' + renewed);
+  assert.equal(session.enrollment.keyId, saved.enrollment.keyId);
+  assert.equal(session.response.remote_control_token, 'fixture-relay-token-2');
+  assert.equal(pair.environmentId, 'host-one'); assert.equal(hosts.length, 1);
+  assert(f.calls.slice(before).every(call => call.headers.Authorization === 'Bearer ' + renewed));
+  assert.equal(f.created, 1);
+});
+
+test('expired or missing token expiry cannot be transmitted without account renewal', async t => {
+  for (const exp of [1, undefined, '9999999999']) {
+    const f = await fixture(t); await f.authorize();
+    const before = f.calls.length, record = await readFile(join(f.stateDir, 'enrollment.json'), 'utf8');
+    await writeAccount(f.authFile, jwt({ ...accessClaims(), exp }));
+    await assert.rejects(f.controller.pair('ABCD-1234'), { code: 'AUTH_REQUIRED' });
+    await assert.rejects(f.controller.session(), { code: 'AUTH_REQUIRED' });
+    assert.equal(f.calls.length, before);
+    assert.deepEqual(await f.controller.status(), { enrolled: false, enrollmentPreserved: true, phase: 'authenticationRequired', errorCode: 'AUTH_REQUIRED' });
+    assert.equal(await readFile(join(f.stateDir, 'enrollment.json'), 'utf8'), record);
+    assert.equal(f.keys.size, 1);
+  }
+});
+
+test('renewal denial, transport failure, stale cache, and account switch preserve enrollment and fail closed', async t => {
+  for (const scenario of ['denied', 'failed', 'stale', 'switched']) {
+    const f = await fixture(t, { refreshAccount: async ({ authFile }) => {
+      if (scenario === 'denied') throw Object.assign(new Error('private rejection'), { code: 'AUTH_REQUIRED' });
+      if (scenario === 'failed') throw new Error('private transport detail');
+      if (scenario === 'switched') await writeAccount(authFile, jwt(accessClaims('workspace-two', 'owner-two')), 'workspace-two');
+    } });
+    await f.authorize(); const before = f.calls.length, record = await readFile(join(f.stateDir, 'enrollment.json'), 'utf8');
+    await writeAccount(f.authFile, jwt({ ...accessClaims(), exp: 1 }));
+    const code = scenario === 'switched' ? 'ACCOUNT_CHANGED' : scenario === 'failed' ? 'AUTH_REFRESH_FAILED' : 'AUTH_REQUIRED';
+    await assert.rejects(f.controller.pair('ABCD-1234'), { code });
+    const status = await f.controller.status();
+    assert.equal(status.enrolled, false); assert.equal(status.enrollmentPreserved, true); assert.equal(status.errorCode, code);
+    assert(!JSON.stringify(status).includes('private'));
+    assert.equal(f.calls.length, before); assert.equal(f.keys.size, 1);
+    assert.equal(await readFile(join(f.stateDir, 'enrollment.json'), 'utf8'), record);
+  }
+});
+
+test('official 401 marks account authentication unavailable without replaying a possibly accepted pairing request', async t => {
+  const f = await fixture(t); await f.authorize(); await f.controller.close();
+  let pairCalls = 0, recover = false;
+  const controller = await createRemoteController({ authFile: f.authFile, stateDir: f.stateDir, deviceKey: f.deviceKey,
+    fetch: async (url, request) => {
+      if (url.endsWith('/client/pair')) { ++pairCalls; return new Response(null, { status: 401 }); }
+      return f.fetch(url, request);
+    }, refreshAccount: async () => {
+      if (!recover) throw Object.assign(new Error('official sign-in needed'), { code: 'AUTH_REQUIRED' });
+      if (recover !== 'stale') await writeAccount(f.authFile, jwt({ ...accessClaims(), exp: Date.now() / 1000 + 7200 }));
+    } });
+  t.after(() => controller.close());
+  const record = await readFile(join(f.stateDir, 'enrollment.json'), 'utf8');
+  await assert.rejects(controller.pair('ABCD-1234'), e => e.code === 'AUTH_REQUIRED' && e.outcome === 'unknown');
+  assert.equal((await controller.status()).phase, 'authenticationRequired');
+  assert.equal(pairCalls, 1);
+  recover = 'stale';
+  assert.equal((await controller.status()).phase, 'authenticationRequired');
+  recover = true;
+  assert.deepEqual(await controller.status(), { enrolled: true, phase: 'ready' });
+  assert.equal(pairCalls, 1); assert.equal(f.keys.size, 1);
+  assert.equal(await readFile(join(f.stateDir, 'enrollment.json'), 'utf8'), record);
+});
+
+test('credentials are rechecked immediately before an HTTP request after key validation', async t => {
+  const f = await fixture(t); await f.authorize();
+  const get = f.deviceKey.getDeviceKeyPublic, before = f.calls.length;
+  f.deviceKey.getDeviceKeyPublic = async id => {
+    const key = await get(id); await writeAccount(f.authFile, jwt({ ...accessClaims(), exp: 1 })); return key;
+  };
+  await assert.rejects(f.controller.pair('ABCD-1234'), { code: 'AUTH_REQUIRED' });
+  assert.equal(f.calls.length, before);
+});
+
+test('remote membership rejects a same-owner workspace claim mismatch without altering ordinary login', async t => {
+  for (const refreshed of [false, true]) {
+    const mismatch = jwt({ ...accessClaims(), 'https://api.openai.com/auth': {
+      chatgpt_account_id: 'workspace-two', chatgpt_account_user_id: 'owner-one', user_id: 'login-user' } });
+    const f = await fixture(t, { refreshAccount: async ({ authFile }) => writeAccount(authFile, mismatch) });
+    await f.authorize(); const before = f.calls.length, record = await readFile(join(f.stateDir, 'enrollment.json'), 'utf8');
+    await writeAccount(f.authFile, refreshed ? jwt({ ...accessClaims(), exp: 1 }) : mismatch);
+    await assert.rejects(f.controller.pair('ABCD-1234'), { code: 'AUTH_REQUIRED' });
+    assert.equal(JSON.parse(await readFile(f.authFile, 'utf8')).tokens.access_token, mismatch);
+    assert.equal((await f.controller.status()).phase, 'authenticationRequired');
+    assert.equal(f.calls.length, before); assert.equal(f.keys.size, 1);
+    assert.equal(await readFile(join(f.stateDir, 'enrollment.json'), 'utf8'), record);
+  }
+});
+
+test('matching-workspace legacy user_id remains a usable remote membership fallback', async t => {
+  const f = await fixture(t);
+  await writeAccount(f.authFile, jwt({ exp: Date.now() / 1000 + 3600,
+    'https://api.openai.com/auth': { account_id: 'workspace-one', user_id: 'owner-one' } }));
+  await f.authorize();
+  assert.equal((await f.controller.status()).phase, 'ready');
+  assert.equal((await f.controller.pair('ABCD-1234')).environmentId, 'host-one');
+});
+
+test('expired account credentials during initial setup report recoverable authentication instead of remaining starting', async t => {
+  const f = await fixture(t); await writeAccount(f.authFile, jwt({ ...accessClaims(), exp: 1 }));
+  await assert.rejects(f.controller.startAuthorization(), { code: 'AUTH_REQUIRED' });
+  assert.deepEqual(await f.controller.status(), { enrolled: false, phase: 'authenticationRequired', errorCode: 'AUTH_REQUIRED' });
+  assert.equal(f.calls.length, 0); assert.equal(f.created, 0);
+});
