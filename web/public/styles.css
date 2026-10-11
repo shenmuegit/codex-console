@@ -72,6 +72,7 @@ nav { display: grid; gap: 2px; }
 .work-layout[data-sidebar-collapsed="true"] .sidebar-open { display: inline-flex; }
 .chat-feed { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(24px, calc((100% - var(--content-width)) / 2)) 28px; overscroll-behavior: contain; }
 #messages { width: 100%; }
+.thinking-status { padding: 12px 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .message { padding: 16px 0; overflow-wrap: anywhere; line-height: 1.6; }
 .message > header, .message > summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .message-user { width: fit-content; margin: 12px 0 16px auto; max-width: 85%; padding: 10px 16px; background: var(--user); border-radius: 18px; }

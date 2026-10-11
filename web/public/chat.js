@@ -636,17 +636,22 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || (menuTarget.kind === 'project' ? busyProjects : busyThreads).has(menuTarget.id);
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    const accepted = state?.acceptedTurn;
+    if (accepted && (!state.ready || accepted.thread !== state.thread || accepted.cursor.generation !== state.generation || state.turns.some(turn => turn.id === accepted.id))) state.acceptedTurn = null;
+    const last = active?.items.at(-1), streaming = last?.type === 'agentMessage' && last._incomplete && messageText(last).trim();
+    const thinking = Boolean(state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
+    if (thinkingStatus.hidden !== !thinking) thinkingStatus.hidden = !thinking;
     if (state) state.online = online;
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || state?.thread?.preview || (state && !state.ready ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name || state?.thread?.preview || '';
     $('#older-history').hidden = !state?.historyCursor;
     $('#older-history').disabled = Boolean(state?.historyLoading);
     $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';
-    const hasMessages = Boolean(state?.turns.some(t => t.items?.length)); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
+    const hasMessages = Boolean(state?.turns.some(t => t.items?.length) || active || state?.acceptedTurn); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
-    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
+    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || Boolean(state.acceptedTurn) || state.commandPending || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
@@ -709,7 +714,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     finally { presentationPending = false; if (presentationAgain) { presentationAgain = false; loadPresentation(); } }
   }
   async function submit() {
-    if (!selected?.ready || !online || selected.deleting || selected.pending || selected.commandPending) return;
+    if (!selected?.ready || !online || selected.deleting || selected.pending || selected.acceptedTurn || selected.commandPending) return;
     const action = commandAction(selected.draft);
     if (action && !selected.composing) {
       const state = selected, commandText = state.draft; state.commandPending = true; draw();
@@ -722,8 +727,12 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state); save(state); draw(); $('#chat-error').textContent = '';
     try {
-      await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
+      const response = await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
         mode: activeTurn(state) ? followups.sendMode() : 'start', clientUserMessageId: submission.id });
+      const turn = response.result?.turn;
+      if (turn?.id && turn.status === 'inProgress' && state.ready && response.cursor?.generation === state.generation && response.cursor.seq > state.cursor.seq && !state.turns.some(existing => existing.id === turn.id)) {
+        state.acceptedTurn = { id: turn.id, cursor: response.cursor, thread: state.thread };
+      }
       settleSend(state, submission.id, { ok: true });
     } catch (e) { settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
     finally { save(state); if (selected === state) draw(); }

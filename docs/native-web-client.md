@@ -98,6 +98,12 @@ nodes, expanded activities and unchanged image/download references stay mounted;
 plain deltas reuse their existing reply body. Background conversation deltas do
 not redraw the selected chat. Unchanged draft attachments retain their nodes and
 focused controls, while upload progress, errors and removal still update normally.
+An accepted message immediately shows a muted **Thinking** status at the end of
+the transcript, including before the native start event arrives. This temporary
+feedback does not create a chat item or advance the SSE cursor. It gives way to
+streaming reply text or native input forms, resumes between commentary and further
+work, and disappears when the turn ends. Failed or uncertain submissions and queued
+messages do not invent a running turn; stale replies cannot leave the status stuck.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
