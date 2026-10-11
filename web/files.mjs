@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createHostFilesystem } from './host-filesystem.mjs';
+import { ensureRemoteUploadStorage } from './remote-upload-storage.mjs';
 import { collectTargets } from './transcript.mjs';
 import { formatNativePath } from './public/composer.js';
 
@@ -115,8 +116,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
   async function transfer(meta, file) {
     const home = await remoteFs.directory(codex.info?.()?.codexHome), paths = remoteFs.paths();
     const base = paths.join(home, 'console-uploads');
-    const { entries: homeEntries } = await remoteFs.read('fs/readDirectory', { path: home });
-    if (!homeEntries.some(entry => (paths.sep === '\\' ? entry.fileName.toLowerCase() : entry.fileName) === 'console-uploads')) await remoteFs.read('fs/createDirectory', { path: base, recursive: false });
+    await ensureRemoteUploadStorage(codex, home);
     await remoteFs.directory(base);
     const directory = paths.join(base, meta.id), path = paths.join(directory, meta.storedName);
     const { entries: directories } = await remoteFs.read('fs/readDirectory', { path: base });
@@ -137,6 +137,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     if (entries.some(entry => entry.fileName !== meta.storedName) || entries.length > 1) throw fail(409, 'UNSAFE_REFERENCE', '远端附件目标已存在。');
     const expected = await file.handle.readFile();
     if (entries.length) {
+      await ensureRemoteUploadStorage(codex, home, path);
       const checked = await checkedRemote(path, [directory]);
       const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
       await checkedRemote(path, [directory], checked.metadata);
@@ -146,6 +147,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       await remoteFs.read('fs/writeFile', { path, dataBase64: expected.toString('base64') });
       await checkedRemote(path, [directory]);
     }
+    await ensureRemoteUploadStorage(codex, home, path);
     meta.remotePath = path; delete meta.remoteTransferPath; await store(meta); byPath.set(path, meta);
     return path;
   }

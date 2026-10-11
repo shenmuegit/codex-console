@@ -165,13 +165,43 @@ Uploads retain the existing bounded server staging, filename/image validation,
 and local no-follow checks in a private state namespace per host. Sending an
 attachment transfers its exact bytes through native `fs/writeFile` to
 `<remote codexHome>/console-uploads/<opaque upload ID>/content[.ext]`, and passes
-that remote path to the native composer. Transfer intent is persisted before the first remote directory/file mutation.
+that remote path to the native composer. Transfer intent is persisted before
+the first per-upload directory/file mutation.
 After an interrupted or uncertain RPC, retries reconcile that owned directory
 and exact bytes: a completed write with a lost reply is reused, missing bytes
-are written once, and changed or unexpected content is rejected. Remote uploads are capped at 24,000,000
+are written once, and changed or unexpected content is rejected. Remote uploads
+are capped at 24,000,000
 bytes (or a lower configured cap) to fit Base64 and JSON inside our relay bound;
 the existing local cap is unchanged. Completed staging and remote copies remain
 for conversation reuse; no automatic remote deletion is implemented.
+
+Native `fs/createDirectory`/`fs/writeFile` defaults alone do not guarantee private
+permissions. Before attachment bytes are sent, a fixed server-owned
+[`command/exec`](https://learn.chatgpt.com/docs/app-server) prepares and verifies
+storage. It inherits the host's configured sandbox/permission profile without
+an override, elevated roots, environment changes, or a `process/*` fallback.
+Browsers cannot submit this command or supply a script.
+
+Unix hosts need an already installed **Python 3**; it is not assumed on every
+Mac and the server does not install it. Standard-library directory descriptors
+with `O_NOFOLLOW` check ancestor ownership/write permissions and create
+`console-uploads` with mode 0700 from the start. Existing storage must be owned
+by the native execution user and disallow group/other access; attachments must
+be regular files owned by that user with a single hard link. Preparation is
+idempotent when its reply is lost. Missing Python, a denied sandbox operation,
+unsafe existing storage, or changed permissions returns
+`REMOTE_STORAGE_NOT_PRIVATE` and preserves browser/server staging.
+
+Windows hosts need built-in **Windows PowerShell** and an ACL-capable filesystem.
+A fixed encoded command passes paths as JSON data, rejects reparse points and
+untrusted/writable ancestors, and uses
+[`DirectoryInfo.Create(DirectorySecurity)`](https://learn.microsoft.com/en-us/dotnet/api/system.io.directoryinfo.create?view=netframework-4.8.1)
+to apply a protected current-user-only inheritable DACL at creation. The base,
+per-upload directory and any existing file ACL are verified; other principals'
+allow entries are rejected. Existing unsafe permissions are not silently
+rewritten. Missing runtime/APIs, inaccessible ACLs, or policies that prevent
+verification fail closed. Windows ACL behavior has not been verified on a real
+owner device; fixture checks are not that evidence.
 
 Upload requests, reference downloads, photo previews, Markdown thread links,
 subagent links, exports, and side chats retain `host`. Drafts, attachment IDs,
@@ -179,7 +209,7 @@ and pending recovery are stored under a host-specific browser key even when
 thread IDs collide. Existing local draft keys remain readable. Unknown IDs on
 another host fail closed; a remote path cannot authorize reading server files.
 
-Run `node --test test/remote-filesystem.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
+Run `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
 and `npm test` from `web/`. The Unix/Windows filesystem and browser tests use
 fixtures, not paired official clients. Live read/write/event, concurrent-host,
 and reconnect verification remains an owner-authorized gate.

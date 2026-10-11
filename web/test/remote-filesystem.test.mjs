@@ -16,6 +16,7 @@ function host(windows = false) {
   const metadata = node => ({ isFile: false, isDirectory: false, isSymlink: false, createdAtMs: 1, modifiedAtMs: 1, ...node });
   const codex = { info: () => ({ platformFamily: windows ? 'windows' : 'unix', codexHome: home }), async rpc(method, params) {
     calls.push({ method, params }); let result = {};
+    if (method === 'command/exec') { addDirectory(paths.join(home, 'console-uploads')); return { result: { exitCode: 0, stdout: 'codex-console-private-v1\n', stderr: '' } }; }
     if (method === 'fs/createDirectory') { if (params.recursive === false && nodes.has(params.path)) throw new Error('Already exists'); addDirectory(params.path); }
     else if (method === 'fs/writeFile') nodes.set(params.path, { isFile: true, dataBase64: params.dataBase64 });
     else if (method === 'fs/unwatch') {}
@@ -167,4 +168,23 @@ for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'
   const written = h.calls.find(call => call.method === 'fs/writeFile'); h.nodes.get(written.params.path).dataBase64 = Buffer.from('CHANGED').toString('base64');
   await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'UNSAFE_REFERENCE' });
   assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1); assert.equal(h.nodes.get(written.params.path).dataBase64, Buffer.from('CHANGED').toString('base64'));
+});
+
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} storage permission denial stops before any attachment mutation`, async t => {
+  const h = host(windows), files = await filesAt(t, h, 'host-a'), meta = await upload(files, Buffer.from('PRIVATE'), 'note.txt', 'text/plain'), rpc = h.codex.rpc;
+  h.codex.rpc = async (method, params) => { if (method === 'command/exec') return { result: { exitCode: 1, stdout: '', stderr: 'Storage is not private' } }; return rpc(method, params); };
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  assert.equal(h.calls.some(call => ['fs/createDirectory', 'fs/writeFile'].includes(call.method)), false);
+});
+
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} private preparation reply loss preserves staged attachment and safely resumes`, async t => {
+  const h = host(windows), stateDir = await mkdtemp(join(tmpdir(), 'private-prepare-recovery-')); t.after(() => rm(stateDir, { recursive: true, force: true }));
+  const config = { stateDir, remoteHost: { id: 'host-a' }, codex: h.codex }, files = createFiles(config), meta = await upload(files, Buffer.from('private bytes'), 'note.txt', 'text/plain');
+  const rpc = h.codex.rpc; let replyLost = true;
+  h.codex.rpc = async (method, params) => { const result = await rpc(method, params); if (replyLost && method === 'command/exec') { replyLost = false; throw new Error('Preparation reply lost'); } return result; };
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  assert.equal(h.calls.some(call => call.method === 'fs/writeFile'), false);
+  const input = await createFiles(config).attachmentInputs([meta.id], 'collision');
+  assert.equal(h.nodes.get(input[0].text).dataBase64, Buffer.from('private bytes').toString('base64'));
+  assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1);
 });

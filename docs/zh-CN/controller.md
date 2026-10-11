@@ -134,18 +134,39 @@ Base64 RPC 结果，不是远端文件描述符流；大文件可能超过当前
 上传保留原有的有界服务器暂存、文件名和照片格式校验、本地 no-follow 检查，
 每个设备使用独立的私有状态目录。发送附件时，通过原生 `fs/writeFile` 将原始
 字节写入 `<远端 codexHome>/console-uploads/<不透明上传 ID>/content[.扩展名]`，
-并把远端路径传给原生输入框。在首次远端目录/文件变更前持久化传输意图。RPC 中断或结果未知后，重试核对
+并把远端路径传给原生输入框。在首次每附件目录/文件变更前持久化传输意图。
+RPC 中断或结果未知后，重试核对
 已登记的目录和原始字节：写入完成但响应丢失时复用文件，缺失内容才写入，
-拒绝变化或未知内容。为让
-Base64 和 JSON 容纳在当前 relay 上限内，远端单文件上限为 24,000,000 字节
+拒绝变化或未知内容。为让 Base64 和 JSON 容纳在当前 relay 上限内，远端单文件上限为 24,000,000 字节
 （配置更低时使用配置值）；本地上限不变。完成的暂存和远端副本保留供会话复用，
 尚未自动删除远端副本。
+
+原生 `fs/createDirectory` / `fs/writeFile` 的默认权限不足以保证私有存储。
+发送附件字节之前，服务端通过固定的
+[`command/exec`](https://learn.chatgpt.com/docs/app-server) 准备并核验目录，继承
+主机当前沙箱/权限配置，不覆盖策略、不扩大 writable roots、不修改环境，也不
+回退到 `process/*`。浏览器不能提交命令或脚本。
+
+Unix 主机需要**已安装 Python 3**；不能假定每台 Mac 都有，服务端不会安装它。
+标准库使用带 `O_NOFOLLOW` 的目录句柄逐级检查所有者和写权限，从创建时就让
+`console-uploads` 具备 0700 权限。已有目录必须属于原生执行用户且禁止组和
+其他用户访问；附件必须是该用户拥有且仅有一个硬链接的常规文件。准备目录的
+响应丢失后可安全重复核验。运行时缺失、沙箱拒绝、已有目录不安全或权限变化
+均返回 `REMOTE_STORAGE_NOT_PRIVATE`，浏览器草稿和服务端暂存保留。
+
+Windows 主机需要**系统 Windows PowerShell** 和支持 ACL 的文件系统。固定
+编码命令把路径作为 JSON 数据传入，拒绝 reparse point 和不可信/可写祖先，
+通过 [`DirectoryInfo.Create(DirectorySecurity)`](https://learn.microsoft.com/en-us/dotnet/api/system.io.directoryinfo.create?view=netframework-4.8.1)
+在创建时应用只允许当前用户、禁止继承外部权限的可继承 DACL。核验根目录、
+每附件目录和已有文件 ACL，拒绝其他主体的 Allow 条目。不会自动重写已有
+不安全权限。运行时/API 缺失、ACL 不可读或主机策略阻止核验时拒绝传输。
+Windows ACL 尚未在真实用户设备上验证，夹具检查不能替代实机证据。
 
 上传请求、文件下载、照片预览、Markdown 会话链接、子代理链接、导出与侧边聊天
 均保留 `host`。草稿、附件 ID 和待确认恢复信息使用按设备区分的浏览器存储键，
 会话 ID 相同也不会混用；已有本地草稿键继续可读。其他设备上的未知 ID 被拒绝，
 远端路径不能授权读取服务器本地文件。
 
-在 `web/` 中运行 `node --test test/remote-filesystem.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
+在 `web/` 中运行 `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
 和 `npm test`。Unix/Windows 文件系统与浏览器检查使用测试夹具，不代表真实官方客户端配对成功。
 真实设备的读写、事件、双设备并发和重连仍是需要用户授权完成的验证门槛。
