@@ -56,6 +56,11 @@
           <section id="native-requests" aria-label="待回答的原生请求"></section>
           <div id="chat-empty" class="welcome"><h2>开始构建</h2><p>从侧栏选择或新建会话。</p></div>
         </div>
+        <section id="workspace-error" class="chat-error" hidden aria-label="设备连接恢复">
+          <p id="workspace-error-message" class="error" role="alert"></p>
+          <label class="device-picker" for="recovery-host-picker"><span>切换设备</span><select id="recovery-host-picker" aria-label="选择恢复设备"></select></label>
+          <button id="recover-connections" class="more-button" type="button" aria-controls="connections-dialog">恢复设备连接</button>
+        </section>
         <div id="chat-error" class="error chat-error" role="alert"></div>
         <form id="composer" class="composer">
           <section id="queued-messages" class="queued-messages" aria-label="排队消息" hidden></section>

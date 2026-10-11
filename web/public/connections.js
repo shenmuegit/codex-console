@@ -1,6 +1,19 @@
 export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   const $ = id => document.querySelector('#' + id), abort = new AbortController(), options = { signal: abort.signal };
   let alive = true, enrolled = false, timer, generation = 0;
+  const pickers = [$('host-picker'), $('recovery-host-picker')];
+  function updateHosts(hosts = []) {
+    for (const picker of pickers) {
+      const items = [{ id: 'local', name: 'server 本机' }, ...hosts];
+      if (!items.some(host => host.id === selectedHost)) items.push({ id: selectedHost, name: selectedHost + ' · 暂不可用' });
+      picker.replaceChildren(...items.map(host => {
+        const option = document.createElement('option'); option.value = host.id;
+        option.textContent = host.name + (host.online === false ? ' · 未连接' : host.online === true ? ' · 已连接' : ''); return option;
+      }));
+      picker.value = selectedHost;
+    }
+  }
+  updateHosts();
   const states = { ready: 'server 已就绪，输入被控端连接码即可添加设备。', unconfigured: 'server 尚未完成首次授权。',
     starting: '正在准备官方账号确认…', authorizing: '等待完成官方账号确认。', enrolling: '正在登记 server 控制端…',
     authenticationRequired: 'server 官方账号登录已失效，请恢复官方账号登录后刷新；已有控制端身份保留。',
@@ -22,12 +35,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
         $('controller-callback-form').hidden = true; $('controller-callback').value = '';
         const { hosts } = await api('/api/controller/hosts');
         if (!alive || current !== generation) return;
-        const local = document.createElement('option'); local.value = 'local'; local.textContent = 'server 本机';
-        const items = [local, ...hosts.map(host => {
-          const option = document.createElement('option'); option.value = host.id;
-          option.textContent = host.name + (host.online === false ? ' · 未连接' : host.online === true ? ' · 已连接' : ''); return option;
-        })];
-        $('host-picker').replaceChildren(...items); $('host-picker').value = selectedHost;
+        updateHosts(hosts);
       }
       clearTimeout(timer);
       if (!enrolled && ['starting', 'authorizing', 'enrolling'].includes(status.phase)) timer = setTimeout(refresh, 2000);
@@ -41,7 +49,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   $('show-connections').addEventListener('click', () => { $('connections-dialog').showModal(); refresh(); }, options);
   $('close-connections').addEventListener('click', () => $('connections-dialog').close(), options);
   $('refresh-connections').addEventListener('click', refresh, options);
-  $('host-picker').addEventListener('change', () => selectHost($('host-picker').value), options);
+  for (const picker of pickers) picker.addEventListener('change', () => selectHost(picker.value), options);
   $('controller-authorize').addEventListener('click', () => action($('controller-authorize'), async () => {
     const started = await api('/api/controller/authorize', {}), url = new URL(started.url);
     if (url.origin !== 'https://auth.openai.com' || url.pathname !== '/oauth/authorize') throw new Error('官方授权地址无效。');

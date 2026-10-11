@@ -142,6 +142,18 @@ coverage described below. This Web entry does not prove successful live
 enrollment or pairing; owner authorization and tests against official hosts
 remain mandatory completion gates.
 
+Startup checks the owner login with an unscoped status request before initializing
+the selected device. A removed/unknown host, unavailable controller enrollment or
+account, or native startup failure stays in the workspace with its device error.
+Both device pickers retain the selected host, including an unavailable placeholder;
+choose **server 本机** (server local) explicitly to return to this server, or another listed
+device. The startup recovery controls also appear inside the chat pane, where
+mobile and side-chat users can reach them without the sidebar. **恢复设备连接** (Recover device connection) opens the existing setup/status dialog; after restoring the controller
+or host, reload the page to retry that same device. Only an actual HTTP 401 opens
+the owner login screen. Failed remote requests never fall back to local, and
+switching devices closes the old view/stream without carrying its model or cursor
+to the new device.
+
 ## Remote paths, attachments, and browser drafts
 
 The selected host's native initialization supplies `platformFamily` and
