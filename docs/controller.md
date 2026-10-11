@@ -42,3 +42,36 @@ The checks use real local callback listeners and a controlled token endpoint.
 They establish the server flow's guards, not successful live OpenAI enrollment.
 The public native OAuth client and enrollment scope were observed in installed
 version 26.928.21956; custom-controller support is still unverified.
+
+## Protected enrollment and host codes
+
+`web/remote-controller.mjs` now owns enrollment, refresh, code submission, and
+host listing. Supply an external private `authFile`, an external mode-700
+`stateDir`, and the protected-key component's create/get/sign/delete methods.
+The module preserves the ordinary auth file and does not use another device's
+controller ID. It checks account, challenge purpose/audience/target/expiration,
+key identity, fresh authorization scope, and its signature before registration.
+
+One private `enrollment.json` stores the server identity and relay session
+together. It is published atomically with mode 600; an existing record is not
+overwritten by initial enrollment. `pending.json` identifies only this server's
+candidate and its process owner. Duplicate setup clicks and another live
+candidate's setup are rejected. Failures independently clean up this candidate's
+key and remote identity; a failed cleanup keeps a private retry marker.
+Account changes and missing/mismatched keys preserve the record and prevent
+code claiming. Expired relay sessions refresh with the original protected key.
+
+The native key component was copied, checksum-checked, and tested from the
+private ignored installation at `.tools/controller-key/remote-control-device-key.node`.
+Creating/getting/signing/verifying/deleting an isolated key passed there without
+loading application JavaScript or launching a desktop process. The copy's
+SHA-256 is `517ddc383936597370f731df1d64ba6bf97555756c1b770900db608911dad8ff`.
+It requires the working Linux TPM resource manager. This server uses encrypted
+software vTPM: its component reports `hardware_tpm`, but that is not evidence of
+physical hardware protection. Reboot startup is not configured yet.
+
+Verify from `web/` with `node --test test/remote-controller.test.mjs` and `npm test`.
+The current checks cover 13 controller scenarios and 342 Web tests. Enrollment
+fixtures use independent ECDSA verification; they do not prove acceptance by the
+live official service. Owner authorization, live enrollment/pairing, relay/RPC
+control, and the Web setup interface remain to be completed and verified.
