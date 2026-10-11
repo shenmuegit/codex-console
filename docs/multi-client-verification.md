@@ -313,23 +313,42 @@ The loopback callback remains private. See the official
 Candidate keys, authorization links, and resulting controller credentials use
 mode 600 outside Git. Existing ordinary Codex login credentials are not replaced.
 
-### Separate server setup from device onboarding
+### Independent server controller
 
-SSH callback forwarding above is a temporary headless authentication fallback,
-not a requirement for every user or every paired device. Supported official
-desktop clients expose remote-control setup under Settings > Connections:
-Control this computer configures the controlled host; Control other devices
-configures the controller. To preserve Web → server → controlled devices, the
-controller identity and protected key must belong to the server environment.
-An existing controller identity on another computer is not the server's identity.
+The required architecture is Web → our server → controlled Codex hosts. The
+server must implement the controller: its own enrollment, protected key, code
+claiming, relay connections, and routing to each host. Running the official
+desktop application on the server is not part of this requirement. A suggested
+desktop setup shortcut was withdrawn and removed before use; it is not an
+onboarding prerequisite. SSH callback forwarding above was only an experimental
+headless authentication fallback, not a step required for each paired device.
 
-With one shared ChatGPT account/workspace, server controller setup belongs to
-initialization, while each host supplies its own pairing code. Separate accounts
-need their own authorization; official pairing requires account/workspace
-matching. This proposed onboarding flow is not yet implemented or verified for
-the Linux server. See the [official client setup](https://learn.chatgpt.com/docs/remote-connections#pick-up-work-from-another-device).
+The official code-based workflow uses a secure relay, as documented in
+[Remote connections](https://learn.chatgpt.com/docs/remote-connections).
+The installed desktop submits a code to the OpenAI backend; the code does not
+specify a custom server address. An independent server using this workflow would
+need to act as a relay controller. This differs from accepting direct inbound
+connections from unmodified official clients at an arbitrary server URL.
+Official support for a custom relay controller has not been established.
 
-The latest authorization attempt expired without a callback. Its temporary key
-was deleted and its pending controller removed with HTTP 204. On 2026-10-12,
-the server still had no registered controller record or session. A newly supplied
-host code was not retried in that known-unenrolled state; no connection is claimed.
+On 2026-10-12, the installed CLI 0.159.2 help and generated experimental protocol
+schema were checked. `remote-control` exposes start, stop, and generation of a
+host pairing code. Its `remoteControl/*` methods manage the controlled host;
+the schema contains no controller enrollment, code-claim, or remote-host-connect
+method. The sanitized result is outside Git in
+`official-controller-test/controller-schema-proof.json`. Schema generation
+does not authorize, enroll, or pair a device.
+
+The current native Web server constructs one `createCodexClient` with its
+configured backend URL. It has no remote-host controller or multi-host routing
+module. The standalone enrollment probes do not launch a desktop GUI, but still
+reuse packaged helpers and the native device-key component; they are not yet a
+desktop-independent production implementation.
+
+With one shared ChatGPT account/workspace, controller enrollment belongs to
+server initialization, while each host supplies its own pairing code. Project
+directories may differ. The latest authorization attempt expired without a
+callback; its temporary key was deleted and its pending controller removed with
+HTTP 204. The server still has no registered controller record or session. A
+newly supplied host code was not retried in that known-unenrolled state. Neither
+independent relay control nor direct official-client connections are verified.
