@@ -312,3 +312,24 @@ The loopback callback remains private. See the official
 [SSH callback forwarding guidance](https://learn.chatgpt.com/docs/auth#fallback-forward-the-localhost-callback-over-ssh).
 Candidate keys, authorization links, and resulting controller credentials use
 mode 600 outside Git. Existing ordinary Codex login credentials are not replaced.
+
+### Separate server setup from device onboarding
+
+SSH callback forwarding above is a temporary headless authentication fallback,
+not a requirement for every user or every paired device. Supported official
+desktop clients expose remote-control setup under Settings > Connections:
+Control this computer configures the controlled host; Control other devices
+configures the controller. To preserve Web → server → controlled devices, the
+controller identity and protected key must belong to the server environment.
+An existing controller identity on another computer is not the server's identity.
+
+With one shared ChatGPT account/workspace, server controller setup belongs to
+initialization, while each host supplies its own pairing code. Separate accounts
+need their own authorization; official pairing requires account/workspace
+matching. This proposed onboarding flow is not yet implemented or verified for
+the Linux server. See the [official client setup](https://learn.chatgpt.com/docs/remote-connections#pick-up-work-from-another-device).
+
+The latest authorization attempt expired without a callback. Its temporary key
+was deleted and its pending controller removed with HTTP 204. On 2026-10-12,
+the server still had no registered controller record or session. A newly supplied
+host code was not retried in that known-unenrolled state; no connection is claimed.

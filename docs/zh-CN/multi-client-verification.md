@@ -264,3 +264,20 @@ node ~/.local/state/codex-console-web/official-controller-test/enroll-controller
 [SSH 回调转发说明](https://learn.chatgpt.com/docs/auth#fallback-forward-the-localhost-callback-over-ssh)。
 待注册密钥、授权链接及最终控制端凭据均以 600 权限保存在 Git 外，不替换已有
 Codex 日常登录凭据。
+
+### 区分 server 初始化与设备接入
+
+上面的 SSH 回调转发是临时的无桌面认证备用方案，不是每个用户或每台设备
+配对时都要执行的步骤。支持远控功能的官方桌面客户端可在“设置 > 连接”中
+操作：“控制此电脑”配置被控主机，“控制其他设备”配置控制端。保持
+Web → server → 被控设备的架构时，控制端身份及受保护密钥必须属于 server
+环境；另一台电脑已有的控制端身份不能直接当作 server 的身份。
+
+共用一个 ChatGPT 账号及工作区时，server 控制端设置属于初始化，每台被控
+主机各自提供配对码。不同账号需要各自授权；官方配对要求账号和工作区一致。
+这是预期的接入流程，尚未在 Linux server 上实现或验证成功。参见
+[官方客户端设置](https://learn.chatgpt.com/docs/remote-connections#pick-up-work-from-another-device)。
+
+最近一次授权尝试没有收到回调，超时后已删除临时密钥，并以 HTTP 204 移除
+待注册控制端。2026-10-12 检查确认 server 仍没有已注册控制端记录或会话。
+所有者新提供的主机码没有在已知未注册的状态下重复提交，尚未建立连接。
