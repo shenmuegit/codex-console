@@ -29,7 +29,7 @@ export function renderUserUnits(config) {
   if (!Array.isArray(backendArgs)) throw fail('INVALID_BACKEND_ARGS', 'Native executable arguments must be an array.');
   const common = `Type=simple\nWorkingDirectory=${config.workspace.replace(/%/g, '%%')}\nEnvironmentFile=${config.environmentFile.replace(/%/g, '%%')}\nUMask=0077\nRestart=on-failure\nRestartSec=2\nTimeoutStopSec=30\n`;
   const backend = MARKER + `[Unit]\nDescription=Codex Console native app server\n[Service]\n${common}Environment=${unitValue('CODEX_HOME=' + config.backendHome)}\nExecStart=:${[config.backendExecutable, ...backendArgs, '--listen', config.backendUrl || 'ws://127.0.0.1:4500', '--managed-daemon'].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
-  const web = MARKER + `[Unit]\nDescription=Codex Console authenticated browser client\nAfter=${BACKEND}\nWants=${BACKEND}\n[Service]\n${common}ExecStart=:${[config.nodePath, join(config.repoDir, 'web/server.mjs'), '--config', config.configPath].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
+  const web = MARKER + `[Unit]\nDescription=Codex Console authenticated browser client\nAfter=${BACKEND}\nWants=${BACKEND}\n[Service]\n${common}ExecStart=:${[config.nodePath, ...(config.remoteController ? ['--use-env-proxy'] : []), join(config.repoDir, 'web/server.mjs'), '--config', config.configPath].map(value => unitValue(value)).join(' ')}\n[Install]\nWantedBy=default.target\n`;
   return { backend, web };
 }
 export function assertPrivate(info) {
@@ -71,6 +71,15 @@ export async function validateConfig(config, configPath) {
   renderUserUnits({ ...config, configPath });
   const repo = await realpath(config.repoDir);
   await requireExternal(repo, [configPath, config.stateDir, config.backendHome, config.environmentFile, config.tlsKey, config.tlsCert]);
+  if (config.remoteController != null) {
+    const control = config.remoteController;
+    if (!control || typeof control !== 'object' || Array.isArray(control) ||
+        Object.keys(control).some(key => !['deviceKeyModule', 'stateDir'].includes(key)) || !pathValue(control.deviceKeyModule) ||
+        (control.stateDir != null && !pathValue(control.stateDir))) throw fail('INVALID_CONTROLLER_CONFIG', 'Configure a private native key component and external controller state.');
+    await requireExternal(repo, [control.stateDir ?? join(config.stateDir, 'controller')]);
+    const module = await stat(control.deviceKeyModule); assertPrivate(module);
+    if (!module.isFile()) throw fail('INVALID_CONTROLLER_CONFIG', 'The native key component must be a file.');
+  }
   await requireExecutables(config);
   for (const path of [config.backendHome, config.workspace, config.repoDir]) if (!(await stat(path)).isDirectory()) throw fail('DIRECTORY_REQUIRED', 'A configured directory is missing.');
   await access(join(repo, 'web/server.mjs'), constants.R_OK);

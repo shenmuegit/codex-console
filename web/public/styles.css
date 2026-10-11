@@ -246,3 +246,11 @@ dialog::backdrop { background: #0006; }
 }
 @media (pointer: coarse) { button, .icon-button, .attachment-actions > summary, .select-control select, .message-activity > .activity-summary, .message-tool > summary, .message-subagent a { min-height: 44px; } .icon-button, .send-button { width: 44px; } .thread-actions { flex-basis: 44px; width: 44px; min-height: 44px; padding: 14px; opacity: 1; } .archive-filter { min-height: 44px; gap: 8px; } .archive-filter input { width: 16px; height: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+/* Device controls share the existing sidebar and dialog layout. */
+.device-picker{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;padding:8px 12px}
+.device-picker select{min-width:0;width:100%;min-height:44px}
+.authorization-link{display:inline-block;text-decoration:none;margin:12px 0}
+#controller-setup{margin-bottom:24px}
+#controller-callback-form{margin-top:16px}
+#connections-dialog{max-width:min(560px,calc(100vw - 32px))}
+#connections-dialog p{overflow-wrap:anywhere}

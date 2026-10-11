@@ -39,6 +39,8 @@
           </section>
         </div>
         <footer class="sidebar-footer">
+          <label class="device-picker" for="host-picker"><span>设备</span><select id="host-picker" aria-label="选择 Codex 设备"><option value="local">server 本机</option></select></label>
+          <button id="show-connections" class="global-usage" type="button" aria-controls="connections-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>连接设备</span><span class="footer-arrow" aria-hidden="true">›</span></button>
           <button id="show-usage" class="global-usage" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
         </footer>
       </div>
@@ -79,6 +81,27 @@
       <aside id="side-chat" class="side-chat" aria-label="侧边聊天" hidden><header><h2>侧边聊天</h2><button id="close-side-chat" class="icon-button" type="button" aria-label="关闭侧边聊天">×</button></header><iframe id="side-chat-frame" title="侧边聊天"></iframe></aside>
     </div>
   </main>
+  <dialog id="connections-dialog" aria-labelledby="connections-title">
+    <div class="dialog-heading"><h2 id="connections-title">连接 Codex 设备</h2><button id="close-connections" class="icon-button" type="button" aria-label="关闭设备连接">×</button></div>
+    <p id="controller-state" class="muted" role="status" aria-live="polite">正在读取 server 状态…</p>
+    <section id="controller-setup">
+      <p>首次使用，确认允许这个 server 通过你的 ChatGPT 账号控制已配对的设备。所有设备使用同一账号和工作区。</p>
+      <button id="controller-authorize" class="primary" type="button">开始官方授权</button>
+      <a id="controller-auth-link" class="primary authorization-link" target="_blank" rel="noopener noreferrer" hidden>打开官方账号确认</a>
+      <form id="controller-callback-form" class="project-form" hidden>
+        <label for="controller-callback">浏览器返回的地址<input id="controller-callback" type="url" maxlength="8192" spellcheck="false" autocomplete="off" placeholder="http://localhost:1455/auth/callback?..." required></label>
+        <p class="muted small">如果浏览器返回 localhost 后打不开页面，把地址栏的完整地址复制到这里。无需 SSH 命令。</p>
+        <button id="controller-callback-submit" class="primary" type="submit">提交账号确认</button>
+      </form>
+    </section>
+    <form id="pair-form" class="project-form">
+      <label for="pair-code">被控客户端的连接码<input id="pair-code" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-1234" required></label>
+      <p class="muted small">在要被控制的官方客户端打开“设置 → 连接 → 控制此电脑”，复制电脑连接码。项目目录可以不同。</p>
+      <button id="pair-submit" class="primary" type="submit" disabled>连接设备</button>
+    </form>
+    <p id="connections-error" class="error" role="alert"></p>
+    <button id="refresh-connections" class="more-button" type="button">刷新设备列表</button>
+  </dialog>
   <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
   <dialog id="goal-dialog" aria-labelledby="goal-title">
     <div class="dialog-heading"><h2 id="goal-title">目标</h2><button id="close-goal" type="button" class="icon-button" aria-label="关闭目标">×</button></div>

@@ -16,12 +16,17 @@ import { encodeComposer, utf8Range, updateQueuedInput, displayNativeText } from 
 import { itemText } from './public/chat.js';
 import { approvalDecisions } from './public/requests.js';
 import { validateConfig } from './service.mjs';
+import { createRequire } from 'node:module';
+import { createRemoteController } from './remote-controller.mjs';
+import { createRemoteRelay } from './remote-relay.mjs';
+import { createRemoteHostPool } from './remote-hosts.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
+  ['/connections.js', ['connections.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
   ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
   ['/requests.js', ['requests.js', 'text/javascript; charset=utf-8']],
@@ -178,10 +183,10 @@ export function writeEvent(res, event) {
   res.write(data); return true;
 }
 
-export function createWebServer({ config, codex }) {
+export function createWebServer({ config, codex, sharedAuth, controller, routeHost, onLogout }) {
   const origin = new URL(config.origin);
   if (origin.protocol !== 'https:' || origin.origin !== config.origin) throw error(500, 'INVALID_ORIGIN', '配置须包含完整 HTTPS 来源地址。');
-  const auth = createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
+  const auth = sharedAuth ?? createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
   const chats = new Map(), snapshots = new WeakMap(), renderTimers = new Map(), writes = new Map(), deleting = new Set();
   const initialHistory = new WeakMap();
   const queueLocks = new Set(), recoveryDir = join(config.stateDir, 'queue-recovery');
@@ -655,6 +660,44 @@ export function createWebServer({ config, codex }) {
       }
       const token = cookieToken(req), session = auth.verifySession(token);
       if (!session) throw error(401, 'LOGIN_REQUIRED', '请先登录。');
+      if (url.pathname.startsWith('/api/controller/')) {
+        if (req.method === 'GET' && url.pathname === '/api/controller/status') {
+          const state = controller ? await controller.status() : { enrolled: false, phase: 'unconfigured' };
+          reply(res, 200, { available: Boolean(controller), enrolled: state.enrolled === true, phase: state.phase,
+            ...(state.errorCode ? { errorCode: state.errorCode } : {}) }); return;
+        }
+        if (!['/api/controller/authorize', '/api/controller/callback', '/api/controller/pair', '/api/controller/hosts'].includes(url.pathname)) {
+          throw error(404, 'NOT_FOUND', '没有这个控制端接口。');
+        }
+        if (!controller) throw error(503, 'CONTROLLER_UNCONFIGURED', 'server 控制端尚未配置，请联系管理员完成首次设置。');
+        if (req.method === 'GET' && url.pathname === '/api/controller/hosts') {
+          reply(res, 200, { hosts: await controller.listHosts() }); return;
+        }
+        if (req.method !== 'POST' || url.pathname === '/api/controller/hosts') throw error(405, 'METHOD_NOT_ALLOWED', '请使用正确的请求方式。');
+        const body = await readJson(req);
+        if (url.pathname === '/api/controller/authorize') {
+          fields(body, []);
+          const attempt = await controller.startAuthorization(), destination = new URL(attempt.url);
+          if (destination.origin !== 'https://auth.openai.com' || destination.pathname !== '/oauth/authorize' ||
+              destination.username || destination.password || destination.hash) throw error(500, 'INVALID_AUTH_DESTINATION', '授权地址不正确。');
+          attempt.completion?.catch(() => {});
+          reply(res, 200, { url: destination.href, expiresAt: attempt.expiresAt }); return;
+        }
+        if (url.pathname === '/api/controller/callback') {
+          fields(body, ['url']);
+          if (!text(body.url, 8192)) throw error(400, 'INVALID_CALLBACK', '请粘贴浏览器返回的完整 localhost 地址。');
+          reply(res, 200, controller.submitCallback(body.url)); return;
+        }
+        fields(body, ['code']);
+        if (!text(body.code, 32)) throw error(400, 'INVALID_PAIRING_CODE', '请输入被控端提供的连接码。');
+        reply(res, 200, await controller.pair(body.code)); return;
+      }
+      const host = url.searchParams.get('host');
+      if (host != null && host !== (config.remoteHost?.id ?? 'local') && url.pathname !== '/api/logout') {
+        if (url.searchParams.getAll('host').length !== 1 || !text(host, 256)) throw error(400, 'INVALID_REMOTE_HOST', '请选择有效设备。');
+        if (!routeHost) throw error(503, 'REMOTE_HOST_UNAVAILABLE', '远端设备不可用，请重新选择设备。');
+        const target = await routeHost(host); target.emit('request', req, res); return;
+      }
       if (req.method === 'GET' && url.pathname === '/api/status') { reply(res, 200, publicStatus()); return; }
       if (req.method === 'GET' && url.pathname === '/api/thread/export') {
         const threadId = url.searchParams.get('threadId'); if (!id(threadId)) throw error(400, 'INVALID_THREAD', '会话 ID 不正确。');
@@ -724,6 +767,7 @@ export function createWebServer({ config, codex }) {
       if (url.pathname === '/api/logout') {
         auth.revoke(token);
         for (const [key, view] of views) if (view.session === session) releaseView(key, view);
+        onLogout?.(session);
         reply(res, 200, {}, { 'Set-Cookie': cookie('', 0) });
       } else if (url.pathname === '/api/view') {
         fields(body, []);
@@ -889,12 +933,24 @@ export function createWebServer({ config, codex }) {
       } else throw error(404, 'NOT_FOUND', '没有这个操作。');
     } catch (e) {
       if (res.headersSent) { res.destroy(); return; }
-      const status = e.status ?? ({ ORIGIN_DENIED: 403, LOGIN_DENIED: 401, LOGIN_THROTTLED: 429, STALE_NATIVE_REQUEST: 409, NATIVE_DISCONNECTED: 503, NATIVE_TIMEOUT: 504 }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
+      const status = e.status ?? ({ ORIGIN_DENIED: 403, LOGIN_DENIED: 401, LOGIN_THROTTLED: 429, STALE_NATIVE_REQUEST: 409, NATIVE_DISCONNECTED: 503, NATIVE_TIMEOUT: 504,
+        INVALID_CALLBACK: 400, INVALID_PAIRING_CODE: 400, CALLBACK_USED: 409, AUTH_NOT_STARTED: 409, AUTH_IN_PROGRESS: 409,
+        CONTROLLER_EXISTS: 409, CONTROLLER_NOT_ENROLLED: 409, ACCOUNT_CHANGED: 409, DEVICE_KEY_UNAVAILABLE: 503, CLEANUP_REQUIRED: 503,
+        REMOTE_HOST_NOT_PAIRED: 404,
+      }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
       reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}), ...(e.queueRecovery ? { queueRecovery: e.queueRecovery } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
     }
   });
   server.requestTimeout = 600_000; server.headersTimeout = 10_000;
-  server.on('close', () => { off(); for (const [key, view] of views) releaseView(key, view); for (const value of renderTimers.values()) clearTimeout(value.timer); });
+  server.on('session-revoked', session => { for (const [key, view] of views) if (view.session === session) releaseView(key, view); });
+  let disposed = false;
+  server.dispose = () => {
+    if (disposed) return;
+    disposed = true; off();
+    for (const [key, view] of views) releaseView(key, view);
+    for (const value of renderTimers.values()) clearTimeout(value.timer);
+  };
+  server.on('close', server.dispose);
   return server;
 }
 
@@ -905,9 +961,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const config = JSON.parse(readFileSync(values.config, 'utf8'));
     await validateConfig(config, values.config);
     const codex = createCodexClient({ url: config.backendUrl, expectedHome: config.backendHome });
-    const server = createWebServer({ config, codex });
+    const sharedAuth = createAuth({ passwordHash: config.passwordHash });
+    const controller = config.remoteController ? await createRemoteController({ authFile: join(config.backendHome, 'auth.json'),
+      stateDir: config.remoteController.stateDir ?? join(config.stateDir, 'controller'),
+      deviceKey: createRequire(import.meta.url)(config.remoteController.deviceKeyModule) }) : null;
+    const relay = controller ? createRemoteRelay({ controller }) : null;
+    const hosts = controller ? createRemoteHostPool({ config, sharedAuth, controller, relay, createServer: createWebServer }) : null;
+    const controls = controller ? { status: () => controller.status(), startAuthorization: () => controller.startAuthorization(),
+      submitCallback: url => controller.submitCallback(url), pair: code => controller.pair(code), listHosts: () => hosts.list() } : null;
+    const server = createWebServer({ config, codex, sharedAuth, controller: controls,
+      ...(hosts ? { routeHost: id => hosts.server(id), onLogout: session => hosts.revoke(session) } : {}) });
+    const cleanup = async () => { hosts?.close(); relay?.close(); codex.close(); await controller?.close(); };
     server.listen(config.port, config.listenHost, () => console.log('Codex browser service ready.'));
-    server.on('error', () => { codex.close(); process.exitCode = 1; console.error('Browser service could not listen.'); });
-    for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => { server.closeAllConnections(); server.close(() => codex.close()); });
+    server.on('error', () => { cleanup(); process.exitCode = 1; console.error('Browser service could not listen.'); });
+    for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => { server.closeAllConnections(); server.close(cleanup); });
   } catch (e) { console.error(`Browser service startup failed (${e.code ?? e.name}).`); process.exitCode = 1; }
 }

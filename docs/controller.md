@@ -108,3 +108,36 @@ wrong challenges/identities, duplicates, chunks, sequence gaps, and reconnect
 without mutation replay. They still do not establish live official-host
 interoperability. Web setup/host routing and real owner authorization remain the
 next integration gates.
+
+## Web setup and device routing
+
+The owner-authenticated Web now provides a **Connect devices** dialog, official
+authorization link, copied callback input, controlled-host code input, and a
+device selector. Setup and code submission require the existing owner login and
+canonical origin. Only the authorization URL, expiration and public status are
+returned; controller credentials and signing interfaces remain server-side.
+
+Optional private configuration enables the controller:
+
+```json
+"remoteController": {
+  "deviceKeyModule": "/absolute/private/remote-control-device-key.node",
+  "stateDir": "/absolute/external/controller-state"
+}
+```
+
+The key component must be owned by the service user with no group/other access.
+Controller state must be outside the repository. Managed controller-enabled
+units launch Node with `--use-env-proxy`. Existing local configurations work
+without this option.
+
+The server connects paired hosts through a pool with separate native clients,
+view maps, event streams, and private state namespaces. Child Web handlers share
+the owner's login and enforce it before routing. An unknown host never falls
+back to the local backend; account changes close existing remote clients.
+The local APIs remain available. The current full suite passes 361 tests.
+
+Remote filesystem/attachment handling and host-scoped browser drafts still need
+integration before live remote editing is advertised. This Web entry does not
+prove successful live enrollment or pairing; owner authorization and tests
+against official hosts remain mandatory completion gates.

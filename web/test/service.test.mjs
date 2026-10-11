@@ -54,6 +54,19 @@ test('bootstrap requires explicit existing source binary, companion, private cer
   assert.throws(() => assertPrivate({ uid: process.getuid() + 1, mode: 0o600 }), { code: 'OWNER_REQUIRED' });
 });
 
+test('controller configuration requires a private native component and external state, and enables proxy-aware Node startup', async t => {
+  const f = await configFixture(t), deviceKeyModule = join(f.root, 'device-key.node');
+  await writeFile(deviceKeyModule, 'native-component-fixture', { mode: 0o600 });
+  const remoteController = { deviceKeyModule, stateDir: join(f.root, 'controller') };
+  await validateConfig({ ...f.config, remoteController }, f.configPath);
+  const unit = renderUserUnits({ ...f.config, configPath: f.configPath, remoteController }).web;
+  assert.match(unit, /--use-env-proxy/);
+  await chmod(deviceKeyModule, 0o644);
+  await assert.rejects(validateConfig({ ...f.config, remoteController }, f.configPath), { code: 'PRIVATE_FILE_REQUIRED' });
+  await chmod(deviceKeyModule, 0o600);
+  await assert.rejects(validateConfig({ ...f.config, remoteController: { ...remoteController, stateDir: join(f.config.repoDir, 'controller') } }, f.configPath), { code: 'PRIVATE_PATH_IN_REPO' });
+});
+
 test('existing original home requires explicit boolean opt-in without weakening private file checks', async t => {
   const f = await configFixture(t), previous = process.env.CODEX_HOME; process.env.CODEX_HOME = f.config.backendHome;
   try {

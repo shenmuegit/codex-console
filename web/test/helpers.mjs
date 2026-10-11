@@ -97,7 +97,7 @@ export async function connectedFixture({ expectedHome } = {}) {
   return { client, peer, flush: tick };
 }
 
-export async function httpsFixture() {
+export async function httpsFixture(options = {}) {
   const native = await connectedFixture();
   const dir = await mkdtemp(join(tmpdir(), 'codex-web-'));
   const tlsKey = join(dir, 'key.pem'), tlsCert = join(dir, 'cert.pem');
@@ -107,7 +107,7 @@ export async function httpsFixture() {
   const config = { origin: 'https://127.0.0.1:0', listenHost: '127.0.0.1', port: 0,
     backendUrl: 'ws://127.0.0.1:4500', workspace: dir, tlsKey, tlsCert, stateDir: join(dir, 'state'),
     passwordHash: await hashPassword('fixture-passphrase'), generatedRoots: [], uploadLimitBytes: 33_554_432 };
-  const server = createWebServer({ config, codex: native.client });
+  const server = createWebServer({ config, codex: native.client, ...options });
   const eventResponses = [];
   server.on('request', (req, res) => { if (req.url.startsWith('/api/events?')) eventResponses.push(res); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
