@@ -75,7 +75,7 @@ RPC 控制和 Web 设置入口仍待完成及验证。
 `signChallenge()`。签名前校验 client/账号身份、会话令牌摘要、目标、有效期、
 nonce 和 scope。这个对象不能序列化给浏览器，公开设置状态使用 `status()`。
 
-每台主机使用独立 UUID、序号、待处理请求 ID 及原生客户端。即使两台主机使用
+每台主机使用独立 UUID、序号及原生客户端。即使两台主机使用
 相同 RPC 或审批 ID，回复、通知和审批答案仍留在对应主机。单帧限制 153,600
 字节，消息限制 32 MiB，全部未完成消息的存储限制 64 MiB。UTF-8 按字节分片，
 拼接完成后才解析 JSON；丢弃重复消息，序号缺口使对应主机重新连接。
@@ -172,3 +172,7 @@ Windows ACL 尚未在真实用户设备上验证，夹具检查不能替代实�
 在 `web/` 中运行 `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
 和 `npm test`。Unix/Windows 文件系统与浏览器检查使用测试夹具，不代表真实官方客户端配对成功。
 真实设备的读写、事件、双设备并发和重连仍是需要用户授权完成的验证门槛。
+
+中继数据流不另存 RPC 待处理队列；原生调用超时会释放唯一的待处理调用表。
+不带请求 ID 的中继错误只关闭对应主机的数据流，未完成调用以结果未知失败，
+不会猜测已过期的请求 ID，也不会重放执行请求。

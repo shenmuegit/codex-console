@@ -90,7 +90,7 @@ headers and `signChallenge()`. The proof checks client/account identity, session
 token hash, target, expiration, nonce, and scopes before signing. This object
 must never be serialized to a browser; use `status()` for public setup state.
 
-Each host stream has its own UUID, sequence counters, pending request IDs, and
+Each host stream has its own UUID, sequence counters and
 native client. Responses, notifications, and approval answers stay with that
 host even when two hosts use the same RPC or approval IDs. Frames are limited
 to 153,600 bytes, messages to 32 MiB, and aggregate partial-message storage to
@@ -216,3 +216,8 @@ Run `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test
 and `npm test` from `web/`. The Unix/Windows filesystem and browser tests use
 fixtures, not paired official clients. Live read/write/event, concurrent-host,
 and reconnect verification remains an owner-authorized gate.
+
+Relay streams do not retain a second RPC request queue: native RPC timeouts
+release the sole pending-call map. A relay error without a request ID closes
+only its host stream and fails pending calls with an unknown outcome. It never
+guesses an expired request ID or replays a mutation.

@@ -127,11 +127,7 @@ export function createRemoteRelay({ controller, openWebSocket = (url, headers) =
     if (!object(message)) { stream.finish(true); return; }
     stream.releaseAssembly(); stream.lastServerSeq = packet.seq_id;
     if (message.type === 'error' && !message.method && !Object.hasOwn(message, 'id')) {
-      const requestId = stream.pendingIds.shift();
-      if (requestId == null) return;
-      const { type, ...error } = message; message = { id: requestId, error };
-    } else if (Object.hasOwn(message, 'id') && !message.method) {
-      const index = stream.pendingIds.indexOf(message.id); if (index >= 0) stream.pendingIds.splice(index, 1);
+      stream.finish(true); return;
     }
     stream.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
   }
@@ -142,7 +138,6 @@ export function createRemoteRelay({ controller, openWebSocket = (url, headers) =
     lastServerSeq = null;
     lastPong = Date.now();
     assembly = null;
-    pendingIds = [];
     streamId = randomUUID();
     constructor(envId) {
       super(); this.envId = envId; streams.set(this.streamId, this);
@@ -163,7 +158,6 @@ export function createRemoteRelay({ controller, openWebSocket = (url, headers) =
       if (typeof raw !== 'string' || Buffer.byteLength(raw) > MESSAGE_LIMIT) throw fault('RELAY_MESSAGE_LIMIT', 'The host message exceeds the size limit.');
       const message = JSON.parse(raw);
       if (!object(message)) throw fault('RELAY_INVALID_RPC', 'Send a JSON-RPC object.');
-      if (message.method && Object.hasOwn(message, 'id')) this.pendingIds.push(message.id);
       const packet = this.envelope('client_message', { skip_history: false, message });
       if (Buffer.byteLength(JSON.stringify(packet)) <= CHUNK_BYTES) { send(packet); return; }
       const body = Buffer.from(JSON.stringify(message)), count = Math.max(2, Math.ceil(body.length / CHUNK_BYTES)), size = Math.ceil(body.length / count);
@@ -178,7 +172,7 @@ export function createRemoteRelay({ controller, openWebSocket = (url, headers) =
     releaseAssembly() { if (this.assembly) { assemblyBytes -= this.assembly.bytes; this.assembly = null; } }
     finish(error = false) {
       if (this.readyState === 3) return;
-      this.readyState = 3; this.releaseAssembly(); streams.delete(this.streamId); this.pendingIds.length = 0;
+      this.readyState = 3; this.releaseAssembly(); streams.delete(this.streamId);
       if (error) this.dispatchEvent(new Event('error'));
       this.dispatchEvent(new Event('close'));
       if (!streams.size) disconnect();

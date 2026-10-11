@@ -141,3 +141,41 @@ test('connection loss reports an unknown mutation outcome and reconnect initiali
   assert.notEqual(initializations.at(-1).stream_id, original);
   assert.equal(f.peer.messages.filter(p => p.message?.method === 'turn/start').length, 1);
 });
+
+test('uncorrelated relay errors close only the affected host after still-connected RPC timeouts', async t => {
+  const f = await setup(t), sockets = {};
+  f.peer.onMessage(p => {
+    if (p.message?.method === 'initialize') f.peer.reply(p, { id: p.message.id, result: {} });
+    if (p.env_id === 'host-b' && p.message?.method === 'model/list') f.peer.reply(p, { id: p.message.id, result: { host: 'host-b' } });
+  });
+  const a = createCodexClient({ socketFactory: () => sockets.a = f.relay.openHost('host-a') });
+  const b = createCodexClient({ socketFactory: () => sockets.b = f.relay.openHost('host-b') });
+  t.after(() => { a.close(); b.close(); });
+  await waitFor(() => a.status().online && b.status().online);
+  const originalTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => originalTimer(callback, ms === 30_000 ? 20 : ms, ...args));
+  for (let i = 0; i < 20; ++i) {
+    await assert.rejects(a.rpc('turn/start', { threadId: 'fixture-thread', input: [] }), e => e.code === 'NATIVE_TIMEOUT' && e.outcome === 'unknown');
+  }
+  assert.equal(a.status().online, true);
+  assert.equal(sockets.a.pendingIds?.length ?? 0, 0, 'Timed-out RPCs must not accumulate in the relay');
+  const current = a.rpc('turn/start', { threadId: 'fixture-thread', input: [] });
+  const rejected = assert.rejects(current, e => e.code === 'NATIVE_DISCONNECTED' && e.outcome === 'unknown');
+  await waitFor(() => f.peer.messages.filter(p => p.message?.method === 'turn/start').length === 21);
+  f.peer.reply(f.peer.messages.at(-1), { type: 'error', code: 'fixture-error', message: 'Uncorrelated failure' });
+  await rejected;
+  assert.equal((await b.rpc('model/list', {})).result.host, 'host-b');
+  assert.equal(f.peer.messages.filter(p => p.message?.method === 'turn/start').length, 21);
+});
+
+test('an uncorrelated relay error fails a current RPC without guessing its request ID', async t => {
+  const f = await setup(t);
+  f.peer.onMessage(p => {
+    if (p.message?.method === 'initialize') f.peer.reply(p, { id: p.message.id, result: {} });
+    if (p.message?.method === 'turn/start') f.peer.reply(p, { type: 'error', code: 'fixture-error' });
+  });
+  const client = createCodexClient({ socketFactory: () => f.relay.openHost('host-a') });
+  t.after(() => client.close());
+  await waitFor(() => client.status().online);
+  await assert.rejects(client.rpc('turn/start', {}), e => e.code === 'NATIVE_DISCONNECTED' && e.outcome === 'unknown');
+});
