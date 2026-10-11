@@ -90,3 +90,39 @@ Windows/macOS 官方桌面构建、其他设备的实际界面、本轮真实消
 跨端停止、IDE/第三方客户端、多台独立主机及无人值守重连尚未验证。
 app-server 的 WebSocket 传输仍属实验功能；结果只适用于上述版本和操作，
 不能外推为所有 Codex 版本均兼容。
+
+## 官方配对路线：server 作为控制端
+
+所有者明确的目标是 **Web → Codex Console server → 官方中继 → 已配对的
+Codex 设备**。控制端注册、配对、连接和 RPC 路由均由 server 负责，网页操作
+这个 server。前面的本地共享 app-server 检查不能作为官方中继路线的验证结果。
+
+提供的桌面版本为 `26.1007.21434`。服务器已安装的桌面包是 `26.928.21956`，
+本轮检查的是该包中的控制端实现，没有核验更新的外部构建。该实现需要注册
+控制端、完成账户二次授权、创建受保护设备密钥，并在注册和中继连接时提供
+设备密钥证明。CLI `remote-control pair` 用于生成被控主机的配对码，其帮助
+没有提供接收另一主机配对码的控制端命令。
+
+2026-10-11 新的前置检查：
+
+- 原生 `remoteControl/status/read` 返回 `disabled`，没有环境注册；本地
+  桌面状态中的控制端注册记录为零。
+- 官方 `native/remote-control-device-key.node` 组件可在 Node 24 加载。
+  异步调用 `createDeviceKey("allow_os_protected_nonextractable")` 时，返回
+  `remote_control_device_key_tpm_unavailable` 和 `cannot open Linux TPM device`。
+  没有返回或登记任何设备密钥。
+- 当前 KVM server 没有 `/dev/tpm0`、`/dev/tpmrm0`，`/sys/class/tpm` 下也没有
+  设备。已有网页和后端服务继续运行，进程 ID 未变。
+
+下一项前置条件是为这台 Linux 控制端提供可用的 TPM/vTPM，或者使用官方
+组件能够创建所需受保护密钥的控制端环境。实际配对前，还要确认账号与工作区
+一致，并完成必要的账户授权。不以可导出密钥替代，也不把软件密钥冒充为
+受保护设备密钥。
+
+本轮没有注册官方中继控制端，也没有领取提供的配对码。server 是否能被接受为
+控制端、与外部新版桌面配对、多主机控制和网页动作到达被控主机均待验证。
+解决密钥前置条件本身不能证明这些能力，也不能证明官方支持第三方 server
+控制端。
+
+参见[官方远程连接要求](https://learn.chatgpt.com/docs/remote-connections)和
+[CLI 远程控制命令](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control)。

@@ -104,3 +104,46 @@ message streaming and cross-client interruption in this round, IDE/third-party
 clients, multiple independent hosts, and unattended reconnection remain
 unverified. The WebSocket app-server transport remains experimental; these
 results apply to the versions and operations above, not all Codex releases.
+
+## Official pairing route: server as controller
+
+The owner's clarified goal is **Web → Codex Console server → official relay →
+paired Codex devices**. The server owns controller enrollment, pairing,
+connections, and RPC routing; Web operates that server. The shared local
+app-server checks above do not verify this official relay route.
+
+The supplied desktop reports `26.1007.21434`. The installed server-side desktop
+package is `26.928.21956`; its packaged controller implementation was inspected,
+not the newer external build. That implementation enrolls a controller,
+requests step-up account authorization, creates a protected device key, and
+uses device-key proofs for enrollment and relay connections. CLI
+`remote-control pair` creates a host's pairing code; its help does not expose a
+command that accepts another host's code as a controller.
+
+Fresh prerequisite checks on 2026-10-11:
+
+- Native `remoteControl/status/read` returned `disabled`, with no environment
+  enrollment. The local desktop state contained zero controller enrollments.
+- The official `native/remote-control-device-key.node` addon loaded under Node
+  24. Its asynchronous `createDeviceKey("allow_os_protected_nonextractable")`
+  failed with `remote_control_device_key_tpm_unavailable` and
+  `cannot open Linux TPM device`. No device key was returned or registered.
+- This KVM server exposed neither `/dev/tpm0` nor `/dev/tpmrm0`, and
+  `/sys/class/tpm` contained no devices. Existing Web/backend services remained
+  running with their original process IDs.
+
+The next prerequisite is a usable TPM/vTPM for this Linux controller, or a
+controller environment whose official component can create the required
+protected key. Account/workspace matching and the required account
+authorization must also be completed before a real pairing attempt. Do not
+substitute an extractable key or falsely label software key material as a
+protected device key.
+
+No official relay controller was enrolled and no supplied pairing code was
+claimed. Server enrollment acceptance, pairing with the external build,
+multi-host control, and delivery of Web actions to those hosts remain pending.
+Fixing the key prerequisite alone does not establish those results or official
+support for a third-party server controller.
+
+See [official remote connection requirements](https://learn.chatgpt.com/docs/remote-connections)
+and [CLI remote-control commands](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control).
