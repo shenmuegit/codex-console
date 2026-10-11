@@ -75,3 +75,36 @@ The current checks cover 13 controller scenarios and 342 Web tests. Enrollment
 fixtures use independent ECDSA verification; they do not prove acceptance by the
 live official service. Owner authorization, live enrollment/pairing, relay/RPC
 control, and the Web setup interface remain to be completed and verified.
+
+## Relay transport and host isolation
+
+`web/remote-relay.mjs` implements the observed protocol-v3 relay transport.
+Node 24's built-in WebSocket sends the required authentication headers; a real
+local handshake and a CONNECT proxy check passed without adding a dependency.
+Run the service with `--use-env-proxy` when using this host's configured proxy.
+The underlying [Undici WebSocket interface](https://github.com/nodejs/undici/blob/main/docs/docs/api/WebSocket.md)
+supports headers in its Node-only initialization options.
+
+The controller's server-only `session()` result now supplies private handshake
+headers and `signChallenge()`. The proof checks client/account identity, session
+token hash, target, expiration, nonce, and scopes before signing. This object
+must never be serialized to a browser; use `status()` for public setup state.
+
+Each host stream has its own UUID, sequence counters, pending request IDs, and
+native client. Responses, notifications, and approval answers stay with that
+host even when two hosts use the same RPC or approval IDs. Frames are limited
+to 153,600 bytes, messages to 32 MiB, and aggregate partial-message storage to
+64 MiB. UTF-8 data is chunked as bytes and reassembled before JSON parsing.
+Duplicates are discarded; a stream sequence gap forces that host to reconnect.
+
+Connection loss rejects pending calls with an unknown outcome. A new connection
+initializes new host streams and resumes native snapshots rather than silently
+replaying a mutation. Pings maintain stream liveness; account/key validation and
+session refresh run with the heartbeat, and expired leases reconnect.
+
+The transport checks use a real local WebSocket peer and independently verify
+the device signature. They cover two hosts, colliding IDs, approval routing,
+wrong challenges/identities, duplicates, chunks, sequence gaps, and reconnect
+without mutation replay. They still do not establish live official-host
+interoperability. Web setup/host routing and real owner authorization remain the
+next integration gates.

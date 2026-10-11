@@ -187,13 +187,44 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
       challengeId: challenge.challenge_id, clientId: record.clientId, deviceIdentitySha256Base64url: hash,
       nonce: challenge.nonce, targetOrigin: challenge.target_origin, targetPath: challenge.target_path, type: 'remoteControlClientEnrollment',
     } }));
+    const signed = await signPayload(record, payload);
+    return { challenge_token: challenge.challenge_token, key_id: record.keyId, signature_der_base64: signed.signatureDerBase64,
+      signed_payload_base64: payload.toString('base64'), algorithm: signed.algorithm };
+  }
+  async function signPayload(record, payload) {
     let signed;
     try {
       signed = await deviceKey.signDeviceKey(record.keyId, payload);
       if (signed.algorithm !== record.algorithm || !verify('sha256', payload, publicKey(record), Buffer.from(signed.signatureDerBase64, 'base64'))) throw new Error();
     } catch { throw fault('INVALID_DEVICE_PROOF', 'The protected key did not produce a valid enrollment proof.'); }
-    return { challenge_token: challenge.challenge_token, key_id: record.keyId, signature_der_base64: signed.signatureDerBase64,
-      signed_payload_base64: payload.toString('base64'), algorithm: signed.algorithm };
+    return signed;
+  }
+  function relaySession(current, record, response) {
+    const tokenExpiresAt = validateSession(response, record);
+    return { enrollment: record, response, tokenExpiresAt,
+      headers: { Authorization: `Bearer ${current.token}`, 'ChatGPT-Account-Id': current.accountId,
+        originator: 'codex-console', 'x-codex-client-session-token': `Bearer ${response.remote_control_token}` },
+      async signChallenge(challenge) {
+        await enrolled();
+        const c = challenge;
+        if (c?.type !== 'device_key_challenge' || c?.purpose !== 'remote_control_client_websocket' || c?.audience !== 'remote_control_client_websocket' ||
+            c?.accountUserId !== record.accountUserId || c?.clientId !== record.clientId ||
+            c?.targetOrigin !== 'https://chatgpt.com' || c?.targetPath !== '/backend-api/codex/remote/control/client' ||
+            !text(c.sessionId) || !text(c.nonce, 512) || !/^[A-Za-z0-9_-]+$/.test(c.nonce) || Buffer.from(c.nonce, 'base64url').length < 32 ||
+            c?.tokenSha256Base64url !== digest(response.remote_control_token) || c?.tokenExpiresAt !== tokenExpiresAt || tokenExpiresAt <= Date.now() / 1000 ||
+            !Array.isArray(c.scopes) || c.scopes.length !== 1 || c.scopes[0] !== scope) {
+          throw fault('INVALID_DEVICE_CHALLENGE', 'The relay device challenge does not match this server session.');
+        }
+        const payload = Buffer.from(JSON.stringify({ domain: 'codex-device-key-sign-payload/v1', payload: {
+          accountUserId: record.accountUserId, audience: c.audience, clientId: record.clientId, nonce: c.nonce,
+          scopes: [scope], sessionId: c.sessionId, targetOrigin: c.targetOrigin, targetPath: c.targetPath,
+          tokenExpiresAt, tokenSha256Base64url: c.tokenSha256Base64url, type: 'remoteControlClientConnection',
+        } }));
+        const signed = await signPayload(record, payload);
+        return { type: 'device_key_proof', keyId: record.keyId, signatureDerBase64: signed.signatureDerBase64,
+          signedPayloadBase64: payload.toString('base64'), algorithm: signed.algorithm };
+      },
+    };
   }
   async function cleanup(candidate, current) {
     let keyRemoved = !candidate.enrollment?.keyId, clientRemoved = !candidate.enrollment?.clientId;
@@ -326,7 +357,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     async session() {
       const { current, record } = await enrolled();
       const expires = validateSession(state.session, record, true);
-      if (expires > Date.now() / 1000 + 30) return { enrollment: record, response: state.session, tokenExpiresAt: expires };
+      if (expires > Date.now() / 1000 + 30) return relaySession(current, record, state.session);
       if (!refreshing) {
         refreshing = (async () => {
           const started = await request('/codex/remote/control/client/refresh/start', current, { body: { client_id: record.clientId } });
@@ -343,7 +374,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
         })().finally(() => { refreshing = null; });
       }
       await refreshing;
-      return { enrollment: record, response: state.session, tokenExpiresAt: validateSession(state.session, record) };
+      return relaySession(current, record, state.session);
     },
     async close() {
       if (closing) return closing;

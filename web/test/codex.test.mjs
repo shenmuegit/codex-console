@@ -12,6 +12,11 @@ test('only configured loopback WebSocket endpoints can be used', () => {
   }
 });
 
+test('a server-owned relay transport cannot also configure a backend URL', () => {
+  assert.throws(() => createCodexClient({ socketFactory: 'browser-input' }), { code: 'INVALID_TRANSPORT' });
+  assert.throws(() => createCodexClient({ url: 'ws://evil.test:4500', socketFactory: () => assert.fail('Must not connect') }), { code: 'INVALID_TRANSPORT' });
+});
+
 test('an unexpected native home is never initialized for actions', async t => {
   const { client, peer } = await connectedFixture({ expectedHome: '/another-native-home' }); t.after(() => client.close());
   assert.equal(client.status().online, false); assert.equal(peer.sent.some(message => message.method === 'initialized'), false);

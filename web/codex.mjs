@@ -12,8 +12,11 @@ export function backendEndpoint(url) {
 }
 
 /** One native connection; results carry the cursor of their upstream response frame. */
-export function createCodexClient({ url, expectedHome }) {
-  const endpoint = backendEndpoint(url);
+export function createCodexClient({ url, expectedHome, socketFactory }) {
+  if (socketFactory !== undefined && (typeof socketFactory !== 'function' || url !== undefined)) {
+    throw fault('INVALID_TRANSPORT', 'Use one server-owned socket factory or a loopback backend URL.');
+  }
+  const endpoint = socketFactory ? { href: 'official-relay' } : backendEndpoint(url);
 
   const Socket = globalThis.WebSocket;
   const pending = new Map(), requests = new Map(), threads = new Map(), listeners = new Set();
@@ -115,7 +118,7 @@ export function createCodexClient({ url, expectedHome }) {
   function connect() {
     if (closed) return;
     ++generation; seq = 0;
-    const connection = socket = new Socket(endpoint.href);
+    const connection = socket = socketFactory ? socketFactory() : new Socket(endpoint.href);
     opening = setTimeout(() => connection.close(), 10_000);
     connection.addEventListener('open', async () => {
       try {

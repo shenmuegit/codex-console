@@ -1,99 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, stat, rm, access } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile, readFile, stat, rm, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { generateKeyPairSync, sign, verify, createPublicKey, createHash } from 'node:crypto';
+import { createHash, verify } from 'node:crypto';
 import { createRemoteController } from '../remote-controller.mjs';
-
-const jwt = claims => ['e30', Buffer.from(JSON.stringify(claims)).toString('base64url'), 'fixture-signature'].join('.');
-const accessClaims = (account = 'workspace-one', owner = 'owner-one') => ({ exp: Date.now() / 1000 + 3600,
-  'https://api.openai.com/auth': { account_id: account, account_user_id: owner, user_id: 'login-user' } });
-const stepUpClaims = () => ({ ...accessClaims(), scope: 'codex.remote_control.enroll',
-  iat: Date.now() / 1000, pwd_auth_time: Date.now() });
-
-async function fixture(t, options = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'codex-controller-test-'));
-  const authFile = join(root, 'auth.json'), stateDir = join(root, 'state'), calls = [], keys = new Map();
-  t.after(() => rm(root, { recursive: true, force: true }));
-  await writeFile(authFile, JSON.stringify({ tokens: { account_id: 'workspace-one', access_token: jwt(accessClaims()) } }), { mode: 0o600 });
-  let serial = 0, tokenSerial = 0, signs = 0, deletes = 0;
-  const deviceKey = {
-    async createDeviceKey(policy) {
-      assert.equal(policy, 'allow_os_protected_nonextractable');
-      const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-      const record = { keyId: `fixture-key-${++serial}`, algorithm: 'ecdsa_p256_sha256', protectionClass: 'hardware_tpm',
-        publicKeySpkiDerBase64: pair.publicKey.export({ format: 'der', type: 'spki' }).toString('base64') };
-      keys.set(record.keyId, { ...pair, record }); return record;
-    },
-    async getDeviceKeyPublic(id) { const key = keys.get(id); if (!key) throw new Error('Fixture key absent'); return key.record; },
-    async signDeviceKey(id, message) { ++signs; return { algorithm: 'ecdsa_p256_sha256', signatureDerBase64: sign('sha256', message, keys.get(id).privateKey).toString('base64') }; },
-    async deleteDeviceKey(id) { ++deletes; keys.delete(id); },
-  };
-  const challenge = (path, refresh = false) => ({ type: 'device_key_challenge', purpose: 'remote_control_client_enrollment',
-    audience: 'remote_control_client_enrollment', account_user_id: 'owner-one', client_id: 'server-created-client',
-    nonce: Buffer.alloc(32, 7).toString('base64url'), challenge_id: 'fixture-challenge', challenge_expires_at: Math.floor(Date.now() / 1000) + 600,
-    target_origin: 'https://chatgpt.com', target_path: '/backend-api' + path, challenge_token: 'fixture-challenge-token',
-    device_identity_hash: refresh ? (() => {
-      const r = keys.values().next().value.record;
-      return createHash('sha256').update(JSON.stringify({ algorithm: r.algorithm, keyId: r.keyId,
-        protectionClass: r.protectionClass, publicKeySpkiDerBase64: r.publicKeySpkiDerBase64 })).digest('base64url');
-    })() : null,
-    ...(options.challenge ?? {}) });
-  function checkProof(body, path) {
-    const proof = body.device_key_proof;
-    const payload = Buffer.from(proof.signed_payload_base64, 'base64');
-    const decoded = JSON.parse(payload);
-    const key = keys.get(proof.key_id);
-    assert(verify('sha256', payload, key.publicKey, Buffer.from(proof.signature_der_base64, 'base64')));
-    assert.equal(decoded.domain, 'codex-device-key-sign-payload/v1');
-    assert.equal(decoded.payload.type, 'remoteControlClientEnrollment');
-    assert.equal(decoded.payload.accountUserId, 'owner-one');
-    assert.equal(decoded.payload.clientId, 'server-created-client');
-    assert.equal(decoded.payload.targetOrigin, 'https://chatgpt.com');
-    assert.equal(decoded.payload.targetPath, '/backend-api' + path);
-    assert.equal(decoded.payload.nonce, Buffer.alloc(32, 7).toString('base64url'));
-    assert.deepEqual(Object.keys(decoded.payload), ['accountUserId', 'audience', 'challengeExpiresAt', 'challengeId',
-      'clientId', 'deviceIdentitySha256Base64url', 'nonce', 'targetOrigin', 'targetPath', 'type']);
-    assert.equal(proof.challenge_token, 'fixture-challenge-token');
-  }
-  const fetch = async (value, request = {}) => {
-    const url = new URL(value), body = request.body ? (url.pathname === '/oauth/token' ? Object.fromEntries(new URLSearchParams(request.body)) : JSON.parse(request.body)) : null;
-    calls.push({ url: url.href, method: request.method ?? 'GET', body, headers: request.headers });
-    assert.equal(request.redirect, 'error');
-    if (url.origin === 'https://auth.openai.com' && url.pathname === '/oauth/token') {
-      return Response.json({ access_token: jwt(options.stepUp ?? stepUpClaims()) });
-    }
-    assert.equal(url.origin, 'https://chatgpt.com');
-    assert.equal(request.headers['ChatGPT-Account-Id'], 'workspace-one');
-    if (url.pathname.endsWith('/client/enroll/start')) return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one', device_key_challenge: challenge('/codex/remote/control/client/enroll/finish') });
-    if (url.pathname.endsWith('/client/refresh/start')) return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one', device_key_challenge: challenge('/codex/remote/control/client/refresh/finish', true) });
-    if (url.pathname.endsWith('/client/enroll/finish') || url.pathname.endsWith('/client/refresh/finish')) {
-      checkProof(body, url.pathname.replace('/backend-api', ''));
-      await options.beforeFinish?.({ stateDir });
-      return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one',
-        expires_at: new Date(Date.now() + 600_000).toISOString(), scopes: ['remote_control_controller_websocket'],
-        remote_control_token: `fixture-relay-token-${++tokenSerial}`, ...(options.session ?? {}) });
-    }
-    if (url.pathname === '/backend-api/wham/remote/control/client/pair') return Response.json({ environment_id: 'host-one' });
-    if (url.pathname.endsWith('/clients/server-created-client/environments')) return Response.json({ items: [
-      { env_id: 'host-one', display_name: 'Laptop', host_name: 'pc', private_field: 'must-not-reach-browser' }], cursor: null });
-    if (request.method === 'DELETE' && url.pathname.endsWith('/clients/server-created-client')) return new Response(null, { status: 204 });
-    assert.fail('Unexpected official endpoint: ' + url.pathname);
-  };
-  const controller = await createRemoteController({ authFile, stateDir, deviceKey, fetch });
-  t.after(() => controller.close());
-  async function authorize(instance = controller) {
-    const attempt = await instance.startAuthorization();
-    const returned = new URL(attempt.redirectUri);
-    returned.searchParams.set('state', new URL(attempt.url).searchParams.get('state'));
-    returned.searchParams.set('code', 'approved-on-browser');
-    instance.submitCallback(returned.href);
-    return attempt.completion;
-  }
-  return { root, authFile, stateDir, calls, keys, deviceKey, fetch, controller, authorize,
-    get created() { return serial; }, get signed() { return signs; }, get deleted() { return deletes; } };
-}
+import { fixture, jwt, accessClaims, stepUpClaims } from './remote-controller-fixture.mjs';
 
 test('host codes cannot be claimed using a pending or absent controller identity', async t => {
   const f = await fixture(t);
@@ -252,4 +163,32 @@ test('a competing controller instance cannot delete a candidate while its owner 
   await assert.rejects(second.startAuthorization(), { code: 'AUTH_IN_PROGRESS' });
   assert.equal(f.keys.size, 1);
   assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 0);
+});
+
+test('relay proof is bound to the enrolled server, session token, target, expiration, and scopes', async t => {
+  const f = await fixture(t); await f.authorize();
+  const session = await f.controller.session();
+  assert.equal(typeof session.signChallenge, 'function');
+  assert.match(session.headers.Authorization, /^Bearer e30\./);
+  assert.equal(session.headers['ChatGPT-Account-Id'], 'workspace-one');
+  assert.equal(session.headers['x-codex-client-session-token'], 'Bearer fixture-relay-token-1');
+  const challenge = { type: 'device_key_challenge', purpose: 'remote_control_client_websocket', audience: 'remote_control_client_websocket',
+    sessionId: 'relay-session-one', targetOrigin: 'https://chatgpt.com', targetPath: '/backend-api/codex/remote/control/client',
+    accountUserId: 'owner-one', clientId: 'server-created-client', nonce: Buffer.alloc(32, 9).toString('base64url'),
+    tokenSha256Base64url: createHash('sha256').update('fixture-relay-token-1').digest('base64url'),
+    tokenExpiresAt: session.tokenExpiresAt, scopes: ['remote_control_controller_websocket'] };
+  for (const change of [{ targetOrigin: 'https://example.com' }, { targetPath: '/other' }, { clientId: 'another-client' },
+    { accountUserId: 'another-owner' }, { tokenSha256Base64url: Buffer.alloc(32).toString('base64url') },
+    { tokenExpiresAt: 1 }, { scopes: ['another-scope'] }, { nonce: 'short' }]) {
+    await assert.rejects(session.signChallenge({ ...challenge, ...change }), { code: 'INVALID_DEVICE_CHALLENGE' });
+  }
+  const signed = await session.signChallenge(challenge), payload = Buffer.from(signed.signedPayloadBase64, 'base64');
+  assert.equal(signed.type, 'device_key_proof');
+  assert.equal(signed.keyId, session.enrollment.keyId);
+  assert(verify('sha256', payload, f.keys.get(signed.keyId).publicKey, Buffer.from(signed.signatureDerBase64, 'base64')));
+  const decoded = JSON.parse(payload);
+  assert.equal(decoded.domain, 'codex-device-key-sign-payload/v1');
+  assert.equal(decoded.payload.type, 'remoteControlClientConnection');
+  assert.deepEqual(Object.keys(decoded.payload), ['accountUserId', 'audience', 'clientId', 'nonce', 'scopes', 'sessionId',
+    'targetOrigin', 'targetPath', 'tokenExpiresAt', 'tokenSha256Base64url', 'type']);
 });
