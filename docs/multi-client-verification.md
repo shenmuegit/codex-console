@@ -155,11 +155,11 @@ without installing it. Its package SHA-256 matched APT metadata, and its device
 key addon was byte-identical to the installed `26.928.21956` addon. This component
 comparison does not cover the external Windows/macOS `26.1007.21434` build.
 
-The server kernel enables `CONFIG_TCG_VTPM_PROXY=m` and includes
-`tpm_vtpm_proxy.ko.xz`. The driver is not loaded. Installing `swtpm` was simulated:
+The initial server check found `CONFIG_TCG_VTPM_PROXY=m` and
+`tpm_vtpm_proxy.ko.xz`, with the driver not loaded. Installing `swtpm` was simulated:
 three new packages, no upgrades or removals. Both the sudo capability check and
 the scoped `modprobe` attempt required a password, so no package or module was
-installed or loaded by this experiment.
+installed or loaded during that initial attempt.
 
 Two disposable helpers are prepared outside Git under
 `~/.local/state/codex-console-web/official-controller-test/`:
@@ -168,7 +168,7 @@ owned by `tss`; `check-device-key.cjs` checks native creation, public-key lookup
 SHA-256 signature verification, and temporary-key cleanup. Syntax checks passed.
 The unprivileged setup invocation stopped before any state changes, and the
 missing-device key check correctly failed before creating a key. Actual vTPM
-startup and positive signing checks remain pending administrator execution.
+startup and positive signing checks were pending administrator execution at that point.
 
 Sudo authentication grants the OS privileges needed for that setup. Official
 account authorization, controller enrollment, and device pairing are separate
@@ -202,3 +202,39 @@ Creating the kernel TPM interface still needs administrator privileges. The
 prepared kernel-device helper now uses the local runtime and no longer installs
 system packages. Keys, configuration, and TPM state remain outside Git as
 required by AGENTS.md; the device can be restricted to the application user.
+
+### Administrator provisioning and native device-key verification
+
+On 2026-10-11, authorized administrator execution loaded `tpm_vtpm_proxy` and
+created `/dev/tpm0` and `/dev/tpmrm0`. Both devices belong to the application
+user and use mode 600. The project-local emulator runs as `tss`, with no
+effective capabilities; the application user cannot read its encrypted-state
+key. No system packages were installed or existing application services restarted.
+
+The initial `swtpm --vtpm-proxy --runas tss` invocation failed because this
+version drops privileges before opening `/dev/vtpmx`, and proxy creation also
+requires `CAP_SYS_ADMIN`. The corrected helper creates the TPM 2 proxy with
+the standard `VTPM_PROXY_IOC_NEW_DEV` ioctl as administrator, passes its inherited
+descriptor to `swtpm chardev --fd`, and then uses `--runas tss`. The failed
+initial state was preserved separately; existing TPM data was not overwritten.
+See the [kernel implementation](https://github.com/torvalds/linux/blob/v6.12/drivers/char/tpm/tpm_vtpm_proxy.c)
+and [swtpm initialization order](https://github.com/stefanberger/swtpm/blob/v0.7.1/src/swtpm/swtpm_chardev.c).
+
+The installed official addon passed creation under
+`allow_os_protected_nonextractable`, matching public-key lookup, ECDSA P-256
+SHA-256 signing, independent signature verification, and temporary-key deletion.
+Its returned protection-class label was `hardware_tpm`; the actual device here
+is a **software vTPM**, so that label does not establish physical hardware
+protection or relay acceptance. Safe proof is saved outside Git as
+`~/.local/state/codex-console-web/official-controller-test/device-key-proof.json`.
+
+With the device ready, reproduce the key check as the application user:
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/check-device-key.cjs
+```
+
+The administrator setup helper refuses to replace an existing TPM or state
+directory. This is a running experiment for the current boot; automatic startup
+after reboot is not configured. Controller account authorization, enrollment,
+pairing, and delivery of Web commands to another host remain unverified.

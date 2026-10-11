@@ -133,17 +133,17 @@ Codex 设备**。控制端注册、配对、连接和 RPC 路由均由 server �
 SHA-256 与 APT 元数据一致，设备密钥组件与已安装的 `26.928.21956` 组件字节
 完全相同。这项比较没有覆盖外部 Windows/macOS 的 `26.1007.21434` 构建。
 
-server 内核启用了 `CONFIG_TCG_VTPM_PROXY=m`，包含
-`tpm_vtpm_proxy.ko.xz`，驱动尚未加载。`swtpm` 安装模拟结果为新增三个包，
+首次 server 检查确认内核启用了 `CONFIG_TCG_VTPM_PROXY=m`，包含
+`tpm_vtpm_proxy.ko.xz`，当时驱动尚未加载。`swtpm` 安装模拟结果为新增三个包，
 没有升级或删除。sudo 能力检查和具体的 `modprobe` 尝试都要求密码，因此
-本轮没有安装软件包或加载模块。
+首次尝试没有安装软件包或加载模块。
 
 两个一次性助手已放在仓库外的
 `~/.local/state/codex-console-web/official-controller-test/`：
 `prepare-vtpm-test.sh` 准备隔离软件 vTPM，加密状态由 `tss` 独立持有；
 `check-device-key.cjs` 检查原生密钥创建、公钥读取、SHA-256 签名验签和临时
 密钥清理。语法检查通过；普通用户执行准备脚本在写入前被拒绝，缺少设备时
-密钥检查在创建前正确报告失败。实际 vTPM 启动及签名成功路径仍待管理员执行。
+密钥检查在创建前正确报告失败。当时实际 vTPM 启动及签名成功路径待管理员执行。
 
 sudo 认证用于取得这一步所需的 OS 管理员权限。官方账号授权、控制端注册和
 设备配对是随后独立的步骤。软件 vTPM 实验不能证明物理 TPM 的保护能力，
@@ -172,3 +172,34 @@ env LD_LIBRARY_PATH="$PWD/.tools/vtpm/root/usr/lib/x86_64-linux-gnu:$PWD/.tools/
 改用项目内 socket。建立内核 TPM 接口仍需要管理员权限；已准备的设备初始化
 助手现使用项目内运行库，不再安装系统包。密钥、配置、TPM 状态继续按
 AGENTS.md 保存在 Git 仓库外，设备访问可以限制为应用用户。
+
+### 管理员初始化与官方设备密钥验证
+
+2026-10-11 经授权使用管理员权限加载 `tpm_vtpm_proxy`，创建了 `/dev/tpm0`
+和 `/dev/tpmrm0`。两个设备均归应用用户所有，权限为 600。项目内的模拟器以
+`tss` 账号运行，有效 capabilities 为零；应用用户不能读取其加密状态的密钥。
+没有安装系统软件包，也没有重启已有应用服务。
+
+首次 `swtpm --vtpm-proxy --runas tss` 启动失败：该版本先降权，再打开
+`/dev/vtpmx`，而创建代理还需要 `CAP_SYS_ADMIN`。修正后的助手由管理员通过
+标准 `VTPM_PROXY_IOC_NEW_DEV` ioctl 创建 TPM 2 代理，把继承的文件描述符
+传给 `swtpm chardev --fd`，再用 `--runas tss` 降权。首次失败的状态已另行
+保留，没有覆盖已有 TPM 数据。参见
+[内核实现](https://github.com/torvalds/linux/blob/v6.12/drivers/char/tpm/tpm_vtpm_proxy.c)和
+[swtpm 初始化顺序](https://github.com/stefanberger/swtpm/blob/v0.7.1/src/swtpm/swtpm_chardev.c)。
+
+已安装的官方组件通过了 `allow_os_protected_nonextractable` 模式的密钥创建、
+公钥读取比对、ECDSA P-256 SHA-256 签名、独立验签以及临时密钥删除。
+组件返回的保护类别标签为 `hardware_tpm`，但这里实际使用的是**软件 vTPM**，
+该标签不能证明物理硬件保护能力或官方中继会接受控制端。安全证明保存在
+仓库外的 `~/.local/state/codex-console-web/official-controller-test/device-key-proof.json`。
+
+设备就绪后，以应用用户复现密钥检查：
+
+```bash
+node ~/.local/state/codex-console-web/official-controller-test/check-device-key.cjs
+```
+
+管理员初始化助手拒绝覆盖已有 TPM 或状态目录。目前是本次启动期间运行的
+实验，尚未配置重启后自动启动。控制端的账号授权、注册、配对和网页命令到达
+另一台主机仍待验证。
