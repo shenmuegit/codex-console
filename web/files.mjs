@@ -118,28 +118,35 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     const { entries: homeEntries } = await remoteFs.read('fs/readDirectory', { path: home });
     if (!homeEntries.some(entry => (paths.sep === '\\' ? entry.fileName.toLowerCase() : entry.fileName) === 'console-uploads')) await remoteFs.read('fs/createDirectory', { path: base, recursive: false });
     await remoteFs.directory(base);
-    const directory = paths.join(base, meta.id);
-    if (!meta.remotePath) {
-      const { entries } = await remoteFs.read('fs/readDirectory', { path: base });
-      if (entries.some(entry => entry.fileName === meta.id)) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已存在。');
+    const directory = paths.join(base, meta.id), path = paths.join(directory, meta.storedName);
+    const { entries: directories } = await remoteFs.read('fs/readDirectory', { path: base });
+    const exists = directories.some(entry => entry.fileName === meta.id);
+    if (meta.remotePath || meta.remoteTransferPath) {
+      if ((meta.remotePath ?? meta.remoteTransferPath) !== path) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
+    } else {
+      if (exists) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已存在。');
+      // Persist ownership before the first mutation so an uncertain mkdir/write can be reconciled.
+      meta.remoteTransferPath = path; await store(meta);
+    }
+    if (!exists) {
+      if (meta.remotePath) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
       await remoteFs.read('fs/createDirectory', { path: directory, recursive: false });
     }
     if (paths.relative(directory, await remoteFs.directory(directory)) !== '' || !remoteFs.within(directory, home)) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
-    const path = paths.join(directory, meta.storedName);
-    if (meta.remotePath) {
-      if (meta.remotePath !== path) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
+    const { entries } = await remoteFs.read('fs/readDirectory', { path: directory });
+    if (entries.some(entry => entry.fileName !== meta.storedName) || entries.length > 1) throw fail(409, 'UNSAFE_REFERENCE', '远端附件目标已存在。');
+    const expected = await file.handle.readFile();
+    if (entries.length) {
       const checked = await checkedRemote(path, [directory]);
       const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
       await checkedRemote(path, [directory], checked.metadata);
-      if (!data.equals(await file.handle.readFile())) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
+      if (!data.equals(expected)) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
     } else {
-      // A new random directory cannot authorize an existing file or symlink.
-      const { entries } = await remoteFs.read('fs/readDirectory', { path: directory });
-      if (entries.length) throw fail(409, 'UNSAFE_REFERENCE', '远端附件目标已存在。');
-      await remoteFs.read('fs/writeFile', { path, dataBase64: (await file.handle.readFile()).toString('base64') });
+      if (meta.remotePath) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
+      await remoteFs.read('fs/writeFile', { path, dataBase64: expected.toString('base64') });
       await checkedRemote(path, [directory]);
-      meta.remotePath = path; await store(meta); byPath.set(path, meta);
     }
+    meta.remotePath = path; delete meta.remoteTransferPath; await store(meta); byPath.set(path, meta);
     return path;
   }
   async function describeUpload(id, threadId) {

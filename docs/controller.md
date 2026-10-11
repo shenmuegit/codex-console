@@ -165,8 +165,10 @@ Uploads retain the existing bounded server staging, filename/image validation,
 and local no-follow checks in a private state namespace per host. Sending an
 attachment transfers its exact bytes through native `fs/writeFile` to
 `<remote codexHome>/console-uploads/<opaque upload ID>/content[.ext]`, and passes
-that remote path to the native composer. A retry verifies existing bytes instead
-of overwriting a changed attachment. Remote uploads are capped at 24,000,000
+that remote path to the native composer. Transfer intent is persisted before the first remote directory/file mutation.
+After an interrupted or uncertain RPC, retries reconcile that owned directory
+and exact bytes: a completed write with a lost reply is reused, missing bytes
+are written once, and changed or unexpected content is rejected. Remote uploads are capped at 24,000,000
 bytes (or a lower configured cap) to fit Base64 and JSON inside our relay bound;
 the existing local cap is unchanged. Completed staging and remote copies remain
 for conversation reuse; no automatic remote deletion is implemented.

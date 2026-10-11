@@ -136,3 +136,35 @@ test('remote transfer rejects a symlinked upload parent before creating anything
   await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'UNSAFE_REFERENCE' });
   assert.equal(h.calls.some(call => call.method === 'fs/createDirectory' || call.method === 'fs/writeFile'), false);
 });
+
+for (const windows of [false, true]) for (const boundary of ['mkdir-reply-lost', 'write-not-sent', 'write-reply-lost']) test(`remote ${windows ? 'Windows' : 'Unix'} transfer resumes ${boundary} after state reload without overwriting completed bytes`, async t => {
+  const h = host(windows), stateDir = await mkdtemp(join(tmpdir(), 'remote-recovery-'));
+  t.after(() => rm(stateDir, { recursive: true, force: true }));
+  const config = { stateDir, remoteHost: { id: 'host-a' }, codex: h.codex };
+  const files = createFiles(config), content = Buffer.from('recover exact bytes'), meta = await upload(files, content, 'note.txt', 'text/plain');
+  const rpc = h.codex.rpc; let interrupted = false;
+  h.codex.rpc = async (method, params) => {
+    const chosen = boundary === 'mkdir-reply-lost' ? method === 'fs/createDirectory' && h.paths.basename(params.path) === meta.id : method === 'fs/writeFile';
+    if (!interrupted && chosen) {
+      interrupted = true;
+      if (boundary !== 'write-not-sent') await rpc(method, params);
+      throw Object.assign(new Error('Connection lost'), { code: 'NATIVE_DISCONNECTED', outcome: 'unknown' });
+    }
+    return rpc(method, params);
+  };
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'NATIVE_DISCONNECTED' });
+  const reopened = createFiles(config), input = await reopened.attachmentInputs([meta.id], 'collision');
+  const path = input[0].text; assert.equal(h.nodes.get(path).dataBase64, content.toString('base64'));
+  assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1);
+  await reopened.attachmentInputs([meta.id], 'collision'); assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1);
+});
+
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} uncertain writes never overwrite changed bytes on retry`, async t => {
+  const h = host(windows), files = await filesAt(t, h, 'host-a'), meta = await upload(files, Buffer.from('original'), 'note.txt', 'text/plain');
+  const rpc = h.codex.rpc; let uncertain = true;
+  h.codex.rpc = async (method, params) => { const result = await rpc(method, params); if (uncertain && method === 'fs/writeFile') { uncertain = false; throw Object.assign(new Error('Reply lost'), { code: 'NATIVE_DISCONNECTED', outcome: 'unknown' }); } return result; };
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'NATIVE_DISCONNECTED' });
+  const written = h.calls.find(call => call.method === 'fs/writeFile'); h.nodes.get(written.params.path).dataBase64 = Buffer.from('CHANGED').toString('base64');
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'UNSAFE_REFERENCE' });
+  assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1); assert.equal(h.nodes.get(written.params.path).dataBase64, Buffer.from('CHANGED').toString('base64'));
+});
