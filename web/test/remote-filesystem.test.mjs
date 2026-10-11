@@ -188,3 +188,24 @@ for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'
   assert.equal(h.nodes.get(input[0].text).dataBase64, Buffer.from('private bytes').toString('base64'));
   assert.equal(h.calls.filter(call => call.method === 'fs/writeFile').length, 1);
 });
+
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} recorded empty transfer directories reject unsafe child permissions before writing bytes`, async t => {
+  const h = host(windows), stateDir = await mkdtemp(join(tmpdir(), 'prewrite-permissions-')); t.after(() => rm(stateDir, { recursive: true, force: true }));
+  const config = { stateDir, remoteHost: { id: 'host-a' }, codex: h.codex }, files = createFiles(config), meta = await upload(files, Buffer.from('PRIVATE'), 'note.txt', 'text/plain');
+  const rpc = h.codex.rpc; let directoryCreated = false, unsafe = false;
+  h.codex.rpc = async (method, params) => {
+    if (method === 'command/exec' && unsafe) {
+      let path;
+      if (windows) { const script = Buffer.from(params.command.at(-1), 'base64').toString('utf16le'), input = script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/)[1]; path = JSON.parse(Buffer.from(input, 'base64')).path; }
+      else path = params.command[4];
+      if (path) { h.calls.push({ method, params }); return { result: { exitCode: 1, stdout: '', stderr: 'Foreign inheritable Allow ACE' } }; }
+    }
+    const result = await rpc(method, params);
+    if (!directoryCreated && method === 'fs/createDirectory' && h.paths.basename(params.path) === meta.id) { directoryCreated = true; throw Object.assign(new Error('Mkdir reply lost'), { code: 'NATIVE_DISCONNECTED', outcome: 'unknown' }); }
+    return result;
+  };
+  await assert.rejects(files.attachmentInputs([meta.id], 'collision'), { code: 'NATIVE_DISCONNECTED' });
+  unsafe = true;
+  await assert.rejects(createFiles(config).attachmentInputs([meta.id], 'collision'), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  assert.equal(h.calls.some(call => call.method === 'fs/writeFile'), false);
+});

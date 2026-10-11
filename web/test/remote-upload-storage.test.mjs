@@ -67,3 +67,12 @@ test('Unix attachment verification rejects a file aliased outside its private st
   await link(file, join(f.home, 'public-alias.txt'));
   await assert.rejects(ensureRemoteUploadStorage(f.codex, f.home, file), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
 });
+
+test('prewrite directory proof allows an absent file but postwrite file proof still requires it', async t => {
+  const f = await unixFixture(t); await ensureRemoteUploadStorage(f.codex, f.home);
+  const directory = join(f.base, 'upload-id'); await mkdir(directory);
+  const file = join(directory, 'content.txt');
+  await ensureRemoteUploadStorage(f.codex, f.home, file, true);
+  await assert.rejects(ensureRemoteUploadStorage(f.codex, f.home, file), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  await writeFile(file, 'private'); await ensureRemoteUploadStorage(f.codex, f.home, file);
+});

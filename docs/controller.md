@@ -180,7 +180,10 @@ permissions. Before attachment bytes are sent, a fixed server-owned
 [`command/exec`](https://learn.chatgpt.com/docs/app-server) prepares and verifies
 storage. It inherits the host's configured sandbox/permission profile without
 an override, elevated roots, environment changes, or a `process/*` fallback.
-Browsers cannot submit this command or supply a script.
+Browsers cannot submit this command or supply a script. Every write also requires
+a target-directory permission proof, including recorded empty directories after
+a reconnect. Only this prewrite proof permits the target file to be absent; the
+postwrite proof still requires and verifies the file.
 
 Unix hosts need an already installed **Python 3**; it is not assumed on every
 Mac and the server does not install it. Standard-library directory descriptors

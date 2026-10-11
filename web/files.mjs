@@ -135,9 +135,9 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     if (paths.relative(directory, await remoteFs.directory(directory)) !== '' || !remoteFs.within(directory, home)) throw fail(409, 'UNSAFE_REFERENCE', '远端上传目录已变化。');
     const { entries } = await remoteFs.read('fs/readDirectory', { path: directory });
     if (entries.some(entry => entry.fileName !== meta.storedName) || entries.length > 1) throw fail(409, 'UNSAFE_REFERENCE', '远端附件目标已存在。');
+    await ensureRemoteUploadStorage(codex, home, path, true);
     const expected = await file.handle.readFile();
     if (entries.length) {
-      await ensureRemoteUploadStorage(codex, home, path);
       const checked = await checkedRemote(path, [directory]);
       const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
       await checkedRemote(path, [directory], checked.metadata);

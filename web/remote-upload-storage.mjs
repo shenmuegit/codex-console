@@ -24,11 +24,16 @@ try:
             raise RuntimeError('Unexpected attachment path')
         child = os.open(parts[1], flags, dir_fd=fd)
         os.close(fd); fd = child
-        child = os.open(parts[2], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        os.close(fd); fd = child
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or info.st_nlink != 1:
-            raise RuntimeError('Attachment owner/type/link count is unsafe')
+        if os.fstat(fd).st_uid != uid: raise RuntimeError('Attachment directory owner mismatch')
+        try: child = os.open(parts[2], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        except FileNotFoundError:
+            if len(sys.argv) < 4 or sys.argv[3] != 'allow-missing-file': raise
+            child = None
+        if child is not None:
+            os.close(fd); fd = child
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or info.st_nlink != 1:
+                raise RuntimeError('Attachment owner/type/link count is unsafe')
     print('codex-console-private-v1')
 finally:
     os.close(fd)
@@ -81,19 +86,20 @@ if ($inputData.path) {
   $directory = [IO.Path]::GetDirectoryName($inputData.path)
   if ([IO.Path]::GetDirectoryName($directory) -ne $basePath) { throw 'Unexpected attachment path' }
   $null = Assert-Private $directory
-  $null = Assert-Private $inputData.path
+  try { $null = Assert-Private $inputData.path }
+  catch [System.Management.Automation.ItemNotFoundException] { if (-not $inputData.allowMissingFile) { throw } }
 }
 Write-Output 'codex-console-private-v1'
 `;
 
 /** Fixed permission preparation only; inherit native sandbox and never install host runtimes. */
-export async function ensureRemoteUploadStorage(codex, home, path) {
+export async function ensureRemoteUploadStorage(codex, home, path, allowMissingFile = false) {
   try {
     const family = codex.info?.()?.platformFamily;
     let command;
-    if (family === 'unix') command = ['python3', '-c', unix, home, ...(path ? [path] : [])];
+    if (family === 'unix') command = ['python3', '-c', unix, home, ...(path ? [path, ...(allowMissingFile ? ['allow-missing-file'] : [])] : [])];
     else if (family === 'windows') {
-      const input = Buffer.from(JSON.stringify({ home, path })).toString('base64');
+      const input = Buffer.from(JSON.stringify({ home, path, allowMissingFile })).toString('base64');
       command = ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(windows.replace('__INPUT__', input), 'utf16le').toString('base64')];
     } else throw new Error('Unsupported platform');
     const { result } = await codex.rpc('command/exec', { command, cwd: home, timeoutMs: 10_000, outputBytesCap: 1024 });
