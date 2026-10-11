@@ -162,12 +162,22 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .context-track { opacity: .2; }
 #context-ring { stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: center; }
 .chat-error { width: min(100%, var(--content-width)); margin: 0 auto; padding: 4px 24px; font-size: 12px; }
-#native-requests { width: min(100%, var(--content-width)); margin: 0 auto; padding: 0 24px; max-height: 40dvh; overflow-y: auto; }
-.native-form { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 8px; background: var(--surface); }
-.native-form fieldset { border: 0; padding: 8px 0; margin: 0; display: grid; gap: 8px; }
+#native-requests { width: 100%; }
+.native-form { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 8px; background: var(--surface); overflow-wrap: anywhere; }
+.native-form fieldset { min-width: 0; border: 0; padding: 8px 0; margin: 0; display: grid; gap: 8px; }
+.native-form legend { padding: 0; font-weight: 600; }
+.native-form p { margin: 8px 0; }
 .native-form pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; font-size: 12px; }
 .native-form label { display: grid; gap: 4px; }
 .native-form input, .native-form select { width: 100%; padding: 8px; }
+.native-form input[type="radio"], .native-form input[type="checkbox"] { width: auto; padding: 0; margin: 2px 0 0; accent-color: var(--text); }
+.native-form .request-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.request-option:hover, .request-option:focus-within { background: var(--hover); }
+.request-option:has(input:checked) { border-color: var(--text); }
+.request-option strong, .request-option small { display: block; }
+.request-option small { margin-top: 3px; color: var(--muted); }
+.request-actions { flex-wrap: wrap; }
+.request-link { display: inline-block; margin: 12px 0; color: var(--link); }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 #attachments { display: flex; flex-wrap: wrap; gap: 8px; max-height: 190px; overflow-y: auto; }
 .attachment { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; max-width: 100%; margin-bottom: 8px; }
@@ -227,7 +237,7 @@ dialog::backdrop { background: #0006; }
   #project-dialog { inset: 12px 0 auto; margin: 0 auto; max-height: calc(var(--app-height, 100dvh) - 24px); }
   .chat-pane[data-empty="true"] .chat-feed { padding-top: clamp(40px, 12dvh, 100px); }
   .welcome h2 { font-size: 28px; }
-  #native-requests, .chat-error { padding-inline: 16px; }
+  .chat-error { padding-inline: 16px; }
 }
 @media (pointer: coarse) { button, .icon-button, .attachment-actions > summary, .select-control select, .message-activity > .activity-summary, .message-tool > summary, .message-subagent a { min-height: 44px; } .icon-button, .send-button { width: 44px; } .thread-actions { flex-basis: 44px; width: 44px; min-height: 44px; padding: 14px; opacity: 1; } .archive-filter { min-height: 44px; gap: 8px; } .archive-filter input { width: 16px; height: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }

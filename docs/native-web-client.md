@@ -498,7 +498,21 @@ HTML disabled, restricted URL schemes and no automatic external image loads.
 Text streams immediately; safe HTML updates coalesce to 100 ms.
 
 Native approvals, permission requests, questions and MCP form/URL elicitations
-have explicit response controls. Resolved/stale forms cannot answer again.
+appear as cards inside the chat scroll area. Question cards show each option and
+its description, with free text when the native question allows it and masked
+secret inputs. Nothing is selected unless the native form supplies a default.
+MCP forms support primitive fields, titled single/multiple choices and the native
+`form`, `openai/form` and `openaiForm` modes; required fields and numeric bounds
+are checked before submission. Authorization cards show the command, directory
+and requested permissions, including native session and proposed policy choices.
+The gateway accepts only exact native approval choices and requested permissions.
+URL authorization opens a separate page and still needs an explicit completion
+response. Unsupported fields or unsafe URLs cannot be accepted from the card;
+decline/cancel remains available. Responses keep the original request ID and
+conversation, reject duplicate answers and preserve input on failure. Native
+resolution or reconnect removes stale cards; streaming never resets a form.
+Form schema property names such as `apiKey` and `password` are retained as field
+definitions; unrelated native credentials remain filtered from browser events.
 Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
 desktop Enter sends, and the Send button is available on all devices.
 

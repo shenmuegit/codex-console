@@ -1,6 +1,7 @@
 import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
+import { createRequestCard } from './requests.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
@@ -517,56 +518,6 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     attachments.hydrate(state);
     await loadThreads();
   }
-  function addInput(label, schema, parent) {
-    const wrapper = element('label', label), choices = schema.enum ?? schema.oneOf?.map(option => option.const);
-    let input;
-    if (choices) { input = element('select'); for (let i = 0; i < choices.length; i++) { const option = element('option', schema.enumNames?.[i] ?? schema.oneOf?.[i]?.title ?? String(choices[i])); option.value = String(i); input.append(option); } }
-    else if (schema.type === 'array' && schema.items?.enum) { input = element('select'); input.multiple = true; for (const choice of schema.items.enum) { const option = element('option', String(choice)); option.value = String(choice); input.append(option); } }
-    else { input = element('input'); input.type = schema.type === 'boolean' ? 'checkbox' : ['number', 'integer'].includes(schema.type) ? 'number' : schema.isSecret ? 'password' : 'text';
-      if (input.type === 'number') { input.step = schema.type === 'integer' ? '1' : 'any'; if (schema.minimum != null) input.min = schema.minimum; if (schema.maximum != null) input.max = schema.maximum; }
-      if (schema.default != null) { if (input.type === 'checkbox') input.checked = Boolean(schema.default); else input.value = String(schema.default); }
-    }
-    input.required = Boolean(schema.required) && input.type !== 'checkbox'; wrapper.append(input); parent.append(wrapper);
-    return () => choices ? choices[Number(input.value)] : input.type === 'checkbox' ? input.checked : schema.type === 'array' ? [...input.selectedOptions].map(o => o.value) : input.type === 'number' ? Number(input.value) : input.value;
-  }
-  function nativeForm(key, native) {
-    const p = native.params, form = element('form', null, 'native-form');
-    form.append(element('strong', native.method === 'item/tool/requestUserInput' ? 'Codex 需要你的回答' : '需要确认'));
-    if (p.reason || p.message) form.append(element('p', p.reason ?? p.message));
-    const values = new Map();
-    if (native.method === 'item/tool/requestUserInput') {
-      for (const question of p.questions ?? []) {
-        const fieldset = element('fieldset'); fieldset.append(element('legend', question.question));
-        values.set(question.id, addInput(question.header || '回答', { type: 'string', isSecret: question.isSecret,
-          ...(!question.isOther && question.options?.length ? { enum: question.options.map(o => o.label) } : {}), required: true }, fieldset));
-        if (question.isOther && question.options?.length) fieldset.append(element('small', question.options.map(o => `${o.label}${o.description ? '：' + o.description : ''}`).join('；'), 'muted'));
-        form.append(fieldset);
-      }
-    } else if (native.method === 'mcpServer/elicitation/request' && p.mode === 'form') {
-      for (const [name, schema] of Object.entries(p.requestedSchema?.properties ?? {})) {
-        values.set(name, addInput(schema.title ?? name, { ...schema, required: p.requestedSchema?.required?.includes(name) }, form));
-      }
-    } else if (native.method === 'mcpServer/elicitation/request' && p.url) {
-      if (/^https?:\/\//i.test(p.url)) { const link = element('a', '打开请求页面'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; form.append(link); }
-    } else if (p.command || p.permissions || p.grantRoot) form.append(element('pre', p.command ?? p.grantRoot ?? JSON.stringify(p.permissions, null, 2)));
-    const buttons = element('div', null, 'toolbar'), status = element('p', '', 'error');
-    function button(label, decision) { const node = element('button', label); node.type = decision === 'accept' ? 'submit' : 'button';
-      if (decision !== 'accept') bind(node, 'click', () => respond(decision)); buttons.append(node); }
-    if (!p.availableDecisions || p.availableDecisions.includes('accept')) button('确认', 'accept');
-    button('拒绝', 'decline'); button('取消', 'cancel'); form.append(status, buttons);
-    async function respond(decision) {
-      if (form.dataset.sending) return; form.dataset.sending = 'true'; for (const b of buttons.children) b.disabled = true;
-      let result;
-      if (native.method === 'item/tool/requestUserInput') result = { answers: decision === 'accept' ? Object.fromEntries([...values].map(([id, get]) => [id, { answers: [String(get())] }])) : {} };
-      else if (native.method === 'item/permissions/requestApproval') result = { permissions: decision === 'accept' ? p.permissions : {}, scope: 'turn' };
-      else if (native.method === 'mcpServer/elicitation/request') result = { action: decision, content: decision === 'accept' && p.mode === 'form' ? Object.fromEntries([...values].map(([name, get]) => [name, get()])) : null, _meta: null };
-      else result = { decision };
-      try { await api('/api/request/respond', { viewId, requestKey: key, answer: { result } }); selected?.requests.delete(key); form.remove(); formNodes.delete(key); }
-      catch (e) { status.textContent = e.message; if (e.status !== 409) { delete form.dataset.sending; for (const b of buttons.children) b.disabled = false; } }
-    }
-    bind(form, 'submit', event => { event.preventDefault(); return respond('accept'); });
-    return form;
-  }
   function activityIcon(agent = false) {
     const icon = element('span', null, 'activity-icon' + (agent ? ' activity-icon-agent' : ''));
     icon.setAttribute('aria-hidden', 'true');
@@ -653,7 +604,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#older-history').hidden = !state?.historyCursor;
     $('#older-history').disabled = Boolean(state?.historyLoading);
     $('#older-history').textContent = state?.historyLoading ? '加载中…' : '加载更早记录';
-    const hasMessages = Boolean(state?.turns.some(t => t.items?.length) || active || state?.acceptedTurn || state?.steers?.length); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
+    const hasMessages = Boolean(state?.turns.some(t => t.items?.length) || active || state?.acceptedTurn || state?.steers?.length || state?.requests.size); $('#chat-empty').hidden = hasMessages; $('#chat-pane').dataset.empty = String(!hasMessages);
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
@@ -702,7 +653,10 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     }
     for (const [id, entry] of activityNodes) if (!currentActivities.has(id)) { entry.node.remove(); activityNodes.delete(id); }
     for (const [id, entry] of messageNodes) if (!currentIds.has(id)) { entry.node.remove(); messageNodes.delete(id); }
-    for (const [key, native] of state?.requests ?? []) if (!formNodes.has(key)) { const form = nativeForm(key, native); formNodes.set(key, form); $('#native-requests').append(form); }
+    for (const [key, native] of state?.requests ?? []) if (!formNodes.has(key)) {
+      const form = createRequestCard({ api, viewId, state, key, native, signal: abort.signal, onResolved(node) { if (formNodes.get(key) === node) formNodes.delete(key); if (selected === state) draw(); } });
+      formNodes.set(key, form); $('#native-requests').append(form);
+    }
     for (const [key, form] of formNodes) if (!state?.requests.has(key)) { form.remove(); formNodes.delete(key); }
     if (stick) feed.scrollTop = feed.scrollHeight;
     if (state) save(state);

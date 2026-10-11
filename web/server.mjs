@@ -14,6 +14,7 @@ import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
 import { encodeComposer, utf8Range, updateQueuedInput, displayNativeText } from './public/composer.js';
 import { itemText } from './public/chat.js';
+import { approvalDecisions } from './public/requests.js';
 import { validateConfig } from './service.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
@@ -23,6 +24,7 @@ const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
   ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
+  ['/requests.js', ['requests.js', 'text/javascript; charset=utf-8']],
   ['/usage.js', ['usage.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']]]);
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -112,11 +114,11 @@ async function removeThread(codex, { threadId, confirmed }, method) {
 }
 
 const requestFields = new Map([
-  ['item/commandExecution/requestApproval', ['threadId', 'turnId', 'itemId', 'kind', 'reason', 'command', 'cwd', 'availableDecisions', 'networkApprovalContext', 'additionalPermissions']],
+  ['item/commandExecution/requestApproval', ['threadId', 'turnId', 'itemId', 'kind', 'reason', 'command', 'cwd', 'availableDecisions', 'networkApprovalContext', 'additionalPermissions', 'proposedExecpolicyAmendment', 'proposedNetworkPolicyAmendments']],
   ['item/fileChange/requestApproval', ['threadId', 'turnId', 'itemId', 'reason', 'grantRoot']],
-  ['item/tool/requestUserInput', ['threadId', 'turnId', 'itemId', 'questions']],
+  ['item/tool/requestUserInput', ['threadId', 'turnId', 'itemId', 'questions', 'isBlocking']],
   ['item/permissions/requestApproval', ['threadId', 'turnId', 'itemId', 'cwd', 'reason', 'permissions']],
-  ['mcpServer/elicitation/request', ['threadId', 'turnId', 'serverName', 'requestId', 'message', 'mode', 'requestedSchema', 'url']],
+  ['mcpServer/elicitation/request', ['threadId', 'turnId', 'serverName', 'requestId', 'message', 'mode', 'requestedSchema', 'url', 'elicitationId']],
 ]);
 
 function validateAnswer(request, answer) {
@@ -124,9 +126,7 @@ function validateAnswer(request, answer) {
   if (!object(answer.result)) throw error(400, 'INVALID_ANSWER', '回答格式不正确。');
   if (request.method.endsWith('/requestApproval') && request.method !== 'item/permissions/requestApproval') {
     fields(answer.result, ['decision']);
-    if (!['accept', 'decline', 'cancel', 'acceptForSession'].includes(answer.result.decision)) throw error(400, 'INVALID_ANSWER', '审批选项不正确。');
-    if (answer.result.decision.startsWith('accept') && Array.isArray(request.params.availableDecisions) &&
-        !request.params.availableDecisions.includes(answer.result.decision)) throw error(400, 'INVALID_ANSWER', '此审批选项不可用。');
+    if (!approvalDecisions(request).some(decision => isDeepStrictEqual(decision, answer.result.decision))) throw error(400, 'INVALID_ANSWER', '此审批选项不可用。');
   } else if (request.method === 'item/tool/requestUserInput') {
     fields(answer.result, ['answers']);
     const answers = answer.result.answers;
@@ -581,6 +581,8 @@ export function createWebServer({ config, codex }) {
         return;
       }
       const native = { method, params: safe(Object.fromEntries(allowed.filter(key => Object.hasOwn(params, key)).map(key => [key, params[key]]))) };
+      // Form property names describe requested input, including fields named password or apiKey.
+      if (method === 'mcpServer/elicitation/request' && object(params.requestedSchema?.properties)) native.params.requestedSchema.properties = Object.fromEntries(Object.entries(params.requestedSchema.properties).map(([name, schema]) => [name, safe(schema)]));
       pending.set(event.requestKey, native);
       updateChat({ ...event, native });
       broadcast({ ...event, native });
