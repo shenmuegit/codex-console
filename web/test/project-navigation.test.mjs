@@ -5,16 +5,16 @@ import { mountChat } from '../public/chat.js';
 import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
 
-async function fixture(t, { failProjectRefresh = false, listThreads, roots = ['/demo'] } = {}) {
+async function fixture(t, { failProjectRefresh = false, listThreads, onOpen, roots = ['/demo'] } = {}) {
   const dom = domFixture(), reads = [];
   let projectReads = 0;
   const api = async (path, body) => {
-    if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } };
+    if (path === '/api/thread/open') { onOpen?.(body.threadId); return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } }; }
     assert.equal(path, '/api/rpc'); reads.push(body);
     if (body.method === 'thread/list' && listThreads) return { result: await listThreads(body.params) };
     if (body.method === 'project/list' && ++projectReads > 1 && failProjectRefresh) throw new Error('Project list unavailable');
     const data = body.method === 'project/list' ? [{ id: 'p', name: 'Demo', roots: roots.map(path => ({ path })) }, { id: 'q', name: 'Other', roots: [{ path: '/other' }] }] :
-      body.method === 'thread/list' && !body.params.archived && body.params.projectId !== null ? [{ id: body.params.projectId ? 'project-chat' : 'global-chat', name: 'Chat', updatedAt: 1 }] : [];
+      body.method === 'thread/list' && !body.params.archived && body.params.projectId !== null ? [{ id: body.params.projectId ? 'project-chat' : 'global-chat', name: 'Chat', updatedAt: 1, recencyAt: 1 }] : [];
     return { result: { data, nextCursor: null } };
   };
   const chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); chat.connection(true);
@@ -36,11 +36,39 @@ test('expanding projects shows nested conversations and keeps the bottom list gl
   assert.equal(f.group('q').children[1].hidden, false);
   assert.equal(f.dom.get('project-title').textContent, '全部会话');
   assert.equal(f.dom.get('threads').children[0].dataset.threadId, 'global-chat');
-  assert.ok(f.reads.filter(call => call.method === 'thread/list').every(call => call.params.sortKey === 'updated_at' && call.params.sortDirection === 'desc'));
+  assert.ok(f.reads.filter(call => call.method === 'thread/list').every(call => call.params.sortKey === 'recency_at' && call.params.sortDirection === 'desc'));
   f.row('p').click(); await delay(0);
   assert.equal(f.row('p').getAttribute('aria-expanded'), 'false');
   assert.equal(f.group('p').children[1].hidden, true);
   assert.equal(f.group('q').children[1].hidden, false);
+});
+
+test('opening an older conversation preserves its position; a new turn promotes it before completion', async t => {
+  const threads = [{ id: 'recent', updatedAt: 20, recencyAt: 20 }, { id: 'older', updatedAt: 10, recencyAt: 10 }];
+  const f = await fixture(t, {
+    onOpen: id => { const thread = threads.find(thread => thread.id === id); if (thread) thread.updatedAt = 30; },
+    listThreads: async params => {
+      const key = params.sortKey === 'recency_at' ? 'recencyAt' : 'updatedAt';
+      return { data: params.projectId === undefined ? [...threads].sort((a, b) => b[key] - a[key]) : [], nextCursor: null };
+    },
+  });
+  const order = () => f.dom.get('threads').children.map(row => row.dataset.threadId);
+  assert.deepEqual(order(), ['recent', 'older']);
+  f.dom.get('threads').children[1].children[0].click(); await delay(0);
+  assert.equal(f.chat.getState().threadId, 'older');
+  assert.deepEqual(order(), ['recent', 'older'], 'Resume can update metadata without advancing recency');
+  threads[1].updatedAt = threads[1].recencyAt = 40;
+  f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 2 }, native: { method: 'turn/started', params: {
+    threadId: 'older', turn: { id: 'question', status: 'inProgress', items: [] },
+  } } });
+  await delay(350);
+  assert.deepEqual(order(), ['older', 'recent']);
+  threads[0].updatedAt = 50;
+  f.chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: 3 }, native: { method: 'turn/completed', params: {
+    threadId: 'recent', turn: { id: 'reply', status: 'completed', items: [] },
+  } } });
+  await delay(350);
+  assert.deepEqual(order(), ['older', 'recent'], 'Finishing an earlier reply does not reorder conversations');
 });
 
 test('archived filtering applies to all visible conversation lists without changing their scope', async t => {
@@ -68,11 +96,11 @@ test('expansion works without refetching the project catalog and a failed thread
 
 test('project conversations merge native membership with unassigned history from every exact registered root', async t => {
   const f = await fixture(t, { roots: ['/demo', '/secondary'], listThreads: async params => ({
-    data: params.projectId === 'p' ? [{ id: 'assigned-moved-cwd', updatedAt: 10 }] :
-      params.projectId === null ? [{ id: params.archived ? 'archived-legacy' : 'legacy-cwd', updatedAt: 20 }] : [], nextCursor: null,
+    data: params.projectId === 'p' ? [{ id: 'assigned-moved-cwd', updatedAt: 40, recencyAt: 10 }, { id: 'older-assigned', updatedAt: 2, recencyAt: 2 }] :
+      params.projectId === null ? [{ id: params.archived ? 'archived-legacy' : 'legacy-cwd', updatedAt: 20, recencyAt: 20 }, { id: 'timestamp-fallback', updatedAt: 5, recencyAt: null }] : [], nextCursor: null,
   }) });
   f.row('p').click(); await delay(0);
-  assert.deepEqual(f.list('p').children.map(row => row.dataset.threadId), ['legacy-cwd', 'assigned-moved-cwd']);
+  assert.deepEqual(f.list('p').children.map(row => row.dataset.threadId), ['legacy-cwd', 'assigned-moved-cwd', 'timestamp-fallback', 'older-assigned']);
   assert.deepEqual(f.reads.find(call => call.params.projectId === null).params.cwd, ['/demo', '/secondary']);
   f.dom.get('show-archived-threads').checked = true; f.dom.event('show-archived-threads', 'change'); await delay(0);
   assert.equal(f.list('p').children[0].dataset.threadId, 'archived-legacy');
@@ -80,7 +108,7 @@ test('project conversations merge native membership with unassigned history from
 });
 
 test('merged project and global pagination keep independent cursors and newer rows first', async t => {
-  const entry = n => ({ id: 'chat-' + n, updatedAt: n });
+  const entry = n => ({ id: 'chat-' + n, updatedAt: 1000 - n, recencyAt: n });
   const f = await fixture(t, { listThreads: async params => {
     if (params.projectId === 'p') return params.cursor ? { data: [entry(20), entry(19)], nextCursor: null } :
       { data: Array.from({ length: 20 }, (_, i) => entry(40 - i)), nextCursor: 'native-next' };

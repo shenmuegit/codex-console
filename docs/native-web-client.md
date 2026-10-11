@@ -27,11 +27,14 @@ Each native project is a collapsible group: click its name to load conversations
 immediately underneath it. Several projects can stay expanded; collapsed projects
 do not fetch conversations. Each group combines native project membership with
 older unassigned conversations whose cwd exactly matches any registered project
-root. Both native cursors are retained and merged newest first in pages of 20;
+root. Both native cursors are retained and merged by native recency in pages of 20;
 threads explicitly assigned elsewhere are excluded from the cwd fallback, and
 existing membership still works when a thread's cwd differs from the current root.
 The bottom All conversations list always includes every project and unassigned
-history, ordered by latest update descending, with its own pagination. Expanding
+history, ordered by native recency descending, with its own pagination. Opening
+a conversation keeps its position; a new question moves it up when its native
+turn starts, without waiting for the reply to finish. Metadata updates and reply
+completion do not advance recency. Expanding
 a project never filters that list. The archive switch applies to the bottom list
 and expanded groups; archived empty results are labeled explicitly. Conversation
 menus work in both locations. Project and conversation context menus include

@@ -415,12 +415,12 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       // Old desktop history has a cwd but no project ID; keep native membership and both native cursors.
       while (data.length < 20) {
         await Promise.all(pages.filter(page => !page.data.length && !page.done).map(async page => {
-          const result = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'updated_at', sortDirection: 'desc', archived,
+          const result = await read('thread/list', { limit: 20, modelProviders: [], sortKey: 'recency_at', sortDirection: 'desc', archived,
             ...page.params, ...(page.cursor ? { cursor: page.cursor } : {}) });
           page.data = result.data; page.cursor = result.nextCursor; page.done = !result.nextCursor;
         }));
         if (!alive || version !== group.load) return;
-        const next = pages.filter(page => page.data.length).sort((a, b) => b.data[0].updatedAt - a.data[0].updatedAt)[0];
+        const next = pages.filter(page => page.data.length).sort((a, b) => (b.data[0].recencyAt ?? b.data[0].updatedAt) - (a.data[0].recencyAt ?? a.data[0].updatedAt))[0];
         if (next) data.push(next.data.shift());
         else if (pages.every(page => page.done)) break;
       }
@@ -861,7 +861,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
         for (const state of states.values()) if (!event.native.threadId || event.native.threadId === state.threadId) applyNativeEvent(state, event);
         if (event.kind === 'resync' && selected && online && (!event.native.threadId || event.native.threadId === selected.threadId)) open(selected.threadId).catch(showError);
       }
-      if (['thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'turn/completed'].includes(event.native?.method)) {
+      if (['thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'turn/started', 'turn/completed'].includes(event.native?.method)) {
         clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadThreads().catch(showError), 300);
       }
       scheduleDraw();
