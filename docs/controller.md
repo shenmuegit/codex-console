@@ -265,3 +265,5 @@ must match the selected workspace in the private cache before membership is
 trusted, including after renewal. Matching-workspace legacy `user_id` remains
 a fallback. This rule does not redefine ordinary Codex authentication or its
 external-token workspace-header override; ordinary login files are preserved.
+
+Current service deployment and remaining live gates: [service verification](controller-service-verification.md).
