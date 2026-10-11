@@ -520,6 +520,18 @@ conversation, reject duplicate answers and preserve input on failure. Native
 resolution or reconnect removes stale cards; streaming never resets a form.
 Form schema property names such as `apiKey` and `password` are retained as field
 definitions; unrelated native credentials remain filtered from browser events.
+Structured asynchronous questions (`agentMessage.questions`) use the same numbered
+question card, with free text, Skip and Send. Pending cards in active/latest turns
+sit above the composer; older questions stay in history, with answered/skipped
+cards shown as compact entries. The
+Markdown fallback is never used to infer a question. Async replies retain native
+`request_user_input_async` item/index identities and are encoded by the gateway
+using the desktop reply format. The gateway validates the open conversation and
+source question, steers active work or starts an idle turn, and reuses one native
+message ID for duplicate submissions. Skip dismisses an async question locally;
+blocking input requests retain their native response channel. History replies
+resolve their cards and show readable answers. Streaming preserves selection,
+focus and custom drafts; IME confirmation cannot submit an answer.
 Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
 desktop Enter sends, and the Send button is available on all devices.
 

@@ -44,7 +44,7 @@ test('custom and secret question answers retain their values when submission fai
   assert.deepEqual(f.calls[0].answer.result, { answers: { custom: { answers: ['另一个方案'] }, secret: { answers: ['fixture-secret'] } } });
   f.fail(Object.assign(new Error('回答未发送'), { status: 422 })); await delay(0);
   assert.equal(custom.value, '另一个方案'); assert.equal(secret.value, 'fixture-secret');
-  assert.ok(descendants(f.card).some(node => node.textContent === '回答未发送')); assert.equal(button(f.card, '提交回答').disabled, false);
+  assert.ok(descendants(f.card).some(node => node.textContent === '回答未发送')); assert.equal(button(f.card, '发送').disabled, false);
 });
 
 test('command authorization cards expose native session and policy choices without adding an unavailable allow button', async t => {
@@ -148,7 +148,7 @@ test('offline, stale and disposed cards cannot send an authorization response', 
 test('a stale answer disables the card while preserving its visible input', async t => {
   const f = await fixture(t, 'item/tool/requestUserInput', { questions: [{ id: 'answer', header: '回答', question: '请输入', isOther: false, isSecret: false, options: null }] });
   const input = controls(f.card, 'text')[0]; input.value = 'Keep answer'; await f.submit(); f.fail(Object.assign(new Error('Stale'), { status: 409 })); await delay(0);
-  assert.equal(input.value, 'Keep answer'); assert.equal(button(f.card, '提交回答').disabled, true);
+  assert.equal(input.value, 'Keep answer'); assert.equal(button(f.card, '发送').disabled, true);
   await f.submit(); assert.equal(f.calls.length, 1);
 });
 

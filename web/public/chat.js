@@ -1,7 +1,7 @@
 import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
-import { createRequestCard } from './requests.js';
+import { createRequestCard, questionReplies, isAsyncQuestion } from './requests.js';
 import { mountGoals } from './goals.js';
 
 export function createChatState(threadId) {
@@ -215,7 +215,9 @@ export function itemText(item) {
   }
 }
 export function messageText(item) {
-  return itemText(item.type === 'userMessage' ? { ...item, content: (item.content ?? []).filter(part => !['localImage', 'image'].includes(part.type)) } : item);
+  const value = itemText(item.type === 'userMessage' ? { ...item, content: (item.content ?? []).filter(part => !['localImage', 'image'].includes(part.type)) } : item);
+  const replies = item.type === 'userMessage' ? questionReplies(value) : [];
+  return replies.length ? replies.map(reply => reply.answer).join('\n\n') : value;
 }
 export function shouldSubmitKey(event, { composing, finePointer }) {
   return event.key === 'Enter' && !event.shiftKey && !event.isComposing && !composing && event.keyCode !== 229 && finePointer;
@@ -255,7 +257,7 @@ function appendRenderedText(body, text) {
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
-  const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
+  const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map(), replyCache = new WeakMap();
   let selected, project, projectCursor, online = false, alive = true, receivedStatus = false;
   let opening = 0, projectLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
@@ -359,7 +361,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   bind($('#thread-menu-delete'), 'click', () => { const target = menuTarget; if (!target) return; closeThreadMenu(true); return target.kind === 'project' ? changeProject(target, 'delete') : deleteConversation(target.id); });
   function save(state) {
     try { sessionStorage.setItem(`codex-draft:${state.threadId}`, JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
-      queueRecovery: state.queueRecovery, goalMode: state.goalMode, goalPending: state.goalPending,
+      queueRecovery: state.queueRecovery, goalMode: state.goalMode, goalPending: state.goalPending, questionDrafts: state.questionDrafts, dismissedQuestions: [...(state.dismissedQuestions ?? [])].slice(-100),
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
   function stateFor(threadId) {
@@ -369,6 +371,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       try { const saved = JSON.parse(sessionStorage.getItem(`codex-draft:${threadId}`));
         if (typeof saved?.text === 'string') state.draft = saved.text;
         if (Array.isArray(saved?.selections)) state.selections = saved.selections;
+        if (saved?.questionDrafts && typeof saved.questionDrafts === 'object' && !Array.isArray(saved.questionDrafts)) state.questionDrafts = Object.fromEntries(Object.entries(saved.questionDrafts).filter(([id, value]) => id.length < 512 && typeof value === 'string' && value.length <= 8192));
+        if (Array.isArray(saved?.dismissedQuestions)) state.dismissedQuestions = new Set(saved.dismissedQuestions.filter(id => typeof id === 'string').slice(-100));
         state.goalMode = saved?.goalMode === true;
         if (typeof saved?.goalPending?.text === 'string' && typeof saved.goalPending.objective === 'string') state.goalPending = saved.goalPending;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
@@ -592,6 +596,14 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const label = `${item._delivery ?? presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
     if (item._delivery && entry.delivery !== item._delivery) { entry.node.dataset.delivery = item._delivery; entry.header.setAttribute('role', 'status'); }
     if (entry.header.textContent !== label) entry.header.textContent = label;
+    if (isAsyncQuestion(item)) {
+      const state = selected, signature = JSON.stringify([state.generation, item.questions]);
+      if (entry.questionSignature !== signature) {
+        entry.questionCard = createRequestCard({ api, viewId, state, key: item.id, native: item, signal: abort.signal, onChange: save, onResolved() { if (selected === state) draw(); } });
+        entry.body.replaceChildren(entry.questionCard); entry.questionSignature = signature;
+      }
+      entry.questionCard.syncQuestions(); return entry;
+    }
     const text = messageText(item), html = presentation?.html;
     if (typeof html === 'string' && (entry.html !== html || entry.unformatted)) {
       const template = document.createElement('template'); template.innerHTML = html;
@@ -647,6 +659,13 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const thinking = Boolean(state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
     if (thinkingStatus.hidden !== !thinking) thinkingStatus.hidden = !thinking;
     if (state) state.online = online;
+    if (state) {
+      state.questionAnswers ??= new Map();
+      for (const item of state.turns.flatMap(turn => turn.items ?? [])) if (item.type === 'userMessage') {
+        let replies = replyCache.get(item); if (!replies) { replies = questionReplies(itemText(item)); replyCache.set(item, replies); }
+        for (const reply of replies) state.questionAnswers.set(reply.questionItemId, reply.answer);
+      }
+    }
     goals.render();
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || state?.thread?.preview || (state && !state.ready ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name || state?.thread?.preview || '';
@@ -693,6 +712,12 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
             renderMessage(item, group.role); entry = messageNodes.get(item.id);
             Object.assign(entry, { item, cursor: item._cursor, presentation: item._presentation, sourceFiles: item._presentation?.files, delivery: item._delivery });
           }
+          entry.questionCard?.syncQuestions();
+          if (entry.questionCard) {
+            entry.node.hidden = !entry.questionCard.dataset.resolved && (turn.status === 'inProgress' || turn.id === state.turns.at(-1)?.id);
+            const parent = entry.node.hidden ? $('#native-requests') : entry.body;
+            if (entry.questionCard.parentNode !== parent) parent.append(entry.questionCard);
+          }
           const node = entry.node; entry.group = key;
           const following = parent.children[index++]; if (following !== node) parent.insertBefore(node, following ?? null);
           container ??= node;
@@ -701,7 +726,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       }
     }
     for (const [id, entry] of activityNodes) if (!currentActivities.has(id)) { entry.node.remove(); activityNodes.delete(id); }
-    for (const [id, entry] of messageNodes) if (!currentIds.has(id)) { entry.node.remove(); messageNodes.delete(id); }
+    for (const [id, entry] of messageNodes) if (!currentIds.has(id)) { entry.questionCard?.remove(); entry.node.remove(); messageNodes.delete(id); }
     for (const [key, native] of state?.requests ?? []) if (!formNodes.has(key)) {
       const form = createRequestCard({ api, viewId, state, key, native, signal: abort.signal, onResolved(node) { if (formNodes.get(key) === node) formNodes.delete(key); if (selected === state) draw(); } });
       formNodes.set(key, form); $('#native-requests').append(form);

@@ -2,7 +2,7 @@ import https from 'node:https';
 import { readFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { parseArgs, isDeepStrictEqual } from 'node:util';
 import { createAuth, checkOrigin } from './auth.mjs';
 import { createCodexClient } from './codex.mjs';
@@ -14,7 +14,7 @@ import { pipeline } from 'node:stream/promises';
 import { modelChoice } from './public/usage.js';
 import { encodeComposer, utf8Range, updateQueuedInput, displayNativeText } from './public/composer.js';
 import { itemText } from './public/chat.js';
-import { approvalDecisions } from './public/requests.js';
+import { approvalDecisions, asyncQuestionId, isAsyncQuestion, questionReplies } from './public/requests.js';
 import { validateConfig } from './service.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
@@ -437,7 +437,7 @@ export function createWebServer({ config, codex }) {
     if (writes.has(key)) return sendOnce(body, view);
     if (writes.size >= 1024) throw error(429, 'PENDING_LIMIT', '待确认消息过多，请先核对会话。');
     const input = encoded.input;
-    const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record);
+    const record = { state: 'pending', fingerprint, mode: body.mode, time: Date.now() }; writes.set(key, record);
     record.promise = (async () => {
       try {
         if (body.mode === 'queue') {
@@ -835,6 +835,18 @@ export function createWebServer({ config, codex }) {
         reply(res, 200, await creation.promise);
       } else if (url.pathname === '/api/thread/send') {
         reply(res, 200, await sendOnce(body, requireView(body.viewId, session)));
+      } else if (url.pathname === '/api/thread/question') {
+        fields(body, ['viewId', 'threadId', 'itemId', 'answers']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        if (!id(body.threadId) || view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        const item = state.turns.flatMap(turn => turn.items ?? []).find(item => item.id === body.itemId);
+        if (!text(body.itemId, 256) || !item || !isAsyncQuestion(item)) throw error(409, 'STALE_QUESTION', '问题已变化，请重新打开会话。');
+        if (!Array.isArray(body.answers) || body.answers.length !== item.questions.length || body.answers.length > 50 || body.answers.some(answer => !text(answer, 8192) || !answer.trim())) throw error(400, 'INVALID_ANSWER', '请选择或填写每一个问题的回答。');
+        const replies = item.questions.map((question, index) => ({ questionItemId: asyncQuestionId(item.id, index), question: question.title, answer: body.answers[index].trim() }));
+        const clientUserMessageId = 'question_' + createHash('sha256').update(JSON.stringify([body.threadId, item.id])).digest('hex'), previous = writes.get(`${body.threadId}:${clientUserMessageId}`);
+        const answered = new Set(state.turns.flatMap(turn => turn.items ?? []).filter(item => item.type === 'userMessage').flatMap(item => questionReplies(itemText(item))).map(reply => reply.questionItemId));
+        if (!previous && replies.every(reply => answered.has(reply.questionItemId))) throw error(409, 'QUESTION_ANSWERED', '此问题已回答。');
+        const replyText = '<send_user_message_question_reply>\n' + JSON.stringify(replies).replace(/</g, '\\u003c').replace(/>/g, '\\u003e') + '\n</send_user_message_question_reply>';
+        reply(res, 200, await sendOnce({ viewId: body.viewId, threadId: body.threadId, clientUserMessageId, mode: previous?.mode ?? (activeTurn(state) ? 'steer' : 'start'), draft: { text: replyText, selections: [], uploadIds: [] } }, view));
       } else if (url.pathname === '/api/thread/queue') {
         reply(res, 200, await queueAction(body, requireView(body.viewId, session)));
       } else if (url.pathname === '/api/thread/stop') {
