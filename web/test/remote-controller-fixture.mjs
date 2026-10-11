@@ -93,4 +93,3 @@ export async function fixture(t, options = {}) {
   return { root, authFile, stateDir, calls, keys, deviceKey, fetch, controller, authorize,
     get created() { return serial; }, get signed() { return signs; }, get deleted() { return deletes; } };
 }
-
