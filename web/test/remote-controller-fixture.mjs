@@ -77,7 +77,7 @@ export async function fixture(t, options = {}) {
     if (url.pathname === '/backend-api/wham/remote/control/client/pair') return Response.json({ environment_id: 'host-one' });
     if (url.pathname.endsWith('/clients/server-created-client/environments')) return Response.json({ items: [
       { env_id: 'host-one', display_name: 'Laptop', host_name: 'pc', private_field: 'must-not-reach-browser' }], cursor: null });
-    if (request.method === 'DELETE' && url.pathname.endsWith('/clients/server-created-client')) return new Response(null, { status: 204 });
+    if (request.method === 'DELETE' && url.pathname.endsWith('/clients/server-created-client')) return new Response(null, { status: options.deleteStatus ?? 204 });
     assert.fail('Unexpected official endpoint: ' + url.pathname);
   };
   const controller = await createRemoteController({ authFile, stateDir, deviceKey, fetch });

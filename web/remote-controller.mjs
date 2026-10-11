@@ -236,8 +236,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     let ownedMarker;
     try {
       const saved = await load(pendingPath);
-      if (saved?.instanceId === candidate.instanceId && saved?.enrollment?.clientId === candidate.enrollment?.clientId &&
-          saved?.enrollment?.keyId === candidate.enrollment?.keyId) ownedMarker = saved;
+      if (saved?.instanceId === candidate.instanceId && saved?.enrollment?.clientId === candidate.enrollment?.clientId) ownedMarker = saved;
     } catch {}
     let journalRemoved = !ownedMarker;
     if (keyRemoved && clientRemoved && ownedMarker) {
@@ -246,7 +245,11 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
     if (keyRemoved && clientRemoved && journalRemoved) { if (pending?.instanceId === candidate.instanceId) pending = null; }
     else {
       pending = { ...candidate, inProgress: false }; phase = 'cleanupRequired';
-      if (ownedMarker) await save(pendingPath, pending, true).catch(() => {});
+      try { await save(pendingPath, pending, Boolean(ownedMarker)); }
+      catch {
+        errorCode = 'CLEANUP_RECORD_FAILED';
+        throw fault(errorCode, 'Candidate cleanup failed and its retry record could not be persisted; administrator recovery is required.');
+      }
     }
     return keyRemoved && clientRemoved && journalRemoved;
   }
@@ -288,12 +291,17 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, fe
         const started = await request('/codex/remote/control/client/enroll/start', current, { body: {} });
         if (!text(started.client_id)) throw fault('INVALID_CHALLENGE', 'The service returned an invalid server identity.');
         candidate.enrollment = { clientId: started.client_id, accountUserId: started.account_user_id };
+        await save(pendingPath, candidate); pending = candidate;
         if (!owners(current).includes(started.account_user_id)) throw fault('INVALID_CHALLENGE', 'The server account does not match the enrollment challenge.');
         validateChallenge(started.device_key_challenge, candidate.enrollment, enrollmentPath);
         const key = await deviceKey.createDeviceKey('allow_os_protected_nonextractable');
         candidate.enrollment = { ...candidate.enrollment, ...keyIdentity(key) };
         await matchingKey(candidate.enrollment);
-        await save(pendingPath, candidate); pending = candidate;
+        const marker = await load(pendingPath);
+        if (marker?.instanceId !== instanceId || marker?.enrollment?.clientId !== candidate.enrollment.clientId) {
+          throw fault('STATE_WRITE_FAILED', 'The candidate record belongs to another controller operation.');
+        }
+        await save(pendingPath, candidate, true); pending = candidate;
         attempt = await startRemoteAuthorization({ accountId: current.accountId, fetchToken: requestFetch, signal: stopped.signal });
         phase = 'authorizing';
         authorizing = attempt.completion.then(async token => {

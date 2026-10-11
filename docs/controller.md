@@ -221,3 +221,10 @@ Relay streams do not retain a second RPC request queue: native RPC timeouts
 release the sole pending-call map. A relay error without a request ID closes
 only its host stream and fails pending calls with an unknown outcome. It never
 guesses an expired request ID or replays a mutation.
+
+The candidate client ID and operation owner are journaled before challenge
+validation or key creation; key identity is added before authorization. Failed
+cleanup keeps a private retry marker for restart, without replacing another
+operation’s marker. `CLEANUP_RECORD_FAILED` explicitly signals that storage
+failed and administrator recovery is needed; do not start another enrollment
+while the owned candidate remains unresolved.
