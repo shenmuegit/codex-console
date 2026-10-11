@@ -62,7 +62,7 @@ test('selection offsets follow edits before them and disappear when their bound 
 });
 
 test('slash catalog is exact and commands never activate inside ordinary text or code', () => {
-  assert.deepEqual(COMMANDS, ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export']);
+  assert.deepEqual(COMMANDS, ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'goal', 'compact', 'rename', 'archive', 'delete', 'fork', 'export']);
   assert.deepEqual(commandAction('/rename 新标题'), { command: 'rename', args: '新标题' });
   for (const text of ['mail/a@b /new', '`/new`', '    /new', '/home/file', '/unknown']) assert.equal(commandAction(text), null);
 });

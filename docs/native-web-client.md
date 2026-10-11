@@ -692,13 +692,30 @@ quoted untrusted text input because native queue/add has no additionalContext
 field. This is a send-time snapshot; it does not message the referenced thread.
 
 Supported commands: `/new`, `/model [model effort]`, `/permissions`, `/status`,
-`/usage`, `/skills`, `/compact`, `/rename [name]`, `/archive`, `/delete`, `/fork`,
+`/usage`, `/skills`, `/goal [objective|edit|pause|resume|clear]`, `/compact`, `/rename [name]`, `/archive`, `/delete`, `/fork`,
 `/export`. The first group opens existing UI/native controls. Rename/compact use
 native actions; archive stops active work only after confirmation/interruption.
 Enable **Show archived conversations** and click one to restore it. Delete keeps
 its existing confirmation. Fork uses full defaults and defers automatic inherited
 goal continuation. Export downloads paginated native history as Markdown without
 writing a host file. There is no invented commands/list or read_thread tool.
+
+`/goal` opens the native goal editor and shows its status, token usage/budget and
+elapsed time. `/goal <objective>` creates or updates the current goal;
+`/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` manage it. Saving an
+edited objective preserves the native status and budget. Clearing asks for
+confirmation, keeps chat history and does not interrupt an already-running turn.
+Goal updates and clearing arrive through the existing SSE connection without
+replacing the objective being edited. Switching conversations, reconnecting or a
+conflicting objective update invalidates the editor; unknown write outcomes must
+be checked by reopening it, with no automatic retry. Goals are bound to the open
+view through a dedicated authenticated gateway; unrestricted native writes remain
+denied. New and resumed goals can start native work immediately. Objectives use
+the native 4000-character limit. Attachments and bound references must first be
+sent as ordinary chat messages; goal commands keep them intact and explain this
+limit. Existing token budgets are displayed and preserved, with no new budget
+settings added.
+
 Command submission locks before awaiting native work, so double Enter/click
 cannot create duplicate forks or compactions. Failed commands preserve the draft;
 editing while a command runs preserves the newer text.

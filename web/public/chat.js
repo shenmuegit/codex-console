@@ -2,6 +2,7 @@ import { displayNativeText, mountAttachments, mountCompletions, mountImageViewer
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
 import { createRequestCard } from './requests.js';
+import { mountGoals } from './goals.js';
 
 export function createChatState(threadId) {
   return { threadId, thread: null, turns: [], settings: {}, cursor: null, generation: null,
@@ -269,6 +270,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit() });
   const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   const imageViewer = mountImageViewer();
+  const goals = mountGoals({ api, viewId, getState: () => selected });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -642,6 +644,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const thinking = Boolean(state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
     if (thinkingStatus.hidden !== !thinking) thinkingStatus.hidden = !thinking;
     if (state) state.online = online;
+    goals.render();
     $('#thread-title').textContent = state?.deleted ? '会话已删除' : state?.thread?.name || state?.thread?.preview || (state && !state.ready ? '正在打开会话…' : '新会话');
     $('#thread-title').title = state?.thread?.name || state?.thread?.preview || '';
     $('#older-history').hidden = !state?.historyCursor;
@@ -765,6 +768,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (command === 'usage') { $('#show-usage').click(); return; }
     if (command === 'skills') { selected.draft = '$'; selected.selections = []; draft.value = '$'; draft.focus(); draft.setSelectionRange(1, 1); completions.refresh(); return false; }
     if (!selected?.ready) throw new Error('请先打开会话。');
+    if (command === 'goal') return goals.command(args);
     if (command === 'compact') { await api('/api/thread/compact', { viewId, threadId: selected.threadId }); selected.tokenUsage = null; return; }
     if (command === 'rename') return renameConversation({ id: selected.threadId, name: selected.thread?.name }, args || undefined);
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
@@ -893,9 +897,10 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       }
       if (!threadId || threadId === selected?.threadId) scheduleDraw();
       usage.onEvent(event);
+      goals.onEvent(event);
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }

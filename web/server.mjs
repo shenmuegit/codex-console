@@ -25,6 +25,7 @@ const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
   ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
   ['/requests.js', ['requests.js', 'text/javascript; charset=utf-8']],
+  ['/goals.js', ['goals.js', 'text/javascript; charset=utf-8']],
   ['/usage.js', ['usage.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']]]);
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
@@ -847,6 +848,16 @@ export function createWebServer({ config, codex }) {
         modelChoice(await nativeModels(), body.model, body.effort);
         await setNextSettings(body.threadId, { model: body.model, effort: body.effort });
         reply(res, 200, { settings: safe(chats.get(body.threadId).settings) });
+      } else if (url.pathname === '/api/thread/goal') {
+        fields(body, ['viewId', 'threadId', 'action', 'objective']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        if (!id(body.threadId) || view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        if (deleting.has(body.threadId)) throw error(409, 'THREAD_DELETING', '会话正在归档或删除。');
+        if (!['get', 'set', 'pause', 'resume', 'clear'].includes(body.action) ||
+            (body.action === 'set' ? !text(body.objective, 8000) || !body.objective.trim() || [...body.objective.trim()].length > 4000 : body.objective !== undefined)) throw error(400, 'INVALID_GOAL', '目标操作不正确，目标须为 1–4000 个字符。');
+        const method = body.action === 'get' ? 'thread/goal/get' : body.action === 'clear' ? 'thread/goal/clear' : 'thread/goal/set';
+        const params = { threadId: body.threadId, ...(body.action === 'get' ? {} : { origin: 'user' }),
+          ...(body.action === 'set' ? { objective: body.objective.trim() } : ['pause', 'resume'].includes(body.action) ? { status: body.action === 'pause' ? 'paused' : 'active' } : {}) };
+        reply(res, 200, await codex.rpc(method, params));
       } else if (url.pathname === '/api/thread/compact') {
         fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session);
         if (!id(body.threadId) || view.threadId !== body.threadId) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');

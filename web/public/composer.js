@@ -48,8 +48,8 @@ export function updateQueuedInput(input, text) {
   return input.map((item, i) => i === index ? { ...part, text: encoded, text_elements: elements } : item);
 }
 
-export const COMMANDS = ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export'];
-const COMMAND_DETAILS = { new: '新建会话', model: '选择模型与思考强度', permissions: '查看当前权限', status: '查看会话状态', usage: '查看账号用量', skills: '选择技能', compact: '压缩当前会话上下文', rename: '重命名会话', archive: '归档当前会话', delete: '删除当前会话', fork: '从当前会话创建分支', export: '下载 Markdown 聊天记录' };
+export const COMMANDS = ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'goal', 'compact', 'rename', 'archive', 'delete', 'fork', 'export'];
+const COMMAND_DETAILS = { new: '新建会话', model: '选择模型与思考强度', permissions: '查看当前权限', status: '查看会话状态', usage: '查看账号用量', skills: '选择技能', goal: '设置、查看或管理任务目标', compact: '压缩当前会话上下文', rename: '重命名会话', archive: '归档当前会话', delete: '删除当前会话', fork: '从当前会话创建分支', export: '下载 Markdown 聊天记录' };
 export function commandAction(text) {
   const match = text.trimEnd().match(/^\/([a-z]+)(?:\s+([\s\S]*))?$/);
   return match && COMMANDS.includes(match[1]) ? { command: match[1], args: match[2]?.trim() ?? '' } : null;
