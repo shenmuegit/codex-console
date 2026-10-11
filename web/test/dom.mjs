@@ -55,6 +55,7 @@ export function domFixture() {
     matches(selector) { return selector === ':popover-open' ? Boolean(this.open) : selector.startsWith('.') && (this.className ?? '').split(/\s+/).includes(selector.slice(1)); }
     get isConnected() { for (let node = this; node; node = node.parent) if (node === document.body) return true; return false; }
     getBoundingClientRect() { return { left: 220, right: 252, top: 40, bottom: 72 }; }
+    scrollIntoView() {}
     getClientRects() { return this.hidden ? [] : [this.getBoundingClientRect()]; }
     contains(node) { for (; node; node = node.parent) if (node === this) return true; return false; }
     querySelectorAll() { return this.children.flatMap(node => [node, ...node.querySelectorAll()]).filter(node => ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(node.tagName) || node.getAttribute('tabindex') != null); }

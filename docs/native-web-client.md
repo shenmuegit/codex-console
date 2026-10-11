@@ -660,13 +660,28 @@ metadata against the source backend.
 
 Type `@` to choose a file/directory in the conversation's actual workspace,
 another conversation, or an available native app/plugin. Nested paths such as
-`@src/` resolve from that conversation's directory. Type `$` for enabled
+`@src/` resolve from that conversation's directory. A filename search uses Codex's
+native fuzzy search across the current workspace; empty queries and explicit
+subdirectory paths use native directory listing. Search roots are fixed by the
+server, with results outside that workspace excluded and symlinks rechecked when
+sending. Paths containing spaces can be searched as `@"My Folder/in"`.
+Type `$` for enabled
 workspace skills. Picking binds the selected text; editing that token removes
 the binding, while email, code and unselected `$HOME` remain literal text.
 Chinese/emoji ranges use native UTF-8 offsets. IME confirmation never selects or
 submits a completion. Unavailable native catalog entries stay visibly unavailable.
 Shift+Enter keeps its newline behavior while the completion menu is open;
-plain Enter accepts the highlighted choice.
+plain Enter accepts the highlighted choice. The floating menu groups files,
+conversations, apps and plugins, shows file paths and Chinese command descriptions,
+and supports searching slash commands by their description. Arrow keys, Home/End
+and Tab navigate enabled choices; loading, empty and unavailable mention results
+cannot accidentally submit the draft. Escape, outside clicks, IME input and newer
+draft/caret/connection/workspace state invalidate old requests. Editing inside an
+accepted reference opens a fresh search; just moving the caret inside it does not.
+Choosing a slash command with no existing arguments runs its current handler
+directly. Existing deletion/archive confirmations and single-submission locks
+remain in effect. Typed command arguments and literal shell variables keep their
+normal behavior; the menu adds no unsupported native commands.
 
 Files/directories use native quoted paths, skills use typed skill inputs and
 apps/plugins use typed mention identities. Thread links use the native escaped

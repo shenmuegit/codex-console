@@ -197,10 +197,13 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 #image-viewer { width: min(1100px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 40px 12px 12px; overflow: hidden; }
 #image-viewer-image { display: block; width: 100%; max-height: calc(100dvh - 88px); object-fit: contain; }
 #close-image-viewer { position: absolute; top: 4px; right: 8px; }
-#completion-menu { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 8px; }
+#completion-menu { position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; z-index: 20; max-height: min(320px, 40dvh); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px #00000014; }
 #completion-menu button { display: block; width: 100%; border: 0; text-align: left; background: transparent; padding: 9px 12px; border-radius: 0; overflow-wrap: anywhere; }
 #completion-menu button[aria-selected="true"] { background: var(--hover); outline: 2px solid var(--focus); outline-offset: -2px; }
 #completion-menu p { padding: 8px 12px; margin: 0; font-size: 12px; }
+#completion-menu .completion-group { padding: 10px 12px 4px; color: var(--muted); font-weight: 500; }
+.completion-name, .completion-detail { display: block; overflow-wrap: anywhere; }
+.completion-detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
 dialog { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; width: min(440px, calc(100vw - 24px)); max-height: 88dvh; padding: 20px; box-shadow: 0 12px 48px #0003; }
 dialog::backdrop { background: #0006; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }

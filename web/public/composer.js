@@ -49,6 +49,7 @@ export function updateQueuedInput(input, text) {
 }
 
 export const COMMANDS = ['new', 'model', 'permissions', 'status', 'usage', 'skills', 'compact', 'rename', 'archive', 'delete', 'fork', 'export'];
+const COMMAND_DETAILS = { new: '新建会话', model: '选择模型与思考强度', permissions: '查看当前权限', status: '查看会话状态', usage: '查看账号用量', skills: '选择技能', compact: '压缩当前会话上下文', rename: '重命名会话', archive: '归档当前会话', delete: '删除当前会话', fork: '从当前会话创建分支', export: '下载 Markdown 聊天记录' };
 export function commandAction(text) {
   const match = text.trimEnd().match(/^\/([a-z]+)(?:\s+([\s\S]*))?$/);
   return match && COMMANDS.includes(match[1]) ? { command: match[1], args: match[2]?.trim() ?? '' } : null;
@@ -64,10 +65,12 @@ export function findTrigger(text, caret, { composing = false } = {}) {
   if (composing) return null;
   const prefix = text.slice(0, caret);
   if ((prefix.match(/```/g)?.length ?? 0) % 2 || (prefix.split('\n').at(-1).match(/(?<!\\)`/g)?.length ?? 0) % 2) return null;
-  const slash = prefix.match(/^\/([a-z]*)$/);
-  if (slash) return { sigil: '/', query: slash[1], start: 0, end: caret };
-  const match = prefix.match(/(?:^|\s)([@$])([^\s@$]*)$/);
-  return match ? { sigil: match[1], query: match[2], start: caret - match[2].length - 1, end: caret } : null;
+  const slash = prefix.match(/^\/([\p{L}\p{N}_-]*)$/u);
+  if (slash) return { sigil: '/', query: slash[1], start: 0, end: caret + text.slice(caret).match(/^[\p{L}\p{N}_-]*/u)[0].length };
+  const quoted = prefix.match(/(?:^|\s)([@$])"([^"\n]*)("?)$/);
+  if (quoted) { const tail = text.slice(caret).split('\n')[0], close = tail.indexOf('"'); return { sigil: quoted[1], query: quoted[2], start: caret - quoted[2].length - 2 - quoted[3].length, end: quoted[3] ? caret : caret + (close < 0 ? tail.length : close + 1) }; }
+  const match = prefix.match(/(?:^|\s)([@$])([^\s@$"`]*)$/);
+  return match ? { sigil: match[1], query: match[2], start: caret - match[2].length - 1, end: caret + text.slice(caret).match(/^[^\s@$"`]*/)[0].length } : null;
 }
 export function updateSelections(previous, next, selections = []) {
   let start = 0, tail = 0;
@@ -125,54 +128,95 @@ export function encodeComposer({ text, selections = [], uploads = [], threadId, 
   return { input, additionalContext };
 }
 
-export function mountCompletions({ api, viewId, getState, onChange }) {
+export function mountCompletions({ api, viewId, getState, onChange, onCommand }) {
   const draft = document.querySelector('#draft'), menu = document.querySelector('#completion-menu'), abort = new AbortController();
-  let timer, revision = 0, trigger, entries = [], active = 0, alive = true;
-  const close = () => { menu.hidden = true; draft.setAttribute('aria-expanded', 'false'); draft.removeAttribute('aria-activedescendant'); };
-  function choose(item) {
-    if (!trigger || item.disabled) return;
-    const state = getState(), original = draft.value, token = item.kind === 'command' ? '/' + item.command : (item.kind === 'skill' ? '$' : '@') + item.name;
-    const next = original.slice(0, trigger.start) + token + ' ' + original.slice(trigger.end);
+  const groups = { file: '文件和文件夹', directory: '文件和文件夹', thread: '会话', app: '应用', plugin: '插件', skill: '技能', command: '命令' };
+  let timer, revision = 0, context, entries = [], active = -1, alive = true, loading = false;
+  const close = () => { ++revision; clearTimeout(timer); context = null; entries = []; active = -1; loading = false; menu.hidden = true; draft.setAttribute('aria-expanded', 'false'); draft.setAttribute('aria-busy', 'false'); draft.removeAttribute('aria-activedescendant'); };
+  const valid = value => alive && value && getState() === value.state && value.state.ready && value.state.online !== false && !value.state.deleting && !value.state.composing && value.generation === value.state.generation && value.cwd === value.state.settings?.cwd && value.source === draft.value && value.caret === draft.selectionStart && draft.selectionStart === draft.selectionEnd;
+  function current() {
+    const state = getState(), caret = draft.selectionStart, trigger = findTrigger(draft.value, caret, { composing: state?.composing });
+    if (!state?.ready || state.online === false || state.deleting || !trigger || caret !== draft.selectionEnd || state.selections?.some(item => item.start < caret && caret <= item.end && draft.value.slice(item.start, item.end) === item.token)) return null;
+    return { ...trigger, state, source: draft.value, caret, generation: state.generation, cwd: state.settings?.cwd };
+  }
+  function open() {
+    menu.hidden = false; draft.setAttribute('aria-expanded', 'true'); draft.setAttribute('aria-busy', String(loading));
+    menu.setAttribute('aria-label', context?.sigil === '/' ? '选择命令' : context?.sigil === '$' ? '选择技能' : '选择引用');
+    const top = menu.parentNode?.getBoundingClientRect().top ?? draft.getBoundingClientRect().top;
+    const heading = document.querySelector('#thread-title')?.parentNode?.getBoundingClientRect().bottom ?? 16;
+    menu.style.maxHeight = Math.max(80, Math.min(320, top - heading - 16)) + 'px';
+  }
+  function status(text) { const line = document.createElement('p'); line.className = 'muted small'; line.setAttribute('role', 'status'); line.textContent = text; menu.replaceChildren(line); open(); }
+  function choose(item, selected = context) {
+    if (selected !== context || item.disabled) return;
+    if (!valid(selected)) { close(); return; }
+    const { state, source: original, start, end } = selected, token = item.kind === 'command' ? '/' + item.command : item.label ?? (item.kind === 'skill' ? '$' : '@') + item.name;
+    const tail = original.slice(end), space = /^\s/.test(tail) ? '' : ' ', next = original.slice(0, start) + token + space + tail;
     state.selections = updateSelections(original, next, state.selections);
-    if (item.kind !== 'command') state.selections.push({ kind: item.kind, ...(item.id ? { id: item.id } : {}), ...(item.path ? { path: item.path } : {}), start: trigger.start, end: trigger.start + token.length, token });
-    state.draft = next; draft.value = next; draft.focus(); draft.setSelectionRange(trigger.start + token.length + 1, trigger.start + token.length + 1); close(); onChange(state);
+    if (item.kind !== 'command') state.selections.push({ kind: item.kind, ...(item.id ? { id: item.id } : {}), ...(item.path ? { path: item.path } : {}), start, end: start + token.length, token });
+    state.draft = next; draft.value = next; draft.focus(); const caret = start + token.length + (space || tail ? 1 : 0); draft.setSelectionRange(caret, caret); close(); onChange(state);
+    if (item.kind === 'command' && !tail.trim()) onCommand?.(item.command);
   }
   function highlight() {
-    for (let i = 0; i < entries.length; i++) document.querySelector('#completion-' + i)?.setAttribute('aria-selected', String(i === active));
-    if (entries[active]) draft.setAttribute('aria-activedescendant', 'completion-' + active);
+    for (let i = 0; i < entries.length; i++) { const node = document.querySelector('#completion-' + i), value = String(i === active); if (node?.getAttribute('aria-selected') !== value) node?.setAttribute('aria-selected', value); }
+    if (active >= 0) { draft.setAttribute('aria-activedescendant', 'completion-' + active); document.querySelector('#completion-' + active)?.scrollIntoView({ block: 'nearest' }); }
+    else draft.removeAttribute('aria-activedescendant');
   }
   function show(result) {
-    entries = result.items; active = 0; menu.replaceChildren();
+    entries = result.items; active = entries.findIndex(item => !item.disabled); loading = false; menu.replaceChildren(); let group;
+    const selected = context;
     for (let i = 0; i < entries.length; i++) {
+      if (groups[entries[i].kind] !== group) { group = groups[entries[i].kind]; const heading = document.createElement('p'); heading.className = 'completion-group'; heading.setAttribute('aria-hidden', 'true'); heading.textContent = group; menu.append(heading); }
       const item = entries[i], button = document.createElement('button'); button.type = 'button'; button.role = 'option'; button.id = 'completion-' + i;
-      button.textContent = `${item.label} · ${item.kind}${item.disabled ? '（原生不可用）' : item.kind === 'thread' ? '（发送时快照）' : ''}`;
-      button.disabled = Boolean(item.disabled); button.onclick = () => choose(item); menu.append(button);
+      const name = document.createElement('span'), detail = document.createElement('small'); name.className = 'completion-name'; name.textContent = item.kind === 'command' ? item.label : item.name ?? item.label;
+      const path = ['file', 'directory'].includes(item.kind) ? item.label.slice(1) : null;
+      detail.className = 'completion-detail'; detail.textContent = (item.description ?? (path === item.name ? item.kind === 'directory' ? '文件夹' : '文件' : path ?? groups[item.kind])) + (item.disabled ? ' · 当前不可用' : '');
+      button.setAttribute('role', 'option'); button.setAttribute('aria-label', item.label + '，' + detail.textContent); button.setAttribute('aria-disabled', String(Boolean(item.disabled))); button.append(name, detail);
+      button.disabled = Boolean(item.disabled); button.onclick = () => choose(item, selected); button.addEventListener('pointerdown', event => event.preventDefault(), { signal: abort.signal });
+      button.addEventListener('pointermove', () => { if (!item.disabled && valid(selected) && active !== i) { active = i; highlight(); } }, { signal: abort.signal }); menu.append(button);
     }
     for (const issue of result.unavailable ?? []) { const line = document.createElement('p'); line.className = 'muted small'; line.textContent = `${issue.kind}：${issue.message}`; menu.append(line); }
-    if (!entries.length && !result.unavailable?.length) { const line = document.createElement('p'); line.textContent = '没有匹配的原生条目。'; menu.append(line); }
-    menu.hidden = false; draft.setAttribute('aria-expanded', 'true'); highlight();
+    if (!entries.length && !result.unavailable?.length) { const line = document.createElement('p'); line.textContent = '没有匹配结果。'; menu.append(line); }
+    open(); highlight();
   }
   async function refresh() {
-    const state = getState(); trigger = findTrigger(draft.value, draft.selectionStart, { composing: state?.composing });
-    const version = ++revision;
-    if (!state?.ready || !trigger) { close(); return; }
-    if (trigger.sigil === '/') { show({ items: COMMANDS.filter(command => command.startsWith(trigger.query)).map(command => ({ kind: 'command', command, label: '/' + command })) }); return; }
+    close(); const selected = context = current(), version = revision; if (!selected) return;
+    const { state, sigil, query } = selected;
+    if (sigil === '/') { show({ items: COMMANDS.filter(command => command.startsWith(query.toLocaleLowerCase()) || COMMAND_DETAILS[command].includes(query)).map(command => ({ kind: 'command', command, label: '/' + command, description: COMMAND_DETAILS[command], disabled: Boolean(state.pending || state.acceptedTurn || state.commandPending) })) }); return; }
+    loading = true; status('搜索中…');
     try {
-      const result = await api('/api/completions', { viewId, threadId: state.threadId, sigil: trigger.sigil, query: trigger.query });
-      if (alive && version === revision && getState() === state) show(result);
-    } catch (e) { if (alive && version === revision) show({ items: [], unavailable: [{ kind: '补全', message: e.message }] }); }
+      const result = await api('/api/completions', { viewId, threadId: state.threadId, sigil, query });
+      if (version === revision) { if (valid(selected)) show(result); else close(); }
+    } catch (e) { if (version === revision) { if (valid(selected)) show({ items: [], unavailable: [{ kind: '补全', message: e.message }] }); else close(); } }
   }
-  draft.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); }, { signal: abort.signal });
+  function schedule() {
+    close(); context = current(); if (!context) return;
+    if (context.sigil === '/') { refresh(); return; }
+    loading = true; status('搜索中…'); timer = setTimeout(refresh, 150);
+  }
+  draft.addEventListener('input', schedule, { signal: abort.signal });
   draft.addEventListener('compositionstart', close, { signal: abort.signal });
-  draft.addEventListener('compositionend', () => { clearTimeout(timer); timer = setTimeout(refresh, 0); }, { signal: abort.signal });
+  draft.addEventListener('compositionend', () => { close(); timer = setTimeout(refresh, 0); }, { signal: abort.signal });
+  draft.addEventListener('click', () => { if (!valid(context)) refresh(); }, { signal: abort.signal });
+  draft.addEventListener('keyup', event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) && !valid(context)) refresh(); }, { signal: abort.signal });
+  document.body.addEventListener('pointerdown', event => { if (event.target !== draft && !menu.contains(event.target)) close(); }, { signal: abort.signal });
   draft.addEventListener('keydown', event => {
     if (menu.hidden || event.isComposing || getState()?.composing || event.keyCode === 229) return;
-    if (event.key === 'Enter' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return;
-    if (event.key === 'Escape') { close(); event.preventDefault(); return; }
-    if (['ArrowDown', 'ArrowUp'].includes(event.key) && entries.length) { active = (active + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length; highlight(); event.preventDefault(); }
-    if (['Enter', 'Tab'].includes(event.key) && entries[active] && !entries[active].disabled) { event.preventDefault(); event.stopImmediatePropagation(); choose(entries[active]); }
+    if (event.key === 'Escape') { close(); event.preventDefault(); event.stopImmediatePropagation(); return; }
+    if (!valid(context)) { close(); if (['Enter', 'Tab'].includes(event.key)) { event.preventDefault(); event.stopImmediatePropagation(); } return; }
+    if (event.ctrlKey || event.metaKey || event.altKey || event.key === 'Enter' && event.shiftKey) return;
+    if (event.key === 'Tab' && event.shiftKey) { close(); return; }
+    if (event.shiftKey) return;
+    const enabled = entries.flatMap((item, index) => item.disabled ? [] : [index]);
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && enabled.length) {
+      active = event.key === 'Home' ? enabled[0] : event.key === 'End' ? enabled.at(-1) : enabled[(enabled.indexOf(active) + (event.key === 'ArrowDown' ? 1 : -1) + enabled.length) % enabled.length]; highlight(); event.preventDefault();
+    }
+    if (['Enter', 'Tab'].includes(event.key)) {
+      if (!entries.length && !loading && context.sigil === '$' || event.key === 'Tab' && active < 0) { close(); return; }
+      event.preventDefault(); event.stopImmediatePropagation(); if (active >= 0) choose(entries[active]);
+    }
   }, { signal: abort.signal });
-  return { refresh, close, dispose() { alive = false; ++revision; abort.abort(); clearTimeout(timer); close(); } };
+  return { refresh, close, dispose() { alive = false; abort.abort(); close(); } };
 }
 
 export function mountImageViewer() {

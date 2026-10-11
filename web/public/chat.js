@@ -266,7 +266,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
-  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); } });
+  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit() });
   const followups = mountFollowups({ api, viewId, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   const imageViewer = mountImageViewer();
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
@@ -845,7 +845,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
   draft.addEventListener('input', () => { if (selected) { selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
   draft.addEventListener('compositionstart', () => { if (selected) selected.composing = true; }, { signal: abort.signal });
   draft.addEventListener('compositionend', () => { if (selected) { selected.composing = false; selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
-  draft.addEventListener('keydown', event => { if (shouldSubmitKey(event, { composing: selected?.composing, finePointer: matchMedia('(pointer: fine)').matches })) { event.preventDefault(); $('#composer').requestSubmit(); } }, { signal: abort.signal });
+  draft.addEventListener('keydown', event => { if (!event.defaultPrevented && shouldSubmitKey(event, { composing: selected?.composing, finePointer: matchMedia('(pointer: fine)').matches })) { event.preventDefault(); $('#composer').requestSubmit(); } }, { signal: abort.signal });
   bind($('#stop-turn'), 'click', async () => { const turn = selected && activeTurn(selected); if (!turn) return; $('#stop-turn').disabled = true;
     try { await api('/api/thread/stop', { viewId, threadId: selected.threadId, turnId: turn.id }); } finally { draw(); } });
   bind($('#retry-uncertain'), 'click', () => { if (selected?.pending?.unknown && window.confirm('请先核对历史。确认重新发送当前草稿？')) { selected.pending = null; save(selected); draw(); } });

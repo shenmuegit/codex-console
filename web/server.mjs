@@ -1,6 +1,6 @@
 import https from 'node:https';
 import { readFileSync, mkdirSync, chmodSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { parseArgs, isDeepStrictEqual } from 'node:util';
@@ -253,21 +253,24 @@ export function createWebServer({ config, codex }) {
     }
     return resolved;
   }
-  async function completions(state, sigil, query) {
+  async function completions(state, sigil, query, viewId) {
     if (!['@', '$'].includes(sigil) || !text(query, 256)) throw error(400, 'INVALID_COMPLETION', '补全查询不正确。');
     const match = name => name.toLocaleLowerCase().includes(query.toLocaleLowerCase()), items = [], unavailable = [];
     if (sigil === '$') {
       for (const skill of await skillsAt(state.thread.cwd)) if (match(skill.name)) items.push({ kind: 'skill', path: skill.path, name: skill.name, label: '$' + skill.name, disabled: !skill.enabled });
       return { items, unavailable };
     }
-    const cwd = state.thread.cwd, slash = query.lastIndexOf('/');
+    const cwd = state.thread.cwd, slash = query.lastIndexOf('/'), search = query.length > 0 && slash < 0;
     const path = slash < 0 ? cwd : resolve(cwd, query.slice(0, slash + 1)), needle = slash < 0 ? query : query.slice(slash + 1);
     const calls = await Promise.allSettled([
-      path === cwd || path.startsWith(cwd === '/' ? '/' : cwd + '/') ? nativeRead('fs/readDirectory', { path }) : Promise.reject(new Error('目录不在当前工作区。')),
+      search ? nativeRead('fuzzyFileSearch', { query, roots: [cwd], cancellationToken: 'web-completion:' + viewId }) : path === cwd || path.startsWith(cwd === '/' ? '/' : cwd + '/') ? nativeRead('fs/readDirectory', { path }) : Promise.reject(new Error('目录不在当前工作区。')),
       nativeRead('thread/list', { limit: 20, modelProviders: [], ...(query ? { searchTerm: query } : {}) }), appsAt(state.threadId), pluginsAt(cwd),
     ]);
     for (let index = 0; index < calls.length; index++) if (calls[index].status === 'rejected') unavailable.push({ kind: ['文件', '会话', '应用', '插件'][index], message: calls[index].reason.message });
-    if (calls[0].status === 'fulfilled') for (const entry of calls[0].value.entries) if (entry.fileName.toLocaleLowerCase().includes(needle.toLocaleLowerCase())) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: join(path, entry.fileName), name: entry.fileName, label: '@' + entry.fileName });
+    if (calls[0].status === 'fulfilled') {
+      const entries = search ? calls[0].value.files.map(file => ({ fileName: file.file_name, path: resolve(cwd, file.path), isDirectory: file.match_type === 'directory' })) : calls[0].value.entries.filter(entry => entry.fileName.toLocaleLowerCase().includes(needle.toLocaleLowerCase())).map(entry => ({ ...entry, path: join(path, entry.fileName) }));
+      for (const entry of entries) if (entry.path === cwd || entry.path.startsWith(cwd === '/' ? '/' : cwd + '/')) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: entry.path, name: entry.fileName, label: '@' + (relative(cwd, entry.path) || '.') });
+    }
     if (calls[1].status === 'fulfilled') for (const thread of calls[1].value.data) if (thread.id !== state.threadId) items.push({ kind: 'thread', id: thread.id, name: [...(thread.name || thread.preview || thread.id)].slice(0, 160).join(''), label: '@' + (thread.name || thread.preview || thread.id) });
     if (calls[2].status === 'fulfilled') for (const app of calls[2].value) if (match(app.name)) items.push({ kind: 'app', id: app.id, name: app.name, label: '@' + app.name, disabled: !app.callable });
     if (calls[3].status === 'fulfilled') for (const plugin of calls[3].value) if (match(plugin.name)) items.push({ kind: 'plugin', id: plugin.id, name: plugin.name, label: '@' + plugin.name, disabled: !plugin.installed || !plugin.enabled || plugin.availability === 'DISABLED_BY_ADMIN' });
@@ -752,7 +755,7 @@ export function createWebServer({ config, codex }) {
       } else if (url.pathname === '/api/completions') {
         fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
-        reply(res, 200, await completions(state, body.sigil, body.query));
+        reply(res, 200, await completions(state, body.sigil, body.query, body.viewId));
       } else if (url.pathname === '/api/rpc') {
         fields(body, ['method', 'params']); validateRead(body.method, body.params);
         const epoch = accountEpoch;
