@@ -176,3 +176,29 @@ later steps. A software vTPM experiment is not evidence of physical TPM protecti
 or acceptance by the official relay. See the
 [Linux vTPM driver](https://docs.kernel.org/security/tpm/tpm_vtpm_proxy.html) and
 [swtpm documentation](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod).
+
+### Project-local, single-user installation
+
+Following the owner's preference, `swtpm`, `swtpm-libs`, and `libtpms0` were
+downloaded, checked against APT SHA-256 metadata, and extracted into
+`.tools/vtpm/root/`. The `.tools/` directory is ignored by Git and uses mode 700.
+No system packages were installed. From the checkout root:
+
+```bash
+env LD_LIBRARY_PATH="$PWD/.tools/vtpm/root/usr/lib/x86_64-linux-gnu:$PWD/.tools/vtpm/root/usr/lib/x86_64-linux-gnu/swtpm" \
+  .tools/vtpm/root/usr/bin/swtpm --version
+```
+
+The local executable reported `0.7.1`. A UID 1000 socket-mode experiment returned
+16 bytes through the TPM 2 GetRandom command; its Unix socket used mode 600.
+Temporary state stayed outside the checkout, and the process/state were cleaned
+up. Unix socket names need short paths; the first attempt exceeded their length
+limit and the corrected experiment used a private temporary directory.
+
+This verifies a user-local emulator, not the official controller's device-key
+interface. The official addon passes the literal `/dev/tpmrm0` to
+`Tss2_Tcti_Device_Init`; moving its files does not select a project-local socket.
+Creating the kernel TPM interface still needs administrator privileges. The
+prepared kernel-device helper now uses the local runtime and no longer installs
+system packages. Keys, configuration, and TPM state remain outside Git as
+required by AGENTS.md; the device can be restricted to the application user.

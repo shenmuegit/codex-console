@@ -150,3 +150,25 @@ sudo 认证用于取得这一步所需的 OS 管理员权限。官方账号授�
 也不能证明官方中继会接受此控制端。参见
 [Linux vTPM 驱动](https://docs.kernel.org/security/tpm/tpm_vtpm_proxy.html)和
 [swtpm 文档](https://github.com/stefanberger/swtpm/blob/master/man/man8/swtpm.pod)。
+
+### 项目内安装，仅当前用户使用
+
+按所有者要求，已下载 `swtpm`、`swtpm-libs`、`libtpms0` 三个包，核对 APT
+SHA-256 后解包到 `.tools/vtpm/root/`。`.tools/` 已加入 Git 忽略，目录权限为
+700；没有安装系统软件包。在项目根目录可以运行：
+
+```bash
+env LD_LIBRARY_PATH="$PWD/.tools/vtpm/root/usr/lib/x86_64-linux-gnu:$PWD/.tools/vtpm/root/usr/lib/x86_64-linux-gnu/swtpm" \
+  .tools/vtpm/root/usr/bin/swtpm --version
+```
+
+本地程序返回版本 `0.7.1`。UID 1000 的 socket 模式实验通过 TPM 2 GetRandom
+命令收到 16 字节，Unix socket 权限为 600。临时状态在仓库外，进程和状态已
+清理。Unix socket 需要短路径；首个路径超过长度限制，改用私有临时目录后
+检查通过。
+
+此结果验证用户级模拟器，没有验证官方控制端的设备密钥接口。官方组件直接
+把固定的 `/dev/tpmrm0` 传入 `Tss2_Tcti_Device_Init`，移动程序文件不能让它
+改用项目内 socket。建立内核 TPM 接口仍需要管理员权限；已准备的设备初始化
+助手现使用项目内运行库，不再安装系统包。密钥、配置、TPM 状态继续按
+AGENTS.md 保存在 Git 仓库外，设备访问可以限制为应用用户。
