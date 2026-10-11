@@ -98,6 +98,13 @@ nodes, expanded activities and unchanged image/download references stay mounted;
 plain deltas reuse their existing reply body. Background conversation deltas do
 not redraw the selected chat. Unchanged draft attachments retain their nodes and
 focused controls, while upload progress, errors and removal still update normally.
+Within a reply, SSE appends only the new characters to the existing text node;
+it never rewrites the full line or paragraph. Safe Markdown updates patch matching
+nodes in place, retaining completed paragraphs, code blocks, inline images and text
+selection instead of alternating the reply between HTML and plain text. Structural
+Markdown changes update the affected subtree. Authoritative text corrections replace
+only the differing character range; formatted corrections wait for the next safe
+HTML update. Native chunks display immediately without an artificial typing delay.
 An accepted message immediately shows a muted **Thinking** status at the end of
 the transcript, including before the native start event arrives. This temporary
 feedback does not create a chat item or advance the SSE cursor. It gives way to

@@ -221,6 +221,36 @@ export function shouldSubmitKey(event, { composing, finePointer }) {
 }
 export { activeTurn };
 
+function patchText(node, text) {
+  const previous = node.data; if (previous === text) return;
+  if (text.startsWith(previous)) { node.appendData(text.slice(previous.length)); return; }
+  let start = 0, oldEnd = previous.length, newEnd = text.length;
+  while (start < oldEnd && start < newEnd && previous[start] === text[start]) start++;
+  while (oldEnd > start && newEnd > start && previous[oldEnd - 1] === text[newEnd - 1]) { oldEnd--; newEnd--; }
+  node.replaceData(start, oldEnd - start, text.slice(start, newEnd));
+}
+function patchChildren(parent, target) {
+  const previous = [...parent.childNodes], next = [...target.childNodes];
+  for (let index = 0; index < Math.max(previous.length, next.length); index++) {
+    const node = previous[index], incoming = next[index];
+    if (!incoming) { node.remove(); continue; }
+    if (!node) { parent.append(incoming.cloneNode(true)); continue; }
+    if (node.nodeType !== incoming.nodeType || node.tagName !== incoming.tagName) {
+      parent.insertBefore(incoming.cloneNode(true), node); node.remove(); continue;
+    }
+    if (node.nodeType !== 1) { patchText(node, incoming.data); continue; }
+    for (const name of node.getAttributeNames()) if (!incoming.hasAttribute(name)) node.removeAttribute(name);
+    for (const name of incoming.getAttributeNames()) if (node.getAttribute(name) !== incoming.getAttribute(name)) node.setAttribute(name, incoming.getAttribute(name));
+    patchChildren(node, incoming);
+  }
+}
+function appendRenderedText(body, text) {
+  let parent = body.lastElementChild ?? body;
+  while (parent.lastElementChild && ['PRE', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH'].includes(parent.tagName)) parent = parent.lastElementChild;
+  if (parent.lastChild?.nodeType === 3) parent.lastChild.appendData(text);
+  else parent.append(document.createTextNode(text));
+}
+
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
 export function mountChat({ api, viewId, uploadLimitBytes }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
@@ -558,18 +588,31 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (item._delivery && entry.delivery !== item._delivery) { entry.node.dataset.delivery = item._delivery; entry.header.setAttribute('role', 'status'); }
     if (entry.header.textContent !== label) entry.header.textContent = label;
     const text = messageText(item), html = presentation?.html;
-    if (html ? entry.html !== html : entry.text !== text || entry.html) {
-      if (html) { entry.body.innerHTML = html; entry.plain = null; }
-      else { if (!entry.plain) { entry.plain = element('pre'); entry.body.replaceChildren(entry.plain); } entry.plain.textContent = text; }
-      entry.html = html; entry.text = text;
+    if (typeof html === 'string' && (entry.html !== html || entry.unformatted)) {
+      const template = document.createElement('template'); template.innerHTML = html;
+      patchChildren(entry.body, template.content);
+      entry.html = html; entry.plain = null; entry.text = text; entry.unformatted = entry.waitingForHtml = false;
+    } else if (entry.text !== text) {
+      if (entry.html !== undefined) {
+        if (!entry.waitingForHtml && text.startsWith(entry.text ?? '')) appendRenderedText(entry.body, text.slice((entry.text ?? '').length));
+        else if (role === 'tool' && entry.body.children.length === 1 && entry.body.children[0].tagName === 'PRE') {
+          const pre = entry.body.children[0]; if (!pre.firstChild) pre.append(document.createTextNode('')); patchText(pre.firstChild, text);
+        }
+        else entry.waitingForHtml = true;
+        entry.unformatted = true;
+      } else {
+        if (!entry.plain) { entry.plain = element(role === 'assistant' ? 'p' : 'pre'); entry.plain.append(document.createTextNode('')); entry.body.replaceChildren(entry.plain); }
+        patchText(entry.plain.firstChild, text);
+      }
+      entry.text = text;
     }
     const files = presentation?.files ?? entry.files ?? [];
-    const filesKey = JSON.stringify(files.map(file => [file.name, file.href, file.imageHref, Boolean(file.imageHref && html?.includes('src="' + file.imageHref + '"'))]));
+    const filesKey = JSON.stringify(files.map(file => [file.name, file.href, file.imageHref, Boolean(file.imageHref && entry.html?.includes('src="' + file.imageHref + '"'))]));
     if (entry.filesKey !== filesKey) {
       entry.downloads.replaceChildren();
       for (const file of files) {
         if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) {
-          if (!html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
+          if (!entry.html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
         } else if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
       }
       entry.filesKey = filesKey;

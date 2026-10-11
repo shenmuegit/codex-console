@@ -68,7 +68,7 @@ test('completed draft photos are plain thumbnails with a labelled corner cross; 
   assert.equal(photo.children[0].tagName, 'IMG'); assert.equal(photo.children[0].getAttribute('role'), 'button');
   assert.equal(photo.children[1].textContent, '×'); assert.equal(photo.children[1].className, 'attachment-remove');
   assert.equal(photo.children[1].getAttribute('aria-label'), '移除附件 图片.png');
-  assert.equal(document.children[0].textContent, 'notes.txt');
+  assert.equal(document.children[0].firstChild.textContent, 'notes.txt');
   pictureEvent(f.dom, photo.children[0], 'click'); assert.equal(f.dom.get('image-viewer').open, true); f.dom.get('image-viewer').close();
   photo.children[1].click(); assert.deepEqual(state.attachments.map(item => item.id), ['document']); assert.equal(state.draft, '保留草稿');
 });
