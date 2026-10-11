@@ -589,7 +589,8 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       }
       const path = (item.agentPath ?? '').split('/').map(part => part.trim()).filter(part => part && part !== 'root').at(-1);
       const name = path?.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-      entry.label.textContent = (name ? name[0].toUpperCase() + name.slice(1) : '子代理') + ' ' + ({ started: '开始工作', interacted: '已更新', interrupted: '已中断', completed: '已完成' }[item.kind] ?? '活动');
+      const label = (name ? name[0].toUpperCase() + name.slice(1) : '子代理') + ' ' + ({ started: '开始工作', interacted: '已更新', interrupted: '已中断', completed: '已完成' }[item.kind] ?? '活动');
+      if (entry.label.textContent !== label) entry.label.textContent = label;
       return entry.node;
     }
     let entry = messageNodes.get(item.id), presentation = item._presentation;
@@ -598,21 +599,26 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       node.dataset.itemId = item.id; node.setAttribute('aria-label', role === 'user' ? '你的消息' : role === 'assistant' ? 'Codex 回复' : '工具输出');
       node.append(header, body, downloads); messageNodes.set(item.id, entry = { node, header, body, downloads });
     }
-    entry.header.textContent = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
+    const label = `${presentation?.label ?? ({ user: '你', assistant: 'Codex', tool: { reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用', dynamicToolCall: '工具调用', webSearch: '网页搜索', collabAgentToolCall: '代理协作' }[item.type] ?? '工具详情' }[role])}${role === 'tool' && item.status ? ' · ' + ({ inProgress: '运行中', completed: '完成', failed: '失败' }[item.status] ?? item.status) : ''}`;
+    if (entry.header.textContent !== label) entry.header.textContent = label;
     const text = messageText(item), html = presentation?.html;
     if (html ? entry.html !== html : entry.text !== text || entry.html) {
-      if (html) entry.body.innerHTML = html; else { const plain = element('pre', text); entry.body.replaceChildren(plain); }
+      if (html) { entry.body.innerHTML = html; entry.plain = null; }
+      else { if (!entry.plain) { entry.plain = element('pre'); entry.body.replaceChildren(entry.plain); } entry.plain.textContent = text; }
       entry.html = html; entry.text = text;
     }
-    if (entry.files !== presentation?.files) {
+    const files = presentation?.files ?? entry.files ?? [];
+    const filesKey = JSON.stringify(files.map(file => [file.name, file.href, file.imageHref, Boolean(file.imageHref && html?.includes('src="' + file.imageHref + '"'))]));
+    if (entry.filesKey !== filesKey) {
       entry.downloads.replaceChildren();
-      for (const file of presentation?.files ?? []) {
+      for (const file of files) {
         if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+$/.test(file.imageHref)) {
           if (!html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
         } else if (/^\/api\/files\/[A-Za-z0-9_-]+$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
       }
-      entry.files = presentation?.files;
+      entry.filesKey = filesKey;
     }
+    entry.files = files;
     return entry.node;
   }
   function draw() {
@@ -665,11 +671,17 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
             const node = element('details', null, 'message message-activity'), header = element('summary', null, 'activity-summary'), label = element('span'), body = element('div', null, 'activity-items');
             header.append(activityIcon(), label); node.append(header, body); activityNodes.set(key, activity = { node, label, body });
           }
-          activity.label.textContent = activityLabel(group.items); activity.node.setAttribute('aria-label', activity.label.textContent);
+          const label = activityLabel(group.items);
+          if (activity.label.textContent !== label) { activity.label.textContent = label; activity.node.setAttribute('aria-label', label); }
           currentActivities.add(key); parent = activity.body; container = activity.node; index = 0;
         }
         for (const item of group.items) {
-          currentIds.add(item.id); const node = renderMessage(item, group.role); messageNodes.get(item.id).group = key;
+          currentIds.add(item.id); let entry = messageNodes.get(item.id);
+          if (!entry || entry.item !== item || entry.cursor !== item._cursor || entry.presentation !== item._presentation || entry.sourceFiles !== item._presentation?.files) {
+            renderMessage(item, group.role); entry = messageNodes.get(item.id);
+            Object.assign(entry, { item, cursor: item._cursor, presentation: item._presentation, sourceFiles: item._presentation?.files });
+          }
+          const node = entry.node; entry.group = key;
           const following = parent.children[index++]; if (following !== node) parent.insertBefore(node, following ?? null);
           container ??= node;
         }
@@ -864,7 +876,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
       if (['thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'turn/started', 'turn/completed'].includes(event.native?.method)) {
         clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadThreads().catch(showError), 300);
       }
-      scheduleDraw();
+      if (!threadId || threadId === selected?.threadId) scheduleDraw();
       usage.onEvent(event);
     },
     connection(value) { online = value; draw(); },

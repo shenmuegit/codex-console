@@ -196,7 +196,7 @@ export function mountImageViewer() {
 export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes }) {
   const fileInput = document.querySelector('#file-input'), photoInput = document.querySelector('#photo-input');
   const container = document.querySelector('#attachments'), abort = new AbortController(), records = new Set();
-  let queue = Promise.resolve(), alive = true;
+  let queue = Promise.resolve(), alive = true, renderedState, renderedKey, renderedRecords = [];
   const raster = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
   function notify(state) { if (alive) onChange(state); }
   function sendBytes(record) {
@@ -258,8 +258,13 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
   document.querySelector('#choose-files').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; fileInput.click(); }, { signal: abort.signal });
   document.querySelector('#choose-photos').addEventListener('click', () => { document.querySelector('#attachment-actions').open = false; photoInput.click(); }, { signal: abort.signal });
   function render(state) {
+    const retained = new Set(getStates().flatMap(state => state.attachments));
+    for (const record of records) if (!retained.has(record)) { if (record.previewUrl) URL.revokeObjectURL(record.previewUrl); records.delete(record); }
+    const attachments = state?.attachments ?? [];
+    const key = JSON.stringify(attachments.map(record => [record.id, record.name, record.status, record.error, record.progress, record.previewUrl, record.imageHref, Boolean(record.file)]));
+    if (renderedState === state && renderedKey === key && attachments.every((record, index) => renderedRecords[index] === record)) return;
     container.replaceChildren();
-    for (const record of state?.attachments ?? []) {
+    for (const record of attachments) {
       const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+$/.test(record.imageHref) ? record.imageHref : null);
       const node = document.createElement('div'); node.className = 'attachment' + (src ? ' attachment-image' : '');
       if (src) { const image = document.createElement('img'); image.src = src; image.alt = record.name; image.width = image.height = 80; image.className = 'chat-image'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + record.name); node.append(image); }
@@ -274,8 +279,7 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
       remove.onclick = () => { record.removed = true; record.xhr?.abort(); state.attachments = state.attachments.filter(item => item !== record); notify(state); };
       node.append(remove); container.append(node);
     }
-    const retained = new Set(getStates().flatMap(state => state.attachments));
-    for (const record of records) if (!retained.has(record)) { if (record.previewUrl) URL.revokeObjectURL(record.previewUrl); records.delete(record); }
+    renderedState = state; renderedKey = key; renderedRecords = [...attachments];
   }
   return {
     render,

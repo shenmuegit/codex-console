@@ -93,6 +93,11 @@ items occupy no row, and become visible when native public text arrives. Native
 subagent activity uses the desktop path-to-name formatting and lifecycle labels,
 with a link to the child conversation. Older messages with no returned public
 text cannot be backfilled from their encrypted records.
+Streaming updates render only new or changed native items. Historical message
+nodes, expanded activities and unchanged image/download references stay mounted;
+plain deltas reuse their existing reply body. Background conversation deltas do
+not redraw the selected chat. Unchanged draft attachments retain their nodes and
+focused controls, while upload progress, errors and removal still update normally.
 
 The sidebar footer opens account-wide seven-day usage, including when no
 conversation is selected. Switching conversations does not change its scope.
