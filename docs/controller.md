@@ -52,6 +52,13 @@ The module preserves the ordinary auth file and does not use another device's
 controller ID. It checks account, challenge purpose/audience/target/expiration,
 key identity, fresh authorization scope, and its signature before registration.
 
+The step-up token must identify the current workspace user from the ordinary
+account token, as in the observed native client. The enrollment service may
+instead identify that account's login user; that service identity stays bound
+to the challenge, device proof and saved enrollment. It cannot replace the
+workspace user during step-up authorization. Missing workspace identity, wrong
+account/scope and stale reauthentication remain rejected.
+
 One private `enrollment.json` stores the server identity and relay session
 together. It is published atomically with mode 600; an existing record is not
 overwritten by initial enrollment. `pending.json` identifies only this server's

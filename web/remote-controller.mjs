@@ -60,13 +60,13 @@ function validateChallenge(challenge, record, path, requireHash = false) {
     throw fault('INVALID_CHALLENGE', 'The enrollment challenge does not match this server.');
   }
 }
-function validateStepUp(token, record, accountId) {
+function validateStepUp(token, accountUserId, accountId) {
   let c;
   try { c = claims(token); } catch { throw fault('INVALID_STEP_UP', 'Fresh official account authorization is required.'); }
   const identity = c['https://api.openai.com/auth'] ?? {}, now = Date.now();
   const scopes = new Set([...(typeof c.scope === 'string' ? c.scope.split(/\s+/).filter(Boolean) : []), ...(Array.isArray(c.scp) ? c.scp : [])]);
   const account = identity.chatgpt_account_id ?? identity.account_id;
-  if ((identity.chatgpt_account_user_id ?? identity.account_user_id) !== record.accountUserId ||
+  if (!text(accountUserId) || (identity.chatgpt_account_user_id ?? identity.account_user_id) !== accountUserId ||
       (account != null && account !== accountId) || scopes.size !== 1 || !scopes.has('codex.remote_control.enroll') ||
       !Number.isFinite(c.iat) || now / 1000 - c.iat > 300 || c.iat > now / 1000 + 60 ||
       !Number.isFinite(c.pwd_auth_time) || now - c.pwd_auth_time > 300_000 || c.pwd_auth_time > now + 60_000) {
@@ -343,7 +343,8 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, re
         attempt = await startRemoteAuthorization({ accountId: current.accountId, fetchToken: requestFetch, signal: stopped.signal });
         phase = 'authorizing';
         authorizing = attempt.completion.then(async token => {
-          validateStepUp(token, candidate.enrollment, current.accountId);
+          const identity = current.claims['https://api.openai.com/auth'] ?? {};
+          validateStepUp(token, identity.chatgpt_account_user_id ?? identity.account_user_id, current.accountId);
           if ((await auth()).accountId !== current.accountId) throw fault('ACCOUNT_CHANGED', 'The server account changed during authorization.');
           phase = 'enrolling';
           const device_key_proof = await proof(started.device_key_challenge, candidate.enrollment, enrollmentPath, false);

@@ -14,6 +14,7 @@ export const stepUpClaims = () => ({ ...accessClaims(), scope: 'codex.remote_con
 export async function fixture(t, options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'codex-controller-test-'));
   const authFile = join(root, 'auth.json'), stateDir = join(root, 'state'), calls = [], keys = new Map();
+  const serviceAccountUserId = options.serviceAccountUserId ?? 'owner-one';
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(authFile, JSON.stringify({ tokens: { account_id: 'workspace-one', access_token: jwt(accessClaims()) } }), { mode: 0o600 });
   let serial = 0, tokenSerial = 0, signs = 0, deletes = 0;
@@ -30,7 +31,7 @@ export async function fixture(t, options = {}) {
     async deleteDeviceKey(id) { ++deletes; keys.delete(id); },
   };
   const challenge = (path, refresh = false) => ({ type: 'device_key_challenge', purpose: 'remote_control_client_enrollment',
-    audience: 'remote_control_client_enrollment', account_user_id: 'owner-one', client_id: 'server-created-client',
+    audience: 'remote_control_client_enrollment', account_user_id: serviceAccountUserId, client_id: 'server-created-client',
     nonce: Buffer.alloc(32, 7).toString('base64url'), challenge_id: 'fixture-challenge', challenge_expires_at: Math.floor(Date.now() / 1000) + 600,
     target_origin: 'https://chatgpt.com', target_path: '/backend-api' + path, challenge_token: 'fixture-challenge-token',
     device_identity_hash: refresh ? (() => {
@@ -47,7 +48,7 @@ export async function fixture(t, options = {}) {
     assert(verify('sha256', payload, key.publicKey, Buffer.from(proof.signature_der_base64, 'base64')));
     assert.equal(decoded.domain, 'codex-device-key-sign-payload/v1');
     assert.equal(decoded.payload.type, 'remoteControlClientEnrollment');
-    assert.equal(decoded.payload.accountUserId, 'owner-one');
+    assert.equal(decoded.payload.accountUserId, serviceAccountUserId);
     assert.equal(decoded.payload.clientId, 'server-created-client');
     assert.equal(decoded.payload.targetOrigin, 'https://chatgpt.com');
     assert.equal(decoded.payload.targetPath, '/backend-api' + path);
@@ -65,12 +66,12 @@ export async function fixture(t, options = {}) {
     }
     assert.equal(url.origin, 'https://chatgpt.com');
     assert.equal(request.headers['ChatGPT-Account-Id'], 'workspace-one');
-    if (url.pathname.endsWith('/client/enroll/start')) return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one', device_key_challenge: challenge('/codex/remote/control/client/enroll/finish') });
-    if (url.pathname.endsWith('/client/refresh/start')) return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one', device_key_challenge: challenge('/codex/remote/control/client/refresh/finish', true) });
+    if (url.pathname.endsWith('/client/enroll/start')) return Response.json({ client_id: 'server-created-client', account_user_id: serviceAccountUserId, device_key_challenge: challenge('/codex/remote/control/client/enroll/finish') });
+    if (url.pathname.endsWith('/client/refresh/start')) return Response.json({ client_id: 'server-created-client', account_user_id: serviceAccountUserId, device_key_challenge: challenge('/codex/remote/control/client/refresh/finish', true) });
     if (url.pathname.endsWith('/client/enroll/finish') || url.pathname.endsWith('/client/refresh/finish')) {
       checkProof(body, url.pathname.replace('/backend-api', ''));
       await options.beforeFinish?.({ stateDir });
-      return Response.json({ client_id: 'server-created-client', account_user_id: 'owner-one',
+      return Response.json({ client_id: 'server-created-client', account_user_id: serviceAccountUserId,
         expires_at: new Date(Date.now() + 600_000).toISOString(), scopes: ['remote_control_controller_websocket'],
         remote_control_token: `fixture-relay-token-${++tokenSerial}`, ...(options.session ?? {}) });
     }

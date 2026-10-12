@@ -101,3 +101,19 @@ in the desktop browser. At 08:18 UTC, status was `authorizing`; the desktop Code
 unit was inactive and the server's pending public key was readable by the native
 component in a separate Node process. This proves independent preparation, not
 accepted enrollment or pairing. The software vTPM limitation still applies.
+
+## Step-up identity binding correction (2026-10-12)
+
+The next owner confirmation reached the callback and token exchange, but the
+local check rejected it with `INVALID_STEP_UP`. The observed native enrollment
+flow validates step-up against the ordinary token's workspace user, while its
+challenge and enrollment record retain the service-returned account user.
+A live start probe returned 200 and confirmed that the service user matches
+the login user and differs from the workspace user; the probe's own candidate
+was removed with DELETE 204. No raw tokens or identities are in this record.
+
+The adapter now uses the workspace user for step-up validation and preserves
+the separate service identity for proofs and enrollment. Three regressions
+cover acceptance, login-user substitution rejection and missing workspace
+identity rejection. Controller checks passed 30/30 and the full suite 441/441.
+Accepted live enrollment and host control still require a fresh confirmation.

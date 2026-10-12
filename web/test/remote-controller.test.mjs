@@ -62,6 +62,37 @@ test('wrong owner, scope, and stale or future account reauthentication cannot en
   }
 });
 
+test('step-up authorization uses the current workspace user when enrollment identifies the login user', async t => {
+  const f = await fixture(t, { serviceAccountUserId: 'login-user' });
+  await f.authorize();
+  assert.equal((await f.controller.status()).enrolled, true);
+  const saved = JSON.parse(await readFile(join(f.stateDir, 'enrollment.json'), 'utf8'));
+  assert.equal(saved.enrollment.accountUserId, 'login-user');
+  assert.equal(saved.accountId, 'workspace-one');
+  assert.deepEqual(await f.controller.pair('ABCD-1234'), { environmentId: 'host-one' });
+});
+
+test('the enrollment login user cannot replace the workspace user in a step-up token', async t => {
+  const stepUp = { ...stepUpClaims(), 'https://api.openai.com/auth': {
+    account_id: 'workspace-one', account_user_id: 'login-user', user_id: 'login-user' } };
+  const f = await fixture(t, { serviceAccountUserId: 'login-user', stepUp });
+  await assert.rejects(f.authorize(), { code: 'INVALID_STEP_UP' });
+  assert.equal((await f.controller.status()).enrolled, false);
+  assert.equal(f.signed, 0);
+  assert.equal(f.keys.size, 0);
+});
+
+test('a login identity without a workspace user cannot authorize controller enrollment', async t => {
+  const identity = { account_id: 'workspace-one', user_id: 'login-user' };
+  const f = await fixture(t, { serviceAccountUserId: 'login-user',
+    stepUp: { ...stepUpClaims(), 'https://api.openai.com/auth': identity } });
+  await writeFile(f.authFile, JSON.stringify({ tokens: { account_id: 'workspace-one',
+    access_token: jwt({ ...accessClaims(), 'https://api.openai.com/auth': identity }) } }), { mode: 0o600 });
+  await assert.rejects(f.authorize(), { code: 'INVALID_STEP_UP' });
+  assert.equal((await f.controller.status()).enrolled, false);
+  assert.equal(f.keys.size, 0);
+});
+
 test('disk failure cannot leave a registered identity while deleting its key and cleanup still removes its pending client', async t => {
   const f = await fixture(t, { beforeFinish: async ({ stateDir }) => {
     await rm(stateDir, { recursive: true }); await writeFile(stateDir, 'blocking-file', { mode: 0o600 });
@@ -377,9 +408,9 @@ test('remote membership rejects a same-owner workspace claim mismatch without al
 
 test('matching-workspace legacy user_id remains a usable remote membership fallback', async t => {
   const f = await fixture(t);
+  await f.authorize();
   await writeAccount(f.authFile, jwt({ exp: Date.now() / 1000 + 3600,
     'https://api.openai.com/auth': { account_id: 'workspace-one', user_id: 'owner-one' } }));
-  await f.authorize();
   assert.equal((await f.controller.status()).phase, 'ready');
   assert.equal((await f.controller.pair('ABCD-1234')).environmentId, 'host-one');
 });
