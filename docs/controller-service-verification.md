@@ -18,9 +18,9 @@ Native getAuthStatus(includeToken:false, refreshToken:true) passed without
 returning a token or changing account. These are local prerequisites, not real
 remote pairing/control or Windows hardware evidence.
 
-Official owner account confirmation, accepted enrollment, fresh host-code claim,
-real remote read/write/events and two independent real hosts/reconnect remain
-required. Public documentation does not establish a supported third-party
+Official owner account confirmation and live enrollment have passed. A fresh
+host-code claim, real remote read/write/events and two independent real hosts/
+reconnect remain required. Public documentation does not establish a supported third-party
 controller SDK; the observed protocol is version-specific. Software vTPM is an
 experiment and does not prove physical hardware protection. Reboot startup is
 not configured. Do not claim overall completion from fixtures.
@@ -130,3 +130,14 @@ identity binding, protected signature and expiration checks stay intact.
 A regression simulates a three-minute confirmation with two-minute challenges;
 ownership and cleanup regressions also cover the changed allocation timing.
 The full suite passed 443/443; live enrollment still needs fresh confirmation.
+
+## Accepted live server enrollment (2026-10-12)
+
+At 12:27 UTC, after official browser confirmation, the HTTPS owner API returned
+`enrolled: true`, `phase: ready`. The private enrollment record has mode 600 and
+the pending marker is removed. Restarting only the Web preserved the enrollment
+record and native backend PID. The desktop Codex unit stayed inactive. After
+restart, status remained ready and the official inventory request returned 200
+with zero paired hosts. This proves accepted independent server registration
+and persistence across a Web restart. It does not yet prove host pairing,
+remote RPC, concurrent hosts or reboot recovery. Software vTPM remains experimental.
