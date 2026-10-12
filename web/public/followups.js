@@ -1,20 +1,15 @@
 import { scopeHostPath, displayNativeText } from './composer.js';
 
-const deliveryLabels = { start: ['正在发送…', '已发送', '发送状态待核对'], steer: ['正在引导…', '已引导', '引导状态待核对'], queue: ['正在排队…', '已排队', '排队状态待核对'] };
+const deliveryLabels = { start: ['正在发送…', '已发送', '发送状态待核对'], steer: ['正在引导…', '已引导', '引导状态待核对'] };
 export function beginSteer(state, clientId, text, mode = 'steer') {
-  state.steers ??= [];
-  let message = state.steers.find(item => item.clientId === clientId);
-  if (message?._deliveryMode === 'queue') message._previousDelivery = { content: message.content, _delivery: message._delivery, _deliveryMode: message._deliveryMode };
-  if (!message) { message = { id: 'steer:' + clientId, clientId, type: 'userMessage' }; state.steers.push(message); }
-  Object.assign(message, { content: [{ type: 'text', text }], _deliveryMode: mode, _deliveryGeneration: state.generation, _delivery: deliveryLabels[mode][0] }); return message;
+  if (mode === 'queue') return null;
+  const message = { id: 'steer:' + clientId, clientId, type: 'userMessage', content: [{ type: 'text', text }], _deliveryMode: mode, _deliveryGeneration: state.generation, _delivery: deliveryLabels[mode][0] };
+  (state.steers ??= []).push(message); return message;
 }
 export function settleSteer(state, message, error) {
   if (!message) return;
-  if (error?.status && error.outcome !== 'unknown') {
-    if (message._previousDelivery) Object.assign(message, message._previousDelivery);
-    else state.steers = state.steers.filter(item => item !== message);
-  } else message._delivery = deliveryLabels[message._deliveryMode ?? 'steer'][error ? 2 : 1];
-  delete message._previousDelivery;
+  if (error?.status && error.outcome !== 'unknown') state.steers = state.steers.filter(item => item !== message);
+  else message._delivery = deliveryLabels[message._deliveryMode ?? 'steer'][error ? 2 : 1];
 }
 
 export function mountFollowups({ api, viewId, selectedHost = 'local', getState, onChange, onError }) {
@@ -45,13 +40,7 @@ export function mountFollowups({ api, viewId, selectedHost = 'local', getState, 
       if (!alive || revision !== state.queueRevision || !state.ready || state.generation !== generation) return;
       data.push(...response.result.data); cursor = response.result.nextCursor;
     } while (cursor);
-    state.queued = data; let changed = false;
-    if (state.steers) state.steers = state.steers.map(message => {
-      const queued = message._deliveryMode === 'queue' && data.find(item => item.clientUserMessageId === message.clientId);
-      if (!queued || message.content[0].text === label(queued) && message._delivery === '已排队') return message;
-      changed = true; return { ...message, content: [{ type: 'text', text: label(queued) }], _delivery: '已排队' };
-    });
-    if (changed) onChange(state); render();
+    state.queued = data; render();
   }
   async function action(state, item, kind, text) {
     if (!state.ready || !state.online || state.deleting || state.queueBusy || state.queueRecovery && kind !== 'restore') return;
@@ -65,7 +54,6 @@ export function mountFollowups({ api, viewId, selectedHost = 'local', getState, 
         ...(kind !== 'delete' ? { operationId } : {}), ...(kind === 'restore' ? { recoveryId: state.queueRecovery.id } : {}), ...(text !== undefined ? { text } : {}) });
       if (transfer || kind === 'restore') state.queueRecovery = null;
       settleSteer(state, feedback);
-      if (['delete', 'side'].includes(kind)) state.steers = state.steers?.filter(message => message.clientId !== item.clientUserMessageId);
       if (kind !== 'update') state.queued = state.queued.filter(entry => entry.id !== item.id);
       if (alive && kind === 'side') {
         openSide(response.result.threadId);

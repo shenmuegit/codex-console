@@ -105,14 +105,15 @@ selection instead of alternating the reply between HTML and plain text. Structur
 Markdown changes update the affected subtree. Authoritative text corrections replace
 only the differing character range; formatted corrections wait for the next safe
 HTML update. Native chunks display immediately without an artificial typing delay.
-Sending immediately inserts a local user bubble labelled Sending, Steering or
-Queueing before HTTP or SSE completes. Confirmation changes that label to Sent,
-Steered or Queued. Native delivery replaces it by client message ID, so a delayed
+Ordinary sends and steers immediately insert a local user bubble labelled Sending
+or Steering before HTTP or SSE completes. Confirmation changes that label to Sent
+or Steered. Native delivery replaces it by client message ID, so a delayed
 user echo cannot hide the question or move it below its streamed answer. Rejection
 removes the temporary bubble and preserves the draft; unknown outcomes stay
-visibly unconfirmed without automatic replay. Native queue edits refresh their
-preview, and confirmed local cancellation or side-chat transfer removes it.
-These display rows do not alter native history or advance the SSE cursor.
+visibly unconfirmed without automatic replay. These display rows do not alter
+native history or advance the SSE cursor. Queued instructions appear only in the
+queue above the composer until native consumption emits their user message.
+Queue edits, cancellation and side-chat transfer leave the transcript untouched.
 
 An accepted running turn immediately shows a muted **Thinking** status, including
 before the native start event arrives. It uses the desktop's 3-second text gradient

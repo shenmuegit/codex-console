@@ -4,7 +4,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mountChat } from '../public/chat.js';
 import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
-import { beginSteer, settleSteer } from '../public/followups.js';
 
 const queued = id => ({ id, clientUserMessageId: 'client-' + id,
   input: [{ type: 'text', text: 'Correction <script>', text_elements: [] }, { type: 'localImage', path: '/private/photo.png' }] });
@@ -27,7 +26,6 @@ async function fixture(t) {
   chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); t.after(() => { refresh?.resolve(); request.resolve({ result: { turnId: 'turn' } }); chat.dispose(); dom.restore(); });
   chat.connection(true); await chat.open('t'); await delay(0);
   return { dom, chat, calls,
-    queuedPreview() { const message = beginSteer(chat.getState(), 'client-q1', 'Correction <script>\n［图片］', 'queue'); settleSteer(chat.getState(), message); chat.connection(true); },
     async updateQueuedText(text) { queue[0].input[0].text = text; chat.onEvent({ kind: 'notification', cursor: { generation: 1, seq: seq++ }, native: { method: 'thread/queue/changed', params: { threadId: 't' } } }); await delay(0); },
     steer() { dom.get('queued-messages').children[0].querySelectorAll().find(node => node.dataset.action === 'steer').click(); },
     bubbles() { return dom.get('messages').children.filter(node => node.className === 'message message-user'); },
@@ -53,21 +51,18 @@ test('clicking steer immediately shows its text and sending status without chang
   f.steer(); assert.equal(f.calls.filter(call => call.path === '/api/thread/queue').length, 1);
 });
 
-test('steering a locally displayed queued message reuses its bubble and restores queued feedback on rejection', async t => {
-  const f = await fixture(t); f.queuedPreview(); assert.equal(f.bubbles().length, 1); f.steer();
-  assert.equal(f.bubbles().length, 1); assert.equal(f.bubbles()[0].children[0].textContent, '正在引导…');
-  f.fail(); await delay(0); assert.equal(f.bubbles().length, 1); assert.equal(f.bubbles()[0].children[0].textContent, '已排队');
-});
-
-test('deleting a queued message removes its local chat preview only after confirmation from the server', async t => {
-  const f = await fixture(t); f.queuedPreview();
+test('deleting a queued message leaves the chat transcript untouched', async t => {
+  const f = await fixture(t), reply = f.dom.get('messages').children[0];
   f.dom.get('queued-messages').children[0].querySelectorAll().find(node => node.dataset.action === 'delete').click();
-  assert.equal(f.bubbles().length, 1); f.accept(); await delay(0); assert.equal(f.bubbles().length, 0);
+  assert.equal(f.bubbles().length, 0); assert.equal(f.dom.get('queued-messages').hidden, false);
+  f.accept(); await delay(0); assert.equal(f.bubbles().length, 0); assert.equal(f.dom.get('queued-messages').hidden, true);
+  assert.equal(f.dom.get('messages').children[0], reply);
 });
 
-test('native queue edits update the existing local bubble without duplicating it', async t => {
-  const f = await fixture(t); f.queuedPreview(); await f.updateQueuedText('Edited queued question');
-  assert.equal(f.bubbles().length, 1); assert.match(f.bubbles()[0].children[1].textContent, /Edited queued question/);
+test('native queue edits update only the queue row', async t => {
+  const f = await fixture(t), reply = f.dom.get('messages').children[0]; await f.updateQueuedText('Edited queued question');
+  assert.equal(f.bubbles().length, 0); assert.match(f.dom.get('queued-messages').textContent, /Edited queued question/);
+  assert.equal(f.dom.get('messages').children[0], reply);
 });
 
 test('accepted steer appears before a slow queue refresh and merges with the later native message', async t => {

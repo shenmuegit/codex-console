@@ -73,11 +73,17 @@ test('rejected sends remove the temporary bubble while unknown outcomes remain v
   });
 });
 
-test('queued sends immediately show a queued bubble without claiming a new thinking turn', async t => {
+test('queued sends stay out of the transcript until native consumption', async t => {
   const f = await fixture(t, [{ ...running, items: [{ id: 'reply', type: 'agentMessage', text: 'Current reply', _incomplete: true }] }]);
-  f.send(); assert.equal(f.bubbles().length, 1); assert.equal(f.bubbles()[0].children[0].textContent, '正在排队…');
+  const reply = f.dom.get('messages').children[0];
+  f.send(); assert.equal(f.submission.mode, 'queue'); assert.equal(f.bubbles().length, 0);
   f.accept({ queuedSubmission: { id: 'queued' } }); await delay(0);
-  assert.equal(f.bubbles()[0].children[0].textContent, '已排队'); assert.equal(f.indicator.hidden, true);
+  assert.equal(f.bubbles().length, 0); assert.equal(f.indicator.hidden, true); assert.equal(f.chat.getState().draft, '');
+  assert.equal(f.dom.get('messages').children[0], reply);
+  f.notify(2, 'turn/completed', { turn: { ...running, status: 'completed' } });
+  f.notify(3, 'turn/started', { turn: { ...running, id: 'following-turn' } });
+  f.notify(4, 'item/started', { turnId: 'following-turn', item: { id: 'consumed-user', type: 'userMessage', clientId: f.submission.clientUserMessageId, content: [{ type: 'text', text: 'Hello' }] } }); await delay(0);
+  assert.equal(f.bubbles().length, 1); assert.equal(f.bubbles()[0].dataset.itemId, 'consumed-user');
 });
 
 test('thinking follows native reasoning and reply streaming, then disappears on completion', async t => {
