@@ -106,6 +106,8 @@ Markdown changes update the affected subtree. Authoritative text corrections rep
 only the differing character range; formatted corrections wait for the next safe
 HTML update. Native chunks display immediately without an artificial typing delay.
 User messages render without a colored background in both light and dark themes.
+Their plain text inherits the same font and size as assistant prose, preserving
+line breaks; code and tool output use monospace fonts.
 Ordinary sends and steers immediately insert a local user bubble labelled Sending
 or Steering before HTTP or SSE completes. Confirmation changes that label to Sent
 or Steered. Native delivery replaces it by client message ID, so a delayed
