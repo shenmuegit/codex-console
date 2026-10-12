@@ -18,9 +18,9 @@ Native getAuthStatus(includeToken:false, refreshToken:true) passed without
 returning a token or changing account. These are local prerequisites, not real
 remote pairing/control or Windows hardware evidence.
 
-Official owner account confirmation and live enrollment have passed. A fresh
-host-code claim, real remote read/write/events and two independent real hosts/
-reconnect remain required. Public documentation does not establish a supported third-party
+Official owner account confirmation, live enrollment and Windows desktop pairing
+have passed. Real remote control/events and attachment write/read have passed;
+two independent real hosts/reconnect remain required. Public documentation does not establish a supported third-party
 controller SDK; the observed protocol is version-specific. Software vTPM is an
 experiment and does not prove physical hardware protection. Reboot startup is
 not configured. Do not claim overall completion from fixtures.
@@ -60,7 +60,7 @@ host. If a browser on another computer reaches an unavailable localhost callback
 copy that URL into the Web callback input; it is validated as data, with no SSH
 forwarding. After enrollment succeeds, submit the controlled host's fresh code.
 The server receives the host code; it does not generate a host code for the owner.
-This deployment currently has no accepted live enrollment/pairing evidence.
+Accepted live enrollment and Windows desktop pairing are recorded below.
 
 ## Owner-assisted enrollment attempt (2026-10-12)
 
@@ -141,3 +141,37 @@ restart, status remained ready and the official inventory request returned 200
 with zero paired hosts. This proves accepted independent server registration
 and persistence across a Web restart. It does not yet prove host pairing,
 remote RPC, concurrent hosts or reboot recovery. Software vTPM remains experimental.
+
+## Windows desktop control and attachment verification (2026-10-12)
+
+At 12:36 UTC, claiming the owner-supplied host code returned 200. The official
+inventory identified one online Windows desktop, with native app-server
+`0.162.0-alpha.17.2`. Through the authenticated Web API, project/thread/model
+listing succeeded, and a text-only test turn completed with streamed native
+events. The server desktop Codex unit remained inactive.
+
+Attachment preparation initially refused the standard system-volume ACL:
+its owner is TrustedInstaller and an unrelated principal has CreateDirectories.
+The adapter now trusts the exact TrustedInstaller service SID only for ancestor
+checks and permits creating new subdirectories, while still rejecting rights
+that mutate/delete existing ancestors. Attachment storage still requires the
+current user as its sole allowed principal, a protected base DACL, and no reparse
+points. These distinctions follow Microsoft's
+[SID documentation](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers)
+and [filesystem rights definitions](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.filesystemrights?view=net-10.0).
+
+At 14:27 UTC, the existing test conversation accepted the already staged text
+attachment. A native command read the Windows file; the completed assistant
+response and rendered transcript contained its random marker, which was absent
+from the prompt. HTTPS send returned 200 and SSE recorded 74 events, including
+the command item and turn completion. No new conversation was created for this
+transfer. Private test evidence and application data stay outside Git.
+
+The Windows regression executes actual PowerShell ACL checks: allow an ancestor
+with CreateDirectories, reject seven mutation/deletion/ACL rights, reject shared
+storage, and reject a junction. Run it on Windows with `node --test
+--test-name-pattern="^Windows native ACL" web/test/remote-upload-storage.test.mjs`.
+The full Linux suite has 443 passes, zero failures and eight Windows-only skips.
+The Windows host ran the same test file through native command/exec: all eight
+checks passed; the previous helper failed the positive case. Two-host concurrency,
+disconnect recovery and machine reboot remain unverified.

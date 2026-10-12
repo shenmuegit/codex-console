@@ -44,7 +44,7 @@ $inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__INPU
 $homePath = $inputData.home
 $basePath = [IO.Path]::Combine($homePath, 'console-uploads')
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
-$trusted = @($sid.Value, 'S-1-5-18', 'S-1-5-32-544')
+$trusted = @($sid.Value, 'S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
 function Get-Security($path) {
   $item = Get-Item -LiteralPath $path -Force
   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Reparse point rejected' }
@@ -64,11 +64,13 @@ function Assert-Private($path) {
   return $acl
 }
 $ancestor = [IO.DirectoryInfo]::new($homePath)
+# CreateDirectories permits new subdirectories without modifying existing paths.
+$unsafeRights = [Security.AccessControl.FileSystemRights]::WriteData -bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::WriteAttributes -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
 while ($null -ne $ancestor) {
   $acl = Get-Security $ancestor.FullName
   if ($trusted -notcontains $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value) { throw 'Untrusted ancestor owner' }
   foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
-    if ($rule.AccessControlType -eq 'Allow' -and $trusted -notcontains $rule.IdentityReference.Value -and ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and ($rule.FileSystemRights -band ([Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership)) -ne 0) { throw 'Writable storage ancestor' }
+    if ($rule.AccessControlType -eq 'Allow' -and $trusted -notcontains $rule.IdentityReference.Value -and ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and ($rule.FileSystemRights -band $unsafeRights) -ne 0) { throw 'Writable storage ancestor' }
   }
   $ancestor = $ancestor.Parent
 }

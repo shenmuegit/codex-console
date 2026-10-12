@@ -1,12 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, stat, chmod, symlink, writeFile, link } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ensureRemoteUploadStorage } from '../remote-upload-storage.mjs';
 const execute = promisify(execFile);
+async function windowsFixture(t) {
+  const root = await mkdtemp(join(homedir(), 'private-upload-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const codex = { info: () => ({ platformFamily: 'windows' }), async rpc(method, params) {
+    assert.equal(method, 'command/exec');
+    assert.deepEqual(Object.keys(params).sort(), ['command', 'cwd', 'outputBytesCap', 'timeoutMs']);
+    try { const { stdout, stderr } = await execute(params.command[0], params.command.slice(1), { cwd: params.cwd }); return { result: { exitCode: 0, stdout, stderr } }; }
+    catch (error) { return { result: { exitCode: error.code, stdout: error.stdout ?? '', stderr: error.stderr ?? '' } }; }
+  } };
+  async function createWithRights(path, rights = null) {
+    const input = Buffer.from(JSON.stringify({ path, rights })).toString('base64');
+    const script = `$ErrorActionPreference = 'Stop'
+$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${input}')) | ConvertFrom-Json
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = [Security.AccessControl.DirectorySecurity]::new()
+$acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false)
+$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+if ($inputData.rights) { $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), [Security.AccessControl.FileSystemRights]$inputData.rights, 'None', 'None', 'Allow')) }
+([IO.DirectoryInfo]::new($inputData.path)).Create($acl)`;
+    await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]);
+  }
+  return { root, codex, createWithRights };
+}
+test('Windows native ACL accepts create-directory ancestors while rejecting shared storage and junctions', { skip: process.platform !== 'win32' }, async t => {
+  const { root, codex, createWithRights } = await windowsFixture(t);
+  const home = join(root, 'create-only'), base = join(home, 'console-uploads');
+  await createWithRights(home, 'CreateDirectories');
+  await ensureRemoteUploadStorage(codex, home);
+  const shared = join(root, 'shared'); await createWithRights(shared);
+  await createWithRights(join(shared, 'console-uploads'), 'ReadAndExecute');
+  await assert.rejects(ensureRemoteUploadStorage(codex, shared), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  await ensureRemoteUploadStorage(codex, home);
+  await rm(base, { recursive: true });
+  const outside = join(home, 'outside'); await mkdir(outside); await symlink(outside, base, 'junction');
+  await assert.rejects(ensureRemoteUploadStorage(codex, home), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+});
+for (const rights of ['CreateFiles', 'WriteExtendedAttributes', 'WriteAttributes', 'Delete', 'DeleteSubdirectoriesAndFiles', 'ChangePermissions', 'TakeOwnership']) {
+  test(`Windows native ACL rejects writable ancestor ${rights}`, { skip: process.platform !== 'win32' }, async t => {
+    const { root, codex, createWithRights } = await windowsFixture(t);
+    const unsafe = join(root, rights); await createWithRights(unsafe, rights);
+    await assert.rejects(ensureRemoteUploadStorage(codex, unsafe), { code: 'REMOTE_STORAGE_NOT_PRIVATE' });
+  });
+}
 async function unixFixture(t) {
   const home = await mkdtemp(join(tmpdir(), 'private-upload-')); t.after(() => rm(home, { recursive: true, force: true }));
   await chmod(home, 0o755); const calls = [];

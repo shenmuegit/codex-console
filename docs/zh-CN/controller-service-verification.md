@@ -13,8 +13,8 @@ TLS 身份和原生后台/home，修改 Web 源码目录、可选控制端配置
 原生 getAuthStatus(includeToken:false, refreshToken:true) 通过，未返回令牌、
 账号保持一致。这些是本机前置检查，不能代表远端配对或 Windows 实机证据。
 
-所有者官方账号确认和实机登记已通过；仍需录入新的被控端配对码、实际远端
-读写/事件及两个真实主机并发/重连检查。公开文档未确立第三方控制端 SDK；
+所有者官方账号确认、实机登记和 Windows 桌面客户端配对已通过；实际远端
+控制/事件及附件写入/读取已通过，仍需两个真实主机并发/重连检查。公开文档未确立第三方控制端 SDK；
 当前协议是特定版本的观察实现。软件 vTPM 是实验，不代表物理硬件保护；
 尚未配置重启启动。不能依据夹具宣称总体完成。
 
@@ -46,7 +46,7 @@ HTTPS（不禁用验证），检查登录/状态/未登录拒绝及静态资源�
 完成官方账户确认。另一台电脑的浏览器若到达无法打开的 localhost callback，
 将该 URL 复制到 Web 的回调输入框；服务器只将它作为数据验证，无需 SSH 转发。
 登记成功后再提交被控主机生成的新配对码，方向为被控端提供、服务器接收。
-当前部署尚无官方服务接受实机登记/配对的证据。
+官方服务接受实机登记和 Windows 桌面客户端配对的记录见下文。
 
 ## 所有者配合的登记尝试（2026-10-12）
 
@@ -111,3 +111,31 @@ unit 备份仍在 Git 外。完整 Web 检查 438/438 通过；使用配置 CA �
 重启后状态继续为 ready，官方设备清单请求返回 200，已配对主机数量为零。
 这证明独立服务器登记被接受且能跨 Web 重启保留，尚不能证明被控端配对、
 远端 RPC、主机并发或机器重启恢复。软件 vTPM 仍属实验。
+
+## Windows 桌面控制及附件验证（2026-10-12）
+
+12:36 UTC，录入所有者提供的被控端配对码返回 200。官方设备清单显示一台
+在线 Windows 桌面客户端，原生 app-server 版本为 `0.162.0-alpha.17.2`。
+经口令认证的 Web API 成功读取项目、会话和模型清单，文字测试任务完成并
+收到原生流式事件。服务器桌面 Codex unit 保持停止状态。
+
+附件准备起初误拒绝标准系统盘 ACL：目录所有者为 TrustedInstaller，其他
+用户拥有 CreateDirectories 权限。适配器现在仅在祖先检查中信任准确的
+TrustedInstaller 服务 SID，允许创建新子目录，仍拒绝修改/删除已有祖先及
+改变其权限的授权。附件存储仍要求当前用户为唯一获准主体、基础目录 DACL
+禁止继承，并拒绝重解析点。这些权限区别依据微软的
+[SID 文档](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers)
+和[文件系统权限定义](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.filesystemrights?view=net-10.0)。
+
+14:27 UTC，复用现有测试会话，成功发送已暂存的文本附件。原生命令读取了
+Windows 文件；任务完成后的助手回复和渲染记录均含文件内的随机标记，提示词
+没有该标记。HTTPS 发送返回 200，SSE 记录 74 个事件，包括命令项和任务完成。
+这次传输没有新建会话。私人测试证据及应用数据均保存在 Git 外。
+
+Windows 回归检查实际运行 PowerShell：允许祖先拥有 CreateDirectories，
+拒绝七种修改/删除/改变 ACL 的权限，拒绝共享存储和 junction。在 Windows
+执行 `node --test --test-name-pattern="^Windows native ACL"
+web/test/remote-upload-storage.test.mjs` 可复现。Linux 完整检查 443 个通过、
+零失败，八个 Windows 专用检查跳过。Windows 主机通过原生 command/exec
+执行同一个测试文件，八个检查全部通过；原有实现未通过正向检查。
+两个主机并发、断连恢复和机器重启仍未验证。
