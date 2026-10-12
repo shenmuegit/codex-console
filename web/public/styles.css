@@ -77,7 +77,7 @@ nav { display: grid; gap: 2px; }
 @media (prefers-reduced-motion: reduce) { .thinking-status { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
 .message { padding: 16px 0; overflow-wrap: anywhere; line-height: 1.6; }
 .message > header, .message > summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.message-user { width: fit-content; margin: 12px 0 16px auto; max-width: 85%; padding: 10px 16px; background: var(--user); border-radius: 18px; }
+.message-user { width: fit-content; margin: 12px 0 16px auto; max-width: 85%; padding: 10px 16px; border-radius: 18px; }
 .message-user > header, .message-assistant > header { display: none; }
 .message-user[data-delivery] > header { display: block; margin-bottom: 4px; }
 .message-body > :first-child { margin-top: 0; }
