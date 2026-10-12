@@ -29,8 +29,10 @@ desktop did update its own test configuration and install its default plugins.
 
 ## Reproduce
 
-These commands describe a fresh start after stopping the test instances. The
-current instances are deliberately left running. Build only the standalone
+These commands describe the original experiment. Its temporary build/data
+directories are no longer present; the browser implementation reconstructs them
+in the persistent paths documented in [the operator guide](native-web-client.md).
+Build only the standalone
 app-server binary; replacing the installed desktop binary is unnecessary.
 
 ```bash

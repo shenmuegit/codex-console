@@ -1,0 +1,748 @@
+# Native browser client
+
+[中文](zh-CN/native-web-client.md)
+
+The native client is implemented on `codex/native-web-client`. The current
+deployment uses the installed Codex 0.159.2 app-server and the original
+`~/.codex` account, projects and conversations. The original desktop profile is
+configured for the same loopback WebSocket; its reload waits for the current
+control conversation to finish. Files/photos, model/usage controls and native
+`@`/`$`/`/` actions are available. Browser/hardware UI acceptance is listed below.
+See [the original-client connection steps](original-codex-client.md) for this deployment.
+
+## Codex desktop interface
+
+The shell copies the installed Codex desktop's gray theme tokens, native system
+font and current 290 px sidebar preference. One global sidebar contains native
+projects/conversations; the conversation pane uses the desktop-style rounded
+input surface. Model, effort and the read-only context indicator
+are inside that surface. Context usage is a non-clickable indicator with hover
+text and accessible details; it has no disclosure popup. Details retain native token/window values and
+the native 12000-token percentage baseline; no custom context limit is added.
+The shell omits the connected label, permission summary, idle keyboard hint and
+manual quota-update button. Quota still reads when opened and follows native
+updates; disconnections, pending sends and errors remain visible.
+
+Each native project is a collapsible group: click its name to load conversations
+immediately underneath it. Several projects can stay expanded; collapsed projects
+do not fetch conversations. Each group combines native project membership with
+older unassigned conversations whose cwd exactly matches any registered project
+root. Both native cursors are retained and merged by native recency in pages of 20;
+threads explicitly assigned elsewhere are excluded from the cwd fallback, and
+existing membership still works when a thread's cwd differs from the current root.
+The bottom All conversations list always includes every project and unassigned
+history, ordered by native recency descending, with its own pagination. Opening
+a conversation keeps its position; a new question moves it up when its native
+turn starts, without waiting for the reply to finish. Metadata updates and reply
+completion do not advance recency. Expanding
+a project never filters that list. The archive switch applies to the bottom list
+and expanded groups; archived empty results are labeled explicitly. Conversation
+menus work in both locations. Project and conversation context menus include
+New conversation: a project row or nested conversation supplies that project's
+native ID, expands its group, and shows the new unarchived conversation there.
+A global conversation menu uses the selected project. Right-click and Shift+F10
+open the same menu as the row's menu button. Creation is blocked while offline,
+for archived projects, or while another creation is pending; a late result never
+replaces newer project/chat navigation or its draft.
+Expanding a project selects it for New conversation; collapsing the selected
+project clears that creation scope. Native updates refresh expanded groups while
+preserving their disclosure state; late replies from collapsed groups are ignored.
+First entry reads project names over HTTP and refreshes the catalog after the
+first online SSE handshake, covering changes before the subscription became
+active. Repeated online status does not repeatedly refresh it; reconnection
+still reloads it. Older replies cannot overwrite newer names, and catalog
+refresh preserves the selected chat, draft and composer focus.
+New project opens a name and existing-server-directory form. The directory is
+checked through native metadata and canonicalized before native `project/create`.
+Successful creation selects the project scope and its unarchived conversations;
+New conversation then uses that native project ID. Existing conversations keep
+their working directories. A late result after leaving the form preserves the
+current conversation scope and archive filter.
+Uncertain creation retries retain the native idempotency key and lock the input
+values until the result is confirmed, even if a later retry is not sent. Closing
+the form preserves newer navigation.
+
+At widths of 760 CSS px or less, navigation opens as a left drawer capped at
+290 px, leaving at least 48 px outside it. Chat keeps its full width behind the
+backdrop. Outside click, Escape and the close control dismiss the drawer;
+selecting a conversation closes it and focuses the chat heading. Keyboard focus
+stays in the open drawer, and the covered chat is inert. Resizing restores the
+normal desktop sidebar and chat interaction.
+
+An authenticated visit without a thread ID prepares one native blank conversation
+when the backend is online. File/photo pickers and model/effort selectors then
+work without first clicking New conversation. Its ID is recorded in the URL,
+so reload reopens it. Existing thread links and newer navigation take priority.
+If an initial link is missing from the current backend and has no saved draft,
+attachments or unconfirmed send, the page prepares a new conversation and
+replaces that stale URL. Initial permission, connection and unrelated native
+errors stay visible. Choosing another project or conversation while the missing
+link is being restored prevents automatic creation.
+This preparation sends no model turn. Creation failures stay visible in chat;
+the existing New conversation button can retry.
+New conversations keep the native name unset and use Codex's name or preview
+when available. The blank heading is a display placeholder, never a saved name;
+native catalog refreshes update the current heading as well as the sidebar.
+
+New turns request native automatic reasoning summaries because current model
+catalogs can default to no summary. The transcript follows the desktop activity layout: consecutive commands, tools
+and public reasoning are folded into one compact summary between chat messages.
+Expanding the summary exposes the original tool details and file downloads;
+status changes and older history keep existing expanded groups. Empty reasoning
+items occupy no row, and become visible when native public text arrives. Native
+subagent activity uses the desktop path-to-name formatting and lifecycle labels,
+with a link to the child conversation. Older messages with no returned public
+text cannot be backfilled from their encrypted records.
+Streaming updates render only new or changed native items. Historical message
+nodes, expanded activities and unchanged image/download references stay mounted;
+plain deltas reuse their existing reply body. Background conversation deltas do
+not redraw the selected chat. Unchanged draft attachments retain their nodes and
+focused controls, while upload progress, errors and removal still update normally.
+Within a reply, SSE appends only the new characters to the existing text node;
+it never rewrites the full line or paragraph. Safe Markdown updates patch matching
+nodes in place, retaining completed paragraphs, code blocks, inline images and text
+selection instead of alternating the reply between HTML and plain text. Structural
+Markdown changes update the affected subtree. Authoritative text corrections replace
+only the differing character range; formatted corrections wait for the next safe
+HTML update. Native chunks display immediately without an artificial typing delay.
+Ordinary sends and steers immediately insert a local user bubble labelled Sending
+or Steering before HTTP or SSE completes. Confirmation changes that label to Sent
+or Steered. Native delivery replaces it by client message ID, so a delayed
+user echo cannot hide the question or move it below its streamed answer. Rejection
+removes the temporary bubble and preserves the draft; unknown outcomes stay
+visibly unconfirmed without automatic replay. These display rows do not alter
+native history or advance the SSE cursor. Queued instructions appear only in the
+queue above the composer until native consumption emits their user message.
+Queue edits, cancellation and side-chat transfer leave the transcript untouched.
+
+An accepted running turn immediately shows a muted **Thinking** status, including
+before the native start event arrives. It uses the desktop's 3-second text gradient
+sweep with a 0.6-second delay, with a static label for reduced-motion users. CSS
+animates the text without rerendering message nodes. Later non-turn SSE events
+cannot mask an accepted send; newer snapshots, completion and connection changes
+still clear stale feedback. The status gives way to reply text or native input
+forms, resumes between commentary and further work, and disappears on completion.
+Failed, uncertain and queued sends do not invent a new running turn.
+Clicking **Steer** immediately shows the input in a temporary user bubble labeled
+**Steering…**. Native acknowledgement changes it to **Steered** without waiting
+for a queue refresh or the later native message event; composer steering uses the
+same feedback. The native message replaces the bubble by client message ID, so
+identical text from separate submissions stays separate. These current-page
+bubbles do not alter native history or the SSE cursor. Attachment names/placeholders
+remain visible until native previews arrive. Rejected steering retains the queue
+entry or draft; uncertain outcomes show **Steer status needs checking** and keep
+the existing recovery flow without automatically sending again.
+
+The sidebar footer opens account-wide seven-day usage, including when no
+conversation is selected. Switching conversations does not change its scope.
+The attachment plus opens the existing file/photo pickers. Ctrl+V (Cmd+V on
+macOS) in the composer also uploads clipboard files and images through that
+same queue, with its size/type validation, previews, progress and retry/removal.
+Normal text paste stays native. Files remain with the conversation where they
+were pasted if navigation changes during upload. This requires the browser to
+provide clipboard File objects; a pasted path or URL alone is not an upload.
+Existing-project name/root editing, directory mutation, logout and manual conversation refresh
+controls remain absent. Owner-only project create/archive/delete endpoints require
+their own session view; raw project mutation RPCs and browser thread-cwd overrides remain denied.
+Native row menus require a current browser with Popover API support.
+Opening/reconnecting first reads native turn metadata without summary items, then the
+newest 20 `thread/items/list` entries, including
+reasoning and tools. Live items received during loading are merged into the page.
+Active-turn summaries use synthetic item IDs, so their text is not mixed with
+durable history or SSE messages. Each native message appears once; distinct
+messages with identical text remain separate, including on older pages.
+Scrolling upward near the top fetches the next 20 through the opaque item cursor;
+concurrent requests are blocked and prepending preserves the reading position.
+The older-history button remains an accessible fallback. Snapshots travel over
+HTTPS; live deltas and file enrichment use SSE. Individual oversized tool payloads
+have a bounded display preview labeled Partial output; chat text is preserved and
+the original stored records are never trimmed. Markdown export streams item pages.
+Conversation references and legacy full-turn requests use native chat summaries
+so older clients cannot accidentally hydrate enormous tool histories.
+Legacy-format histories also use summary turn pages for opening and export;
+their backend does not support item paging.
+Already observed unfinished items survive resume. The native read API does not
+guarantee prefixes streamed before any web subscription; complete records arrive
+when the item finishes.
+Conversation archive always asks for confirmation that any running work will stop, including
+when the conversation list has not yet received its latest status.
+Restoring from a row menu preserves the current conversation, draft and archive
+filter. Clicking the archived row itself restores and opens it unless a newer
+navigation supersedes that action; repeated restores share the row's busy guard.
+
+## Install and operate
+
+Requires Linux with a user systemd manager, Node.js 24+, OpenSSL and the verified
+persistent native executables described below. Install the single package first:
+
+```bash
+npm --prefix web ci
+node web/service.mjs init --origin https://127.0.0.1:15443 \
+  --backend-bin "$HOME/.local/lib/codex-console-web/bin/codex-app-server" \
+  --backend-home "$HOME/.local/state/codex-console-web/native-home" \
+  --workspace "$HOME/.local/state/codex-console-web/workspace"
+node web/service.mjs install
+node web/service.mjs start
+node web/service.mjs status
+node web/service.mjs stop
+```
+
+All commands accept `--config /absolute/private/config.json`; defaults follow
+XDG_CONFIG_HOME/XDG_STATE_HOME. Initialization refuses existing credentials and
+the original Codex home. It copies only an existing file login when needed,
+never conversation/account databases. Password/hash, certificate/key and the
+explicit proxy/TLS environment file are owner-private. API-key/task overrides
+are excluded. The owner password is in `owner-password` beside the config and
+is never printed. `--cert` and `--key` copy an existing pair into private storage;
+otherwise init generates a 30-day self-signed SAN certificate for the origin.
+Trust/import that certificate on the accessing device, or provide a trusted pair.
+Browser security interstitials require the owner to act.
+
+Private destinations are checked through their real existing ancestors before
+initialization writes anything, then checked again when configuration is loaded.
+A symlinked directory cannot redirect credentials or application data into the checkout.
+An existing project workspace keeps its permissions; only newly created workspaces
+and private application storage receive owner-only permissions.
+Initialization checks the native executables before creating credentials. A later
+failure removes files created by that attempt, preserves pre-existing material,
+and allows the corrected initialization command to be retried.
+
+The only managed units are `codex-console-native-backend.service` and
+`codex-console-native-web.service`. Native startup uses the configured persistent
+executable and home. The web handshake checks that native home;
+there is no fallback engine. Unit paths preserve spaces/Unicode/%/$ without a
+shell. A worktree referenced by an installed unit must stay present.
+Installation checks both existing unit owners before changing either file.
+Start/stop verify the OS-user owner and managed marker of both loaded unit files;
+an unrelated service with the same name is preserved.
+Stopping owned units does not require a working TLS/configuration installation.
+Status still reports unit state after certificate expiry or executable removal,
+with HTTPS unavailable; installation and startup retain full validation.
+
+## Current verified deployment
+
+- Entry: `https://117.72.158.35:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
+  `ws://127.0.0.1:4500`.
+- Private config/password/cert/env: `~/.config/codex-console-web/`.
+- Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
+  web preferences/uploads remain under its `web/` child.
+- Code: native managed worktree `/home/desktop/.codex/worktrees/native-web-client/codex-console`.
+- The old Xpra service `codex-console.service` is stopped and disabled by owner
+  request to release port 15443; its original desktop/backend processes have ended.
+  The independent native backend continues to serve the browser client.
+
+The public entry was verified with direct HTTPS login, rejected foreign Host/Origin,
+native model reads, SSE snapshot recovery and logout. Password, private key and
+native/upload data are retained in the same private locations.
+
+The canonical Host/Origin is `https://117.72.158.35:15443`. The private config uses
+`cert-public-117.72.158.35.pem`, whose SAN matches the public IP. It is self-signed;
+trust/import the current certificate on the accessing device. Checks disable proxy
+variables and connect directly to the public IP. External-device acceptance is
+still manual. If the public IP or hostname changes, update both the configured
+origin and matching certificate; arbitrary Host/Origin values remain rejected.
+
+## Restart and rollback
+
+For an existing installation, change the private config's `origin` and `port`
+together to use another HTTPS port, for example `https://117.72.158.35:15443` and
+`15443`. The current certificate remains valid when the hostname/IP is unchanged.
+Confirm the target port is free before restarting the web unit. The old Xpra
+service can contain the original desktop and its active backend; stopping that
+whole service ends those processes and requires an agreed desktop shutdown.
+
+```bash
+systemctl --user restart codex-console-native-web.service
+systemctl --user restart codex-console-native-backend.service
+node web/service.mjs status
+```
+
+Web-only restart preserves native work and requires browser login again because
+owner sessions are in memory. Backend restart uses native persistence and reloads
+authoritative state; active tasks are not promised a seamless transfer and sent
+mutations are never replayed. Stop/restart only these owned units. Moving the
+original desktop to this backend requires a separate migration instruction after
+its active work finishes.
+
+Rollback keeps all native/upload data intact:
+
+```bash
+node web/service.mjs stop
+systemctl --user disable codex-console-native-web.service codex-console-native-backend.service
+```
+
+## Release verification and UI limits
+
+173 Node checks passed. The initial release's production dependency audit reported zero vulnerabilities.
+The initial native web release's six Important findings and three findings
+promoted from Minor were fixed in nine independently verified and pushed commits.
+Mounted event checks cover duplicate commands, modified Enter and conversation
+reload identity; a real HTTPS/native check also confirms nested Unicode completion.
+All opt-in HTTPS/native checks passed against the durable services, including
+projects, two-client chat, interruption, file/photo round trip, exact downloads,
+model/effort/context/compaction, weekly metadata, references and command effects.
+Separate web/backend restart checks proved accepted work survives web restart,
+authoritative resync after backend restart and one native user message per UUID.
+Runtime proof files stay outside Git.
+History acceptance reopened a 3.4 GB original rollout through real HTTPS/SSE:
+the first page contained 20 items, upward scrolling added 20 without duplicates,
+and repeated scroll events issued one request. Only the web service was reloaded;
+the native backend and original desktop stayed running. No inference was requested.
+First-entry checks also exercised the mounted controllers against real HTTPS and
+the native backend: both settings were saved and text/PNG uploads retained exact
+bytes. The disposable conversation and uploads were removed; no inference ran.
+The reasoning check received native summary deltas through the real HTTPS/SSE
+path. Reopened history now loads reasoning and tools through native item pages.
+Native project acceptance created a disposable project through the mounted form,
+replayed its key to the same project, and opened a chat using the native primary
+root. Creation cleared the archive filter and the conversation list matched a
+direct native read. Native listing omitted the new blank chat in this setup.
+The original chat cwd and host files were preserved; fixtures were cleaned.
+Real HTTPS rename checks changed another native conversation while preserving
+the selected chat/draft/settings, and confirmed `/rename` through an independent
+native read. Archived rename was rejected by the native endpoint. Disposable
+conversations were removed without inference.
+
+The UI tool reported no enabled browser/native surfaces. No login click,
+authenticated app screenshot, real mobile IME/picker/clipboard/download or desktop
+keyboard acceptance is claimed. Those are manual release checks: log in, open
+the sidebar and choose a native project/conversation on a phone, confirm IME
+Enter, choose/remove/retry files, copy
+the full ID, download exact bytes, open the same thread in the extra desktop and
+send in both directions. The CSS uses visible focus, native controls, safe areas
+and the visual viewport for the keyboard; physical-device behavior remains unverified.
+An offline static Firefox fixture at 390×844 with 430 px of visible app height
+confirmed that the empty welcome area shrinks and the send button stays visible.
+Static drawer renders at 320, 390, 706 and 1280 CSS px confirmed the width cap,
+outside close area, visible chat and absence of horizontal page overflow.
+The project form also fits a 390 px layout with 430 px of visible keyboard height.
+
+Another page opening the same conversation does not reset already loaded pages:
+each page receives its own HTTPS snapshot and shares the live event stream.
+
+## Native connection
+
+`web/codex.mjs` accepts only a configured loopback WebSocket endpoint with an
+explicit port. It initializes the native experimental API, correlates replies,
+preserves native errors and times out RPC calls after 30 seconds. Connection
+opening and initialization have a 10-second deadline.
+
+Every native frame receives a generation/sequence cursor. An atomic native
+resume snapshot is published before later deltas or waiting HTTP handlers run.
+Each page obtains its own snapshot; closing the last page only unsubscribes an
+idle thread. There are no manual project/conversation refresh buttons. Native
+events update the lists, and reconnection rereads both catalogs even when no
+conversation is selected. Running work stays subscribed until its matching turn completes.
+Reconnection restores subscriptions and snapshots, never submitted writes.
+
+A write interrupted after sending has an **unknown** outcome: inspect native
+history before deciding to retry. Calls made while offline are **not sent**.
+Native approval/input answers are consumed once and expire on native resolution
+or reconnection, including requests whose native ID is numeric zero.
+
+## Private integration environment
+
+The official source is pinned at `ff9ab4aed96aa2e105f78b9521dbbd3a6b329dc8`.
+Build the standalone app-server using Rust 1.95.0, locked dependencies and
+`dev-small`. Install the official desktop's existing `codex-code-mode-host`
+companion beside it. This source version needs the companion for default tool
+execution; an echo-only turn does not detect its absence. The attempted companion
+source build encountered an unavailable V8 sandbox prebuilt archive; this feature
+has no prebuilt archives in the crate's README and [release assets](https://github.com/denoland/rusty_v8/releases/expanded_assets/v150.4.0).
+The app-server remains the pinned source build with unchanged feature code.
+Temporarily stamp `0.159.2-dev.ff9ab4a` release metadata to match the installed
+Codex version: the development default `0.0.0` receives a reduced compatible
+model catalog. Cargo updates only workspace versions offline, third-party locked
+dependencies are checked unchanged, and both source metadata files are restored
+after building. Models and reasoning efforts remain native; hidden internal
+models are not added to the desktop picker. Both executables live outside Git at
+`~/.local/lib/codex-console-web/bin/`.
+
+```bash
+cd /home/desktop/Documents/Codex/codex-console/codex/codex-rs
+(
+  set -e
+  codex_build_backup=$(mktemp -d)
+  cp Cargo.toml Cargo.lock "$codex_build_backup/"
+  trap 'cp "$codex_build_backup/Cargo.toml" Cargo.toml; cp "$codex_build_backup/Cargo.lock" Cargo.lock; rm -rf "$codex_build_backup"' EXIT
+  python3 - <<'STAMP'
+from pathlib import Path
+import tomllib
+p = Path('Cargo.toml')
+text = p.read_text()
+assert tomllib.loads(text)['workspace']['package']['version'] == '0.0.0'
+start = text.index('[workspace.package]')
+p.write_text(text[:start] + text[start:].replace('version = "0.0.0"', 'version = "0.159.2-dev.ff9ab4a"', 1))
+STAMP
+  "$HOME/.cargo/bin/cargo" +1.95.0 update --offline --workspace
+  python3 - "$codex_build_backup/Cargo.lock" <<'LOCK'
+from pathlib import Path
+import sys, tomllib
+old = tomllib.loads(Path(sys.argv[1]).read_text())['package']
+new = tomllib.loads(Path('Cargo.lock').read_text())['package']
+assert [p for p in old if 'source' in p] == [p for p in new if 'source' in p]
+LOCK
+  CARGO_HTTP_MULTIPLEXING=false CARGO_INCREMENTAL=0 \
+  CARGO_TARGET_DIR="$HOME/.cache/codex-console-web-build" \
+    "$HOME/.cargo/bin/cargo" +1.95.0 build --offline --locked --profile dev-small -j 2 \
+    -p codex-app-server --bin codex-app-server
+)
+install -d -m 700 "$HOME/.local/lib/codex-console-web/bin"
+install -m 700 "$HOME/.cache/codex-console-web-build/dev-small/codex-app-server" \
+  /usr/lib/chatgpt/resources/codex-code-mode-host "$HOME/.local/lib/codex-console-web/bin/"
+```
+
+Integration data lives under
+`~/.local/state/codex-console-web/integration/{codex-home,desktop-profile,workspace}`.
+Directories are private (0700); the existing file login can be copied as 0600.
+Do not copy the original desktop's chat/account databases. The separate desktop
+connects to the same source-built backend at `ws://127.0.0.1:4500` using
+`CODEX_APP_SERVER_WS_URL`, with its own Codex home and Electron profile.
+The original desktop and active conversations stay on their existing backend.
+
+The two transient user units are `codex-console-native-backend-test` and
+`codex-console-native-desktop-test`. Only stop/restart these owned test units.
+GUI/proxy/TLS environment is forwarded through a private environment file using
+explicit variable names; credentials and logs are never committed.
+
+The corrected build returns the same seven visible models as the desktop, including GPT-6.1-Sol, GPT-6-Sol and GPT-6-Luna. A real GPT-6.1 native filesystem turn and the public HTTPS/model/SSE smoke passed; the disposable thread/file were removed.
+
+## Verification
+
+```bash
+npm --prefix web test
+node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
+  --workspace "$HOME/.local/state/codex-console-web/integration/workspace" \
+  --exercise-files
+```
+
+The automatic tests use synthetic native WebSocket events and never touch your
+account. The opt-in probe reads the native model/project/thread catalogs and
+login availability without printing account values. Its file flag creates a
+disposable native thread, requires a real filesystem/command tool call, compares
+exact private-file bytes and deletes that thread after completion.
+
+Before resuming a newly created blank thread, preserve its native section
+placement through `thread/section/move`. This materializes its empty paginated
+history and lets Codex populate Git metadata without setting a name; immediate resume otherwise can
+fail with “no rollout found”. Failed persistence retries the same native thread.
+Explicit naming and rename requests still use native `thread/name/set`.
+
+The remaining sections document the implemented components; no Xpra connection is used by this client.
+
+Task 1 verification: source app-server build exit 0 in 11m 13s; 10 native-client checks and the legacy isolated suite passed. Native reads returned four models, zero isolated projects/threads and an available login; the extra desktop initialized its WebSocket connection. The real filesystem probe passed: a native tool wrote the exact expected bytes and its disposable thread was deleted. The official desktop companion is compatible with this tested execution path.
+
+Current executable: app-server `0.159.2-dev.ff9ab4a`, SHA-256 `060d8d708d00c10b50d16620c9c63374c2ceb262f482163e3dbdac81110c7c37`; desktop companion SHA-256 `5b2c075ac2380fa04d76d7313fbc044d29c8d0a0d0b9138415acd4610211ca03`. The original Task 1 `0.0.0` build is historical. Keep the source commit, release metadata and binary hash together when reproducing model discovery.
+
+
+## HTTPS owner access
+
+`web/server.mjs` serves fixed local assets, accepts only the configured HTTPS
+Host/Origin and uses a 12-hour, absolute `HttpOnly; Secure; SameSite=Strict`
+session cookie. Passwords use async native scrypt (16-byte salt, 64-byte key,
+N=16384/r=8/p=1); login throttles after five failed guesses per IP per minute.
+The password, its hash, TLS files and configuration stay outside Git. No request
+bodies or cookies are logged.
+
+Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
+and raw thread creation are rejected. Native credentials are filtered from reads
+and events. Unsupported credential-refresh/attestation/dynamic-tool requests
+receive an explicit unsupported response. Native approval/input forms have one
+responder; permission grants cannot exceed the corresponding native request.
+
+Each browser page gets a session-bound view ID. Events arrive over authenticated
+SSE with 15-second heartbeats and a 1 MiB per-stream queue cap. A slow reader is
+disconnected; every new/reconnected stream requests an authoritative snapshot.
+The UI has no logout control; the existing secure owner session is reused until
+its absolute expiry requires the password again. Internal session cleanup closes
+only its own streams, preserving other sessions and the native connection.
+
+The isolated HTTPS test unit is `codex-console-native-web-test`, listening only
+on `https://127.0.0.1:8443`. Its temporary integration configuration and private
+owner password are in `~/.config/codex-console-web/integration/`; generated TLS
+files are self-signed for loopback. The durable host-IP deployment is described above.
+Run `node --test web/test/auth-server.test.mjs` for the isolated HTTPS/auth suite.
+Nine checks passed, including a paused real TLS/SSE reader while another page
+continued receiving events. A live HTTPS smoke against the source backend also
+passed: unauthenticated 401, foreign Origin 403, four native catalog models,
+snapshot-required SSE and logout. Password values were not printed.
+
+
+## Browser conversations
+
+Choose a native project or all conversations; list pages contain 20 entries.
+New conversations use the selected host directory, full access and no execution
+approvals, subject to native managed restrictions. Each new empty thread retains
+native naming and is materialized before its atomic resume. Copy the real thread ID from its conversation row menu;
+`/status` shows native conversation defaults. Reading a thread leaves its execution
+permissions unchanged.
+
+The composer keeps a stable message UUID, preserves failed/uncertain drafts and
+retains drafts in browser session storage when available. During active work,
+follow-up messages default to **Queue** and appear above the composer. The
+composer has no queue/steer selector; the queued-message menu controls that choice. Each
+message offers **Steer**, delete, and a menu with **Edit message**, **Open in
+side chat**, and **Turn off queueing**. Turning off queueing changes future
+sends to steering without removing accepted messages; the choice survives
+reload in the same browser tab. Native queue notifications refresh messages
+added or changed by another client. Edit saves preserve images, skills and
+unchanged references; if a message has already dispatched, the edit stays
+visible with an error. Side chat forks native context, transfers the selected
+message and leaves the source conversation and draft in place. Wide layouts
+show both chats; narrower layouts show the side chat with a close control.
+Steering keeps current-turn settings; queued work uses native future defaults.
+Queueing waits for the native settings notification before applying full future
+permission defaults. Stop targets the actual active turn ID.
+
+Codex owns queue execution, including when the browser is closed. Stopping a
+turn pauses its queue. Transfers claim a queued message before sending it so
+the native idle dispatcher cannot execute it twice. A definite transfer failure
+restores the original input at the end of the native queue. An uncertain transfer
+retains its text in the browser and a private recovery file under
+`<stateDir>/queue-recovery/` (directory 0700, files 0600, outside Git), including
+the original native attachment inputs. The recovery controls require checking
+the conversation before requeueing; they reconcile queued items and history
+first. Closing the side pane leaves accepted native work running. Successful
+transfers/recoveries remove their backup files; retained uncertain backups can
+be cleaned up after their corresponding messages have been checked.
+
+This follows the [official steering and queueing behavior](https://learn.chatgpt.com/docs/prompting#steering-and-queuing).
+Regression checks: `node --test web/test/followups.test.mjs web/test/queue-http.test.mjs`.
+
+Opening/switching pages uses native atomic resume and ordered cursors. Native
+completion summaries preserve previously streamed tool items. Older full history
+pages prepend without overwriting current items; delayed safe HTML cannot replace
+newer text. Markdown uses the pinned sole dependency `markdown-it` 15.0.2 with raw
+HTML disabled, restricted URL schemes and no automatic external image loads.
+Text streams immediately; safe HTML updates coalesce to 100 ms.
+
+Native approvals, permission requests, questions and MCP form/URL elicitations
+appear as cards inside the chat scroll area. Question cards show each option and
+its description, with free text when the native question allows it and masked
+secret inputs. Nothing is selected unless the native form supplies a default.
+MCP forms support primitive fields, titled single/multiple choices and the native
+`form`, `openai/form` and `openaiForm` modes; required fields and numeric bounds
+are checked before submission. Authorization cards show the command, directory
+and requested permissions, including native session and proposed policy choices.
+The gateway accepts only exact native approval choices and requested permissions.
+URL authorization opens a separate page and still needs an explicit completion
+response. Unsupported fields or unsafe URLs cannot be accepted from the card;
+decline/cancel remains available. Responses keep the original request ID and
+conversation, reject duplicate answers and preserve input on failure. Native
+resolution or reconnect removes stale cards; streaming never resets a form.
+Form schema property names such as `apiKey` and `password` are retained as field
+definitions; unrelated native credentials remain filtered from browser events.
+Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
+desktop Enter sends, and the Send button is available on all devices.
+
+Opt-in live acceptance (uses the private owner password without printing it):
+
+```bash
+node web/test/web-probe.mjs \
+  --config "$HOME/.config/codex-console-web/integration/config.json" \
+  --password-file "$HOME/.config/codex-console-web/integration/owner-password" \
+  --exercise-chat
+```
+
+Verified against the source-built backend: HTTPS send, a second native protocol
+client's reply arriving over SSE, close/reopen during a real command, interruption,
+one native message per repeated UUID and deletion of only the disposable test
+thread. The original desktop remained running. No UI automation surface was
+available; browser/desktop keyboard actions, actual clipboard copying and mobile
+visual layout await manual acceptance. Use the extra desktop to open the same
+real thread ID, send in both directions, then verify mobile navigation and copy.
+
+
+## Native projects and working directories
+
+Projects and roots are read from Codex. Right-click a project name, or use
+Shift+F10 / the keyboard menu key, for **Archive/Restore project** and **Delete
+project**. Opening the menu preserves the current conversation and draft. The
+project heading's archive toggle lists archived projects so they can be restored.
+Project archive hides the project in this console; it does not archive its chats
+or interrupt work. Because Codex has no native project archive RPC, this preference
+is stored in native metadata as `codex-console.archived: "true"`; other metadata
+is retained, and the original desktop does not consume this flag. Native metadata
+updates replace the map, so concurrent external metadata edits can race.
+Confirmed deletion calls native `project/delete`, detaches member threads to All
+conversations and keeps their history and workspace files. Neither action changes
+existing conversation working directories.
+The owner can create a native project from its name and an existing server
+directory. Existing-project name/root editing, folder creation and directory picking remain
+unavailable. Retired project/folder mutation routes return
+`WORKSPACE_MANAGED_BY_CODEX` before any native write; raw mutation RPCs stay denied.
+
+Creating a conversation sends the selected native project ID. The gateway reads
+its primary registered root, or uses its configured default when no project is
+selected. Browser-supplied `cwd` overrides are rejected. Existing conversations
+keep the actual working directory reported by their native snapshots.
+
+Each conversation row has a three-line options button with **Copy thread ID**, **Rename**, **Archive/Restore**, and **Delete**. The header no longer displays copy/delete controls. Actions use the clicked row's full native ID and preserve another selected conversation and its draft. Native popovers support arrow keys, Escape/Tab dismissal and focus return; a running archive can be cancelled before interruption.
+
+Rename and `/rename` share the native `thread/name/set` action. A valid session
+view can rename a listed conversation without opening it; names are trimmed and
+validated as 1–160 characters. Cancel/blank input sends nothing, pending renames
+cannot submit twice, and native failures retain the current name and draft.
+Archived conversations disable Rename with a restore-first label, matching the
+native name endpoint's exclusion of archived threads.
+
+Conversation deletion still confirms once, reads fresh native active state,
+interrupts its matching turn and waits up to 30 seconds. Refusal, timeout or a
+new different turn prevents deletion; workspace files and uploads are retained.
+The project checks cover read-only boundaries, authoritative roots, opaque
+pagination and the existing interruption/deletion regressions.
+
+## Files, photos and downloads
+
+Chat photos display as clickable pictures without generated image-placeholder
+lines or download-name captions. Click, Enter or Space opens the full-size picture
+in a modal; its close button, Escape or backdrop dismisses it. Inline Markdown
+pictures use the same preview and are not repeated below the message. Ordinary
+files keep their download links; native message data and text exports retain
+their image markers. Previews use authenticated same-origin image references.
+Completed draft photos are compact thumbnails without filenames or uploaded
+labels. Click to enlarge; hover or keyboard focus reveals a red × in the upper
+right to remove that photo. Touch devices keep the × visible. Upload progress,
+failure feedback and retry remain available, and removal preserves the draft.
+
+Use **Files** or **Photos** to select multiple attachments. Uploads run serially
+with native browser progress and removable previews; sending waits for completion.
+The default exact per-file cap is 33,554,432 bytes (32 MiB), configurable up to the
+pinned native image-input ceiling of 1 GiB. Both metadata and actual streamed
+bytes are checked. A cancelled, short, over-limit or failed upload removes its
+partial files; existing completed attachments and the draft remain.
+
+Completed metadata/files are private (0700 directories/0600 files) under the
+configured state directory. Removing an attachment from the draft or deleting a
+conversation does not delete its historical bytes. Native photos use local-image
+inputs; documents use native text paths and UTF-8 text elements, never invented
+binary input types. PNG/JPEG/WebP/GIF previews use raster signatures plus browser
+and native image decoding. Active formats such as SVG remain ordinary downloads.
+
+Download links are issued only for transcript targets and completed uploads,
+using the thread's actual directory, known upload storage and configured generated
+roots. Canonical paths, no-follow opens and opened descriptor/inode checks stop
+symlink replacement. Links contain opaque IDs; arbitrary path/URL downloads are
+not exposed. UTF-8 filenames use Content-Disposition and downloads stream the
+opened file's bytes. Linux `/proc/self/fd` is required for this validation.
+
+SSE keeps its 1 MiB queue bound. Large snapshots and presentations use authenticated
+HTTPS with small SSE checkpoint signals; late file/HTML enrichment cannot replace
+newer native text. JSON requests have a 30-second deadline; uploads have a
+10-minute request deadline and a 30-second idle limit.
+
+`web/test/files.test.mjs` verifies exact caps, chunked/dishonest lengths,
+interruption/ENOSPC cleanup, Unicode names, invalid photos, forged IDs, symlink
+races, project rebinding, authentication and large histories. Run the live probe
+with `--exercise-attachments` to verify the native text/photo inputs and exact
+model-generated download bytes. This passed against the source backend, including
+successful download of an uploaded file after its disposable thread was deleted.
+Browser picker/preview interaction still follows the manual UI acceptance note.
+
+
+## Models and usage
+
+The model menu and reasoning options come from the native catalog. Changes apply
+to future turns through `thread/settings/update` and wait for its matching native
+notification; they preserve the draft and never change a running turn through
+`turn/settings/update`. Queued messages use shared future defaults, so subsequent
+selector changes can affect them. Steering inherits the current turn. The
+`/status` and `/permissions` commands report native defaults and managed policy; unsupported model/effort/photo
+combinations are rejected with the draft and attachments retained.
+
+Context shows the latest `last.totalTokens`, available native window and the
+native 12,000-token baseline percentage. Accumulated session totals are not used
+as active context; missing windows/usage are explicitly unknown. Compaction and
+model activity refresh this through native notifications. Execution/quota errors
+arriving after an accepted send stay visible in chat.
+
+Seven-day quota selects duration 10080 minutes in either native window, preferring
+`rateLimitsByLimitId` when available. Buckets remain separate; reset seconds are
+converted to local time. Account/model changes invalidate in-flight reads and
+cached displays, including stale failures. No quota amounts or account values
+are committed as test evidence.
+
+Seven focused checks and the full current suite passed. Live
+`web-probe.mjs --exercise-usage` verified two supported efforts, effective next
+turn metadata, native context, compaction context refresh and real weekly
+metadata against the source backend.
+
+
+## Native @, $ and / actions
+
+Type `@` to choose a file/directory in the conversation's actual workspace,
+another conversation, or an available native app/plugin. Nested paths such as
+`@src/` resolve from that conversation's directory. A filename search uses Codex's
+native fuzzy search across the current workspace; empty queries and explicit
+subdirectory paths use native directory listing. Search roots are fixed by the
+server, with results outside that workspace excluded and symlinks rechecked when
+sending. Paths containing spaces can be searched as `@"My Folder/in"`.
+Type `$` for enabled
+workspace skills. Picking binds the selected text; editing that token removes
+the binding, while email, code and unselected `$HOME` remain literal text.
+Chinese/emoji ranges use native UTF-8 offsets. IME confirmation never selects or
+submits a completion. Unavailable native catalog entries stay visibly unavailable.
+Shift+Enter keeps its newline behavior while the completion menu is open;
+plain Enter accepts the highlighted choice. The floating menu groups files,
+conversations, apps and plugins, shows file paths and Chinese command descriptions,
+and supports searching slash commands by their description. Arrow keys, Home/End
+and Tab navigate enabled choices; loading, empty and unavailable mention results
+cannot accidentally submit the draft. Escape, outside clicks, IME input and newer
+draft/caret/connection/workspace state invalidate old requests. Editing inside an
+accepted reference opens a fresh search; just moving the caret inside it does not.
+Choosing a slash command with no existing arguments runs its current handler
+directly. Existing deletion/archive confirmations and single-submission locks
+remain in effect. Typed command arguments and literal shell variables keep their
+normal behavior; the menu adds no unsupported native commands.
+
+Files/directories use native quoted paths, skills use typed skill inputs and
+apps/plugins use typed mention identities. Thread links use the native escaped
+format, with self/duplicate context excluded, at most 16 IDs and 768 ID bytes.
+At send time only the selected threads are read. Snapshots are JSON-quoted,
+marked untrusted and capped at 8 KiB each/32 KiB total. Queue mode uses a separate
+quoted untrusted text input because native queue/add has no additionalContext
+field. This is a send-time snapshot; it does not message the referenced thread.
+
+Supported commands: `/new`, `/model [model effort]`, `/permissions`, `/status`,
+`/usage`, `/skills`, `/goal [objective|edit|pause|resume|clear]`, `/compact`, `/rename [name]`, `/archive`, `/delete`, `/fork`,
+`/export`. The first group opens existing UI/native controls. Rename/compact use
+native actions; archive stops active work only after confirmation/interruption.
+Enable **Show archived conversations** and click one to restore it. Delete keeps
+its existing confirmation. Fork uses full defaults and defers automatic inherited
+goal continuation. Export downloads paginated native history as Markdown without
+writing a host file. There is no invented commands/list or read_thread tool.
+
+`/goal` selects goal mode in the existing chat composer: the goal chip appears,
+the placeholder asks for a measurable objective, and focus stays in the same input.
+Send the objective with the usual send button or keyboard action. After acceptance,
+the chip disappears and an inline goal bar above the composer shows the native
+status and elapsed time, with pause/resume, clear and inline details controls.
+`/goal edit` fills the same input with the current objective; `/goal <objective>`
+and `/goal pause|resume|clear` remain available. Editing preserves native status
+and budget. Clear keeps its confirmation, chat history and already-running turns.
+
+Opening a conversation reads its current goal once. Native updates and clearing
+arrive through SSE; unrelated chat deltas leave the goal bar's DOM intact. The
+elapsed clock advances locally while the native goal is active and connected,
+then reconciles with native cumulative time. Drafts and goal mode stay scoped to
+the conversation. Failed writes preserve the draft; uncertain writes or conflicting
+changes require the inline check action, which reads without retrying mutations.
+An accepted objective is reconciled before the draft is cleared. Goals remain
+bound to the open view through the authenticated gateway. New/resumed goals can
+start native work immediately. The native 4000-character limit remains; attachments
+and bound references must first be sent as ordinary messages. Existing budgets
+are shown in inline details and preserved, with no new budget settings.
+
+Command submission locks before awaiting native work, so double Enter/click
+cannot create duplicate forks or compactions. Failed commands preserve the draft;
+editing while a command runs preserves the newer text.
+Opening, creating or forking a conversation updates its thread ID in the page
+address, so refresh reopens the conversation currently selected.
+
+Task 7's eight focused checks and the full suite passed. Live
+`web-probe.mjs --exercise-references` verified a file, real skill, real plugin,
+read-only thread snapshot reaching the model, native queued snapshot data,
+rename/fork/archive/restore/export and disposable cleanup. No callable native app
+was available in this account/runtime, so that catalog remains unavailable;
+its typed representation is covered by fixtures. UI clicks remain in the manual
+acceptance scope stated above.

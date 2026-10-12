@@ -11,7 +11,9 @@
   <a href="https://github.com/shenmuegit/codex-console/issues">反馈问题</a>
 </p>
 
-Codex Console 通过 [Xpra](https://github.com/Xpra-org/xpra)，把 Linux 主机上的 Codex / ChatGPT 桌面应用窗口传输到浏览器。你可以用手机查看任务、使用本机输入法输入指令、操作远端界面。项目文件、计算、账号会话和应用进程都保留在主机上。
+**原生浏览器客户端：**新增的 `web/` 客户端连接共享原生 Codex app-server，以认证 HTTPS 提供项目、会话、文件/照片、模型/用量和 `@`/`$`/`/` 输入。安装和使用见[原生客户端操作说明](docs/zh-CN/native-web-client.md)。
+
+下文记录的桌面窗口访问通过 [Xpra](https://github.com/Xpra-org/xpra)，把 Linux 主机上的 Codex / ChatGPT 应用窗口传输到浏览器。你可以用手机查看任务、使用本机输入法输入指令、操作远端界面。项目文件、计算、账号会话和应用进程都保留在主机上。
 
 本项目提供远程访问层。**需要提前安装兼容的 Linux 桌面应用**；部署脚本不负责下载该应用或登录账号。当前浏览器界面使用简体中文。
 

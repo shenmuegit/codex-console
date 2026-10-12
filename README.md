@@ -16,7 +16,9 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-24292f?style=flat-square" /></a>
 </p>
 
-Codex Console streams a dedicated Codex / ChatGPT desktop app window from a Linux host through [Xpra](https://github.com/Xpra-org/xpra). Read tasks, enter instructions with your phone's input method, and control the app from a browser. Projects, computation, account sessions, and application processes stay on the host.
+**Native browser client:** the new `web/` client connects to a shared native Codex app-server and provides projects, conversations, files/photos, model/usage controls and `@`/`$`/`/` input over authenticated HTTPS. See the [native setup and operator guide](docs/native-web-client.md).
+
+The desktop-window access documented below streams a dedicated Codex / ChatGPT app window from a Linux host through [Xpra](https://github.com/Xpra-org/xpra). Read tasks, enter instructions with your phone's input method, and control the app from a browser. Projects, computation, account sessions, and application processes stay on the host.
 
 This repository provides the remote access layer. You must install a compatible Linux desktop app separately; the installer does not download the app or sign in to an account. The browser interface currently uses Simplified Chinese.
 

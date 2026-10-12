@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <title>Codex</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main id="login-panel" class="login-panel">
+    <strong class="wordmark">Codex</strong>
+    <h1>连接 Codex</h1>
+    <p class="muted">继续你的工作。</p>
+    <form id="login-form">
+      <label for="password">访问密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required aria-describedby="login-error">
+      <p id="login-error" class="error" role="alert"></p>
+      <button type="submit" class="primary">继续</button>
+    </form>
+  </main>
+  <main id="workspace" hidden>
+    <div class="work-layout" data-level="chat">
+      <div id="sidebar" class="sidebar" role="complementary" aria-label="全局导航">
+        <header class="sidebar-header">
+          <strong class="wordmark">Codex</strong>
+          <button id="back-projects" class="icon-button" aria-label="收起侧栏" title="收起侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
+        </header>
+        <button id="new-thread" class="new-thread"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M16 3l5 5M10 14l-1 4 4-1L22 8l-5-5Z"/></svg><span>新建会话</span></button>
+        <div class="sidebar-scroll">
+          <section class="projects-pane" aria-label="项目">
+            <div class="pane-heading"><h2 id="projects-title">项目</h2><button id="show-archived-projects" class="more-button" type="button" aria-pressed="false">已归档</button><button id="new-project" class="more-button" type="button" aria-haspopup="dialog" aria-controls="project-dialog">新建项目</button></div>
+            <nav id="projects" aria-label="项目列表"></nav><button id="more-projects" class="more-button" hidden>更多项目</button>
+          </section>
+          <section class="threads-pane" aria-label="会话">
+            <div class="pane-heading"><h2 id="project-title">全部会话</h2><label class="archive-filter" title="显示归档会话"><input id="show-archived-threads" type="checkbox"><span>已归档</span></label></div>
+            <nav id="threads" aria-label="会话列表"></nav><button id="more-threads" class="more-button" hidden>更多会话</button>
+          </section>
+        </div>
+        <footer class="sidebar-footer">
+          <label class="device-picker" for="host-picker"><span>设备</span><select id="host-picker" aria-label="选择 Codex 设备"><option value="local">server 本机</option></select></label>
+          <button id="show-connections" class="global-usage" type="button" aria-controls="connections-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>连接设备</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+          <button id="show-usage" class="global-usage" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+        </footer>
+      </div>
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭侧栏" tabindex="-1" hidden></button>
+      <section id="chat-pane" class="chat-pane" aria-label="聊天" data-empty="true">
+        <header class="chat-heading">
+          <button id="back-threads" class="icon-button sidebar-open" aria-label="打开侧栏" title="打开侧栏" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
+          <h1 id="thread-title" class="thread-title" tabindex="-1">新会话</h1>
+        </header>
+        <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
+          <button id="older-history" class="more-button" hidden>加载更早记录</button><div id="messages"></div>
+          <div id="thinking-status" class="thinking-status" role="status" hidden>正在思考</div>
+          <section id="native-requests" aria-label="待回答的原生请求"></section>
+          <div id="chat-empty" class="welcome"><h2>开始构建</h2><p>从侧栏选择或新建会话。</p></div>
+        </div>
+        <section id="workspace-error" class="chat-error" hidden aria-label="设备连接恢复">
+          <p id="workspace-error-message" class="error" role="alert"></p>
+          <label class="device-picker" for="recovery-host-picker"><span>切换设备</span><select id="recovery-host-picker" aria-label="选择恢复设备"></select></label>
+          <button id="recover-connections" class="more-button" type="button" aria-controls="connections-dialog">恢复设备连接</button>
+        </section>
+        <div id="chat-error" class="error chat-error" role="alert"></div>
+        <form id="composer" class="composer">
+          <section id="queued-messages" class="queued-messages" aria-label="排队消息" hidden></section>
+          <div id="queue-recovery" class="queue-recovery" hidden><p id="queue-recovery-text" role="status"></p><button id="queue-recovery-restore" type="button">核对后重新排队</button><button id="queue-recovery-dismiss" type="button">已核对，无需重发</button></div>
+          <section id="goal-status" class="goal-status" aria-label="当前目标" hidden>
+            <div class="goal-status-heading">
+              <svg class="goal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 9-9m-4 0h4v4"/></svg>
+              <button id="goal-title" type="button" class="goal-title" aria-label="编辑目标" aria-live="polite"></button><span id="goal-progress" class="muted small"></span>
+              <div class="goal-actions">
+                <button id="goal-check" type="button" class="small" hidden>核对目标</button>
+                <button id="goal-clear" type="button" class="icon-button" aria-label="清除目标" title="清除目标"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg></button>
+                <button id="goal-toggle" type="button" class="icon-button" aria-label="暂停目标" title="暂停目标" data-action="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="goal-pause" d="M10 9v6m4-6v6"/><path class="goal-play" d="m10 8 6 4-6 4Z"/></svg></button>
+                <button id="goal-expand" type="button" class="icon-button" aria-label="展开目标详情" title="展开目标详情" aria-controls="goal-details" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg></button>
+              </div>
+            </div>
+            <p id="goal-details" class="muted small" hidden></p><p id="goal-error" class="error small" role="alert" hidden></p>
+          </section>
+          <div class="composer-surface">
+            <div id="attachments" aria-label="待发送附件"></div>
+            <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <div id="completion-menu" role="listbox" aria-label="原生补全" hidden></div>
+            <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="2" placeholder="向 Codex 发送消息…" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
+            <div class="composer-footer">
+              <details id="attachment-actions" class="attachment-actions"><summary class="icon-button" aria-label="添加附件" title="添加附件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary><div class="attachment-menu"><button id="choose-files" type="button" disabled>添加文件</button><button id="choose-photos" type="button" disabled>添加照片</button></div></details>
+              <button id="goal-mode" class="goal-mode" type="button" aria-label="取消目标模式" title="取消目标模式" hidden><svg class="goal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 9-9m-4 0h4v4"/></svg><span>目标</span></button>
+              <label class="select-control" title="选择模型"><span class="sr-only">模型</span><select id="model" aria-label="选择模型" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
+              <label class="select-control effort-control" title="选择思考强度"><span class="sr-only">思考强度</span><select id="effort" aria-label="选择思考强度" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
+              <span class="composer-spacer"></span>
+              <span id="context-info" class="context-info"><span id="context-toggle" role="img" aria-label="上下文用量"><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-track" cx="10" cy="10" r="7"/><circle id="context-ring" cx="10" cy="10" r="7" pathLength="100"/></svg><span id="context-usage">上下文</span></span><meter id="context-meter" class="sr-only" min="0" max="100" aria-label="上下文使用比例" hidden></meter></span>
+              <button id="stop-turn" type="button" class="send-button" aria-label="停止" title="停止" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
+              <button id="send" type="submit" class="send-button" aria-label="发送" title="发送" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+            </div>
+          </div>
+          <div class="composer-status"><span id="turn-status" role="status"></span><button id="retry-uncertain" type="button" hidden>核对后重新发送</button></div>
+        </form>
+      </section>
+      <aside id="side-chat" class="side-chat" aria-label="侧边聊天" hidden><header><h2>侧边聊天</h2><button id="close-side-chat" class="icon-button" type="button" aria-label="关闭侧边聊天">×</button></header><iframe id="side-chat-frame" title="侧边聊天"></iframe></aside>
+    </div>
+  </main>
+  <dialog id="connections-dialog" aria-labelledby="connections-title">
+    <div class="dialog-heading"><h2 id="connections-title">连接 Codex 设备</h2><button id="close-connections" class="icon-button" type="button" aria-label="关闭设备连接">×</button></div>
+    <p id="controller-state" class="muted" role="status" aria-live="polite">正在读取 server 状态…</p>
+    <section id="controller-setup">
+      <p>首次使用，确认允许这个 server 通过你的 ChatGPT 账号控制已配对的设备。所有设备使用同一账号和工作区。</p>
+      <button id="controller-authorize" class="primary" type="button">开始官方授权</button>
+      <a id="controller-auth-link" class="primary authorization-link" target="_blank" rel="noopener noreferrer" hidden>打开官方账号确认</a>
+      <form id="controller-callback-form" class="project-form" hidden>
+        <label for="controller-callback">浏览器返回的地址<input id="controller-callback" type="url" maxlength="8192" spellcheck="false" autocomplete="off" placeholder="http://localhost:1455/auth/callback?..." required></label>
+        <p class="muted small">如果浏览器返回 localhost 后打不开页面，把地址栏的完整地址复制到这里。无需 SSH 命令。</p>
+        <button id="controller-callback-submit" class="primary" type="submit">提交账号确认</button>
+      </form>
+    </section>
+    <form id="pair-form" class="project-form">
+      <label for="pair-code">被控客户端的连接码<input id="pair-code" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-1234" required></label>
+      <p class="muted small">在要被控制的官方客户端打开“设置 → 连接 → 控制此电脑”，复制电脑连接码。项目目录可以不同。</p>
+      <button id="pair-submit" class="primary" type="submit" disabled>连接设备</button>
+    </form>
+    <p id="connections-error" class="error" role="alert"></p>
+    <button id="refresh-connections" class="more-button" type="button">刷新设备列表</button>
+  </dialog>
+  <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
+  <dialog id="image-viewer" aria-label="图片预览"><button id="close-image-viewer" type="button" class="icon-button" aria-label="关闭大图">×</button><img id="image-viewer-image" alt=""></dialog>
+  <dialog id="queue-edit-dialog" aria-labelledby="queue-edit-title"><form id="queue-edit-form"><h2 id="queue-edit-title">编辑消息</h2><label class="sr-only" for="queue-edit-text">排队消息内容</label><textarea id="queue-edit-text" rows="5" maxlength="500000" required></textarea><p class="muted small">保留原有附件与引用。</p><p id="queue-edit-error" class="error" role="alert"></p><div class="toolbar"><button id="queue-edit-cancel" type="button">取消</button><button id="queue-edit-save" type="submit" class="primary">保存消息</button></div></form></dialog>
+  <div id="queue-menu" class="thread-menu queue-menu" popover role="menu" aria-label="排队消息选项" hidden><button id="queue-menu-edit" type="button" role="menuitem">编辑消息</button><button id="queue-menu-side" type="button" role="menuitem">在侧边聊天中打开</button><button id="queue-menu-toggle" type="button" role="menuitem">关闭排队</button></div>
+  <dialog id="usage-dialog"><div class="dialog-heading"><h2>账号用量</h2><button id="close-usage" class="icon-button" aria-label="关闭">×</button></div><p class="muted small">7 天滚动窗口 · 当前账号的全局用量</p><div id="weekly-usage">正在读取…</div><p id="usage-error" class="error" role="alert"></p></dialog>
+  <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+    <div class="dialog-heading"><h2 id="project-dialog-title">新建项目</h2><button id="close-project" class="icon-button" type="button" aria-label="关闭">×</button></div>
+    <form id="project-form" class="project-form">
+      <label for="project-name">项目名称<input id="project-name" name="projectName" maxlength="160" required autocomplete="off"></label>
+      <label for="project-root">所选设备上的现有目录<input id="project-root" name="projectRoot" maxlength="8192" required autocomplete="off" placeholder="/path/to/project" spellcheck="false"></label>
+      <p class="muted small">使用 Codex 中已有的工作目录，或填写所选设备上的其他已有目录。</p>
+      <p id="project-error" class="error" role="alert"></p>
+      <button id="project-submit" class="primary" type="submit">创建项目</button>
+    </form>
+  </dialog>
+  <div id="thread-menu" class="thread-menu" popover role="menu" aria-label="会话选项" hidden><button id="thread-menu-new" type="button" role="menuitem" hidden>新建会话</button><button id="thread-menu-copy" type="button" role="menuitem">复制线程 ID</button><button id="thread-menu-rename" type="button" role="menuitem">重命名</button><button id="thread-menu-archive" type="button" role="menuitem">归档会话</button><button id="thread-menu-delete" class="danger" type="button" role="menuitem">删除会话</button></div>
+</body>
+</html>
