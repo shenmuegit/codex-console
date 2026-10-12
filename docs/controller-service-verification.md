@@ -94,3 +94,10 @@ diagnostic credentials, reached the token endpoint and returned HTTP 401
 `token_expired`. The earlier TLS failure is no longer reproduced by this check;
 it does not prove a valid OAuth grant or enrollment. The previous authorization
 attempt has expired, so fresh owner confirmation is required before pairing.
+
+After verifying that neither an enrollment nor a pending candidate remained, a
+fresh authorization start returned 200 and opened the official confirmation URL
+in the desktop browser. At 08:18 UTC, status was `authorizing`; the desktop Codex
+unit was inactive and the server's pending public key was readable by the native
+component in a separate Node process. This proves independent preparation, not
+accepted enrollment or pairing. The software vTPM limitation still applies.
