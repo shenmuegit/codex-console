@@ -45,7 +45,7 @@ export function installSnapshot(state, { snapshot, cursor }) {
   if (snapshot.tokenUsage) state.tokenUsage = copy(snapshot.tokenUsage);
   state.historyCursor = snapshot.initialTurnsPage?.nextCursor ?? null;
   state.historyKind = snapshot.historyKind ?? 'turns';
-  state.cursor = cursor; state.generation = cursor.generation; state.ready = true; state.resync = false;
+  state.cursor = cursor; state.snapshotCursor = cursor; state.generation = cursor.generation; state.ready = true; state.resync = false;
   state.buffer = []; state.bufferBytes = 0; state.requests.clear();
   for (const [key, request] of snapshot.pendingRequests ?? []) state.requests.set(key, request);
   const activeIds = new Set(state.turns.filter(turn => turn.status === 'inProgress').map(turn => turn.id));
@@ -129,6 +129,11 @@ export function applyNativeEvent(state, event) {
   state.cursor = cursor;
   if (kind === 'request') { state.requests.set(event.requestKey, native); return state; }
   const method = native.method;
+  const incomingTurnId = p.turn?.id ?? p.turnId;
+  if (incomingTurnId && !state.turns.some(turn => turn.id === incomingTurnId)) {
+    const sending = state.steers?.find(item => item._deliveryMode === 'start' && !item._turnId && item._deliveryGeneration === cursor.generation);
+    if (sending) sending._turnId = incomingTurnId;
+  }
   if (method === 'serverRequest/resolved') state.requests.delete(`${cursor.generation}:${JSON.stringify(p.requestId)}`);
   if (method === 'thread/name/updated') state.thread.name = p.threadName ?? p.name;
   if (method === 'thread/status/changed') state.thread.status = p.status;
@@ -656,7 +661,7 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     const accepted = state?.acceptedTurn;
     if (accepted && (!state.ready || accepted.thread !== state.thread || accepted.cursor.generation !== state.generation || state.turns.some(turn => turn.id === accepted.id))) state.acceptedTurn = null;
     const last = active?.items.at(-1), streaming = last?.type === 'agentMessage' && last._incomplete && messageText(last).trim();
-    const thinking = Boolean(state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
+    const thinking = Boolean(online && state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
     if (thinkingStatus.hidden !== !thinking) thinkingStatus.hidden = !thinking;
     if (state) state.online = online;
     if (state) {
@@ -682,10 +687,12 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
     const currentIds = new Set(), currentActivities = new Set();
     let position = 0;
-    // Pending steers are display-only; native IDs and the SSE cursor remain authoritative.
-    for (const turn of [...(state?.turns ?? []), { items: state?.steers ?? [] }]) {
+    // Local delivery rows are display-only; native IDs and the SSE cursor remain authoritative.
+    const previews = state?.steers ?? [], starts = previews.filter(item => item._deliveryMode === 'start' && state.turns.some(turn => turn.id === item._turnId));
+    for (const turn of [...(state?.turns ?? []), { items: previews.filter(item => !starts.includes(item)) }]) {
       const groups = [];
-      for (const item of turn.items ?? []) {
+      const prefix = starts.filter(item => item._turnId === turn.id);
+      for (const item of prefix.length ? [...prefix, ...turn.items ?? []] : turn.items ?? []) {
         if (item.type === 'reasoning' && !itemText(item).trim()) continue;
         const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : item.type === 'subAgentActivity' ? 'subagent' : 'tool';
         let group = groups.at(-1);
@@ -762,13 +769,15 @@ export function mountChat({ api, viewId, uploadLimitBytes }) {
     if (selected.goalMode) { await goals.submit(selected); return; }
     if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state), mode = activeTurn(state) ? followups.sendMode() : 'start';
-    const feedback = mode === 'steer' ? beginSteer(state, submission.id, [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n')) : null;
+    const feedback = beginSteer(state, submission.id, [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n'), mode);
     save(state); draw(); $('#chat-error').textContent = '';
     try {
       const response = await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
         mode, clientUserMessageId: submission.id });
       const turn = response.result?.turn;
-      if (turn?.id && turn.status === 'inProgress' && state.ready && response.cursor?.generation === state.generation && response.cursor.seq > state.cursor.seq && !state.turns.some(existing => existing.id === turn.id)) {
+      if (mode === 'start' && turn?.id) feedback._turnId = turn.id;
+      // Other SSE events may already be ahead of the reply; only a newer snapshot invalidates it.
+      if (turn?.id && turn.status === 'inProgress' && state.ready && response.cursor?.generation === state.generation && response.cursor.seq > (state.snapshotCursor?.seq ?? state.cursor.seq) && !state.turns.some(existing => existing.id === turn.id)) {
         state.acceptedTurn = { id: turn.id, cursor: response.cursor, thread: state.thread };
       }
       settleSteer(state, feedback); settleSend(state, submission.id, { ok: true });
