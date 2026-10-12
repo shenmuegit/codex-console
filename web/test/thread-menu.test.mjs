@@ -14,6 +14,7 @@ async function fixture(t, activeOther = false, unarchiveResult, renameResult) {
   const api = async (path, body) => {
     if (path === '/api/rpc') return { result: { data: body.method === 'thread/list' ? threads.filter(item => !deleted.has(item.id) && archived.has(item.id) === Boolean(body.params.archived)) : [], nextCursor: null } };
     if (path === '/api/thread/open') return { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: ++seq } };
+    if (path === '/api/thread/goal' && body.action === 'get') return { result: { goal: null }, cursor: { generation: 1, seq: ++seq } };
     calls.push({ path, body });
     if (path === '/api/thread/archive') archived.add(body.threadId);
     else if (path === '/api/thread/unarchive') { archived.delete(body.threadId); await unarchiveResult; }

@@ -12,9 +12,10 @@ test('colliding thread drafts and direct exports keep the mounted host', async t
   let chat;
   t.after(() => { chat?.dispose(); dom.restore(); });
   const open = async host => { chat?.dispose(); chat = mountChat({ api, viewId: 'view', selectedHost: host }); chat.connection(true); await chat.open('collision'); };
-  await open('host-a'); dom.get('draft').value = 'A draft'; dom.event('draft', 'input');
-  await open('host-b'); assert.equal(chat.getState().draft, ''); dom.get('draft').value = 'B draft'; dom.event('draft', 'input');
-  await open('host-a'); assert.equal(chat.getState().draft, 'A draft');
+  await open('host-a'); dom.get('draft').value = '/goal'; dom.event('draft', 'input'); dom.event('composer', 'submit'); await delay(0);
+  assert.equal(dom.get('goal-mode').hidden, false); dom.get('draft').value = 'A draft'; dom.event('draft', 'input');
+  await open('host-b'); assert.equal(chat.getState().draft, ''); assert.equal(dom.get('goal-mode').hidden, true); dom.get('draft').value = 'B draft'; dom.event('draft', 'input');
+  await open('host-a'); assert.equal(chat.getState().draft, 'A draft'); assert.equal(dom.get('goal-mode').hidden, false);
   const create = dom.document.createElement.bind(dom.document); let exportHref;
   dom.document.createElement = tag => { const node = create(tag); if (tag === 'a') node.click = () => { exportHref = node.href; }; return node; };
   dom.get('draft').value = '/export'; dom.event('draft', 'input'); dom.event('composer', 'submit'); await delay(0);

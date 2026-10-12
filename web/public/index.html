@@ -65,6 +65,19 @@
         <form id="composer" class="composer">
           <section id="queued-messages" class="queued-messages" aria-label="排队消息" hidden></section>
           <div id="queue-recovery" class="queue-recovery" hidden><p id="queue-recovery-text" role="status"></p><button id="queue-recovery-restore" type="button">核对后重新排队</button><button id="queue-recovery-dismiss" type="button">已核对，无需重发</button></div>
+          <section id="goal-status" class="goal-status" aria-label="当前目标" hidden>
+            <div class="goal-status-heading">
+              <svg class="goal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 9-9m-4 0h4v4"/></svg>
+              <button id="goal-title" type="button" class="goal-title" aria-label="编辑目标" aria-live="polite"></button><span id="goal-progress" class="muted small"></span>
+              <div class="goal-actions">
+                <button id="goal-check" type="button" class="small" hidden>核对目标</button>
+                <button id="goal-clear" type="button" class="icon-button" aria-label="清除目标" title="清除目标"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg></button>
+                <button id="goal-toggle" type="button" class="icon-button" aria-label="暂停目标" title="暂停目标" data-action="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="goal-pause" d="M10 9v6m4-6v6"/><path class="goal-play" d="m10 8 6 4-6 4Z"/></svg></button>
+                <button id="goal-expand" type="button" class="icon-button" aria-label="展开目标详情" title="展开目标详情" aria-controls="goal-details" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg></button>
+              </div>
+            </div>
+            <p id="goal-details" class="muted small" hidden></p><p id="goal-error" class="error small" role="alert" hidden></p>
+          </section>
           <div class="composer-surface">
             <div id="attachments" aria-label="待发送附件"></div>
             <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
@@ -72,6 +85,7 @@
             <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="2" placeholder="向 Codex 发送消息…" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
             <div class="composer-footer">
               <details id="attachment-actions" class="attachment-actions"><summary class="icon-button" aria-label="添加附件" title="添加附件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary><div class="attachment-menu"><button id="choose-files" type="button" disabled>添加文件</button><button id="choose-photos" type="button" disabled>添加照片</button></div></details>
+              <button id="goal-mode" class="goal-mode" type="button" aria-label="取消目标模式" title="取消目标模式" hidden><svg class="goal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 9-9m-4 0h4v4"/></svg><span>目标</span></button>
               <label class="select-control" title="选择模型"><span class="sr-only">模型</span><select id="model" aria-label="选择模型" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
               <label class="select-control effort-control" title="选择思考强度"><span class="sr-only">思考强度</span><select id="effort" aria-label="选择思考强度" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
               <span class="composer-spacer"></span>
@@ -108,16 +122,6 @@
     <button id="refresh-connections" class="more-button" type="button">刷新设备列表</button>
   </dialog>
   <dialog id="info-dialog"><div class="dialog-heading"><h2 id="info-title">会话信息</h2><button id="close-info" class="icon-button" aria-label="关闭">×</button></div><pre id="info-body"></pre></dialog>
-  <dialog id="goal-dialog" aria-labelledby="goal-title">
-    <div class="dialog-heading"><h2 id="goal-title">目标</h2><button id="close-goal" type="button" class="icon-button" aria-label="关闭目标">×</button></div>
-    <p id="goal-summary" class="muted small" role="status"></p>
-    <form id="goal-form" class="project-form">
-      <label for="goal-objective">任务目标<textarea id="goal-objective" rows="5" maxlength="8000" required placeholder="希望 Codex 持续完成的目标…"></textarea></label>
-      <p class="muted small">最多 4000 个字符。设置新目标或恢复目标后，Codex 会继续执行。编辑保留当前状态和预算；文件、图片或引用请先作为会话消息发送。</p>
-      <p id="goal-error" class="error" role="alert"></p>
-      <div class="toolbar"><button id="goal-toggle" type="button" hidden>暂停目标</button><button id="goal-clear" type="button" class="danger" hidden>清除目标</button><button id="goal-save" type="submit" class="primary">保存目标</button></div>
-    </form>
-  </dialog>
   <dialog id="image-viewer" aria-label="图片预览"><button id="close-image-viewer" type="button" class="icon-button" aria-label="关闭大图">×</button><img id="image-viewer-image" alt=""></dialog>
   <dialog id="queue-edit-dialog" aria-labelledby="queue-edit-title"><form id="queue-edit-form"><h2 id="queue-edit-title">编辑消息</h2><label class="sr-only" for="queue-edit-text">排队消息内容</label><textarea id="queue-edit-text" rows="5" maxlength="500000" required></textarea><p class="muted small">保留原有附件与引用。</p><p id="queue-edit-error" class="error" role="alert"></p><div class="toolbar"><button id="queue-edit-cancel" type="button">取消</button><button id="queue-edit-save" type="submit" class="primary">保存消息</button></div></form></dialog>
   <div id="queue-menu" class="thread-menu queue-menu" popover role="menu" aria-label="排队消息选项" hidden><button id="queue-menu-edit" type="button" role="menuitem">编辑消息</button><button id="queue-menu-side" type="button" role="menuitem">在侧边聊天中打开</button><button id="queue-menu-toggle" type="button" role="menuitem">关闭排队</button></div>
