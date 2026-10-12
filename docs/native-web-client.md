@@ -105,12 +105,23 @@ selection instead of alternating the reply between HTML and plain text. Structur
 Markdown changes update the affected subtree. Authoritative text corrections replace
 only the differing character range; formatted corrections wait for the next safe
 HTML update. Native chunks display immediately without an artificial typing delay.
-An accepted message immediately shows a muted **Thinking** status at the end of
-the transcript, including before the native start event arrives. This temporary
-feedback does not create a chat item or advance the SSE cursor. It gives way to
-streaming reply text or native input forms, resumes between commentary and further
-work, and disappears when the turn ends. Failed or uncertain submissions and queued
-messages do not invent a running turn; stale replies cannot leave the status stuck.
+Sending immediately inserts a local user bubble labelled Sending, Steering or
+Queueing before HTTP or SSE completes. Confirmation changes that label to Sent,
+Steered or Queued. Native delivery replaces it by client message ID, so a delayed
+user echo cannot hide the question or move it below its streamed answer. Rejection
+removes the temporary bubble and preserves the draft; unknown outcomes stay
+visibly unconfirmed without automatic replay. Native queue edits refresh their
+preview, and confirmed local cancellation or side-chat transfer removes it.
+These display rows do not alter native history or advance the SSE cursor.
+
+An accepted running turn immediately shows a muted **Thinking** status, including
+before the native start event arrives. It uses the desktop's 3-second text gradient
+sweep with a 0.6-second delay, with a static label for reduced-motion users. CSS
+animates the text without rerendering message nodes. Later non-turn SSE events
+cannot mask an accepted send; newer snapshots, completion and connection changes
+still clear stale feedback. The status gives way to reply text or native input
+forms, resumes between commentary and further work, and disappears on completion.
+Failed, uncertain and queued sends do not invent a new running turn.
 Clicking **Steer** immediately shows the input in a temporary user bubble labeled
 **Steering…**. Native acknowledgement changes it to **Steered** without waiting
 for a queue refresh or the later native message event; composer steering uses the
