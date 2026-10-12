@@ -61,3 +61,20 @@ copy that URL into the Web callback input; it is validated as data, with no SSH
 forwarding. After enrollment succeeds, submit the controlled host's fresh code.
 The server receives the host code; it does not generate a host code for the owner.
 This deployment currently has no accepted live enrollment/pairing evidence.
+
+## Owner-assisted enrollment attempt (2026-10-12)
+
+The owner completed the browser confirmation and the server received its
+loopback callback. The token exchange then failed; live public status returned
+`enrolled: false`, `phase: unconfigured`, `errorCode: TOKEN_EXCHANGE_FAILED`.
+Enrollment finish and host-code claiming did not run.
+
+Non-credential diagnostics reproduced a TLS failure before a secure connection
+through the configured HTTP proxy (`ECONNRESET` in Node; unexpected EOF in curl).
+A direct POST with a deliberately invalid diagnostic code returned HTTP 403 and
+`unsupported_country_region_territory`. An existing SOCKS-proxy GET returned 405;
+that only proves an HTTP response, not eligibility or a successful OAuth grant.
+The direct diagnostic does not establish the cause of the original proxy-path
+failure. No real callback code, verifier, access token or account ID is included
+in these notes. Do not retry owner confirmation until legitimate supported
+server access is established; do not bypass region restrictions as a fallback.

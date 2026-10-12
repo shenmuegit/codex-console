@@ -47,3 +47,17 @@ HTTPS（不禁用验证），检查登录/状态/未登录拒绝及静态资源�
 将该 URL 复制到 Web 的回调输入框；服务器只将它作为数据验证，无需 SSH 转发。
 登记成功后再提交被控主机生成的新配对码，方向为被控端提供、服务器接收。
 当前部署尚无官方服务接受实机登记/配对的证据。
+
+## 所有者配合的登记尝试（2026-10-12）
+
+所有者已在浏览器完成确认，服务器收到回环回调；随后换取令牌失败。
+实际公开状态为 `enrolled: false`、`phase: unconfigured`、
+`errorCode: TOKEN_EXCHANGE_FAILED`。未执行登记 finish 或被控端配对码提交。
+
+使用无效诊断码、没有真实凭据的检查复现：配置的 HTTP 代理在建立安全 TLS
+连接前失败（Node 为 ECONNRESET，curl 为 unexpected EOF）；直连 POST 返回
+HTTP 403 和 unsupported_country_region_territory。现有 SOCKS 代理的 GET
+返回 405，仅能证明收到 HTTP 响应，不能证明服务资格或 OAuth 换取成功。
+直连检查不能直接证明原代理路径失败的原因。本记录不包含真实回调 code、
+verifier、access token 或账号 ID。应先确认服务端具备合法、受支持的访问环境，
+再安排所有者确认；不以绕过地区限制作为回退。
