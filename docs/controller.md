@@ -59,6 +59,14 @@ to the challenge, device proof and saved enrollment. It cannot replace the
 workspace user during step-up authorization. Missing workspace identity, wrong
 account/scope and stale reauthentication remain rejected.
 
+Browser confirmation completes before the server requests the short-lived
+enrollment challenge and creates its protected key. A private process-owned
+marker reserves setup while the owner authorizes; it contains no remote client
+or key yet. The adapter then uses the existing official start/finish endpoints
+and checks the fresh challenge before signing. This prevents a two-minute
+challenge from expiring while the owner completes the ten-minute browser flow;
+it does not extend or bypass the provider's challenge expiration.
+
 One private `enrollment.json` stores the server identity and relay session
 together. It is published atomically with mode 600; an existing record is not
 overwritten by initial enrollment. `pending.json` identifies only this server's

@@ -32,7 +32,7 @@ export async function fixture(t, options = {}) {
   };
   const challenge = (path, refresh = false) => ({ type: 'device_key_challenge', purpose: 'remote_control_client_enrollment',
     audience: 'remote_control_client_enrollment', account_user_id: serviceAccountUserId, client_id: 'server-created-client',
-    nonce: Buffer.alloc(32, 7).toString('base64url'), challenge_id: 'fixture-challenge', challenge_expires_at: Math.floor(Date.now() / 1000) + 600,
+    nonce: Buffer.alloc(32, 7).toString('base64url'), challenge_id: 'fixture-challenge', challenge_expires_at: Math.floor(Date.now() / 1000) + (options.challengeTTLSeconds ?? 600),
     target_origin: 'https://chatgpt.com', target_path: '/backend-api' + path, challenge_token: 'fixture-challenge-token',
     device_identity_hash: refresh ? (() => {
       const r = keys.values().next().value.record;

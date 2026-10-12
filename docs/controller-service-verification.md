@@ -117,3 +117,16 @@ the separate service identity for proofs and enrollment. Three regressions
 cover acceptance, login-user substitution rejection and missing workspace
 identity rejection. Controller checks passed 30/30 and the full suite 441/441.
 Accepted live enrollment and host control still require a fresh confirmation.
+
+## Fresh challenge after browser confirmation (2026-10-12)
+
+The following owner confirmation passed step-up validation but the previously
+allocated device challenge had expired, producing `INVALID_CHALLENGE`. A live
+start probe observed about 118 seconds remaining, while the browser flow allows
+600 seconds; its own probe candidate was cleaned with DELETE 204. The adapter
+now reserves local setup ownership first, waits for official confirmation, then
+allocates the challenge/key and finishes promptly. The backend endpoints,
+identity binding, protected signature and expiration checks stay intact.
+A regression simulates a three-minute confirmation with two-minute challenges;
+ownership and cleanup regressions also cover the changed allocation timing.
+The full suite passed 443/443; live enrollment still needs fresh confirmation.

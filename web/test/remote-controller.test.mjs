@@ -37,12 +37,27 @@ test('server enrollment signs its own challenge, atomically persists private sta
   assert.equal(f.keys.size, 1);
 });
 
+test('browser confirmation taking three minutes enrolls with a fresh two-minute device challenge', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const f = await fixture(t, { challengeTTLSeconds: 120 });
+  const attempt = await f.controller.startAuthorization();
+  t.mock.timers.tick(180_000);
+  const returned = new URL(attempt.redirectUri);
+  returned.searchParams.set('state', new URL(attempt.url).searchParams.get('state'));
+  returned.searchParams.set('code', 'approved-after-three-minutes');
+  f.controller.submitCallback(returned.href);
+  await attempt.completion;
+  assert.equal((await f.controller.status()).enrolled, true);
+  assert.equal(f.keys.size, 1);
+  await assert.rejects(access(join(f.stateDir, 'pending.json')));
+});
+
 test('wrong challenge account, client, purpose, target, nonce, and expiration fail before signing', async t => {
   for (const challenge of [{ account_user_id: 'different-owner' }, { client_id: 'another-client' },
     { purpose: 'another-purpose' }, { audience: 'another-audience' }, { target_origin: 'https://example.com' },
     { target_path: '/other' }, { nonce: 'short' }, { challenge_expires_at: 1 }]) {
     const f = await fixture(t, { challenge });
-    await assert.rejects(f.controller.startAuthorization(), { code: 'INVALID_CHALLENGE' });
+    await assert.rejects(f.authorize(), { code: 'INVALID_CHALLENGE' });
     assert.equal(f.signed, 0);
     assert.equal(f.keys.size, 0);
     assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 1);
@@ -58,7 +73,7 @@ test('wrong owner, scope, and stale or future account reauthentication cannot en
     assert.equal(f.signed, 0);
     assert.equal(f.keys.size, 0);
     assert.equal((await f.controller.status()).enrolled, false);
-    assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 1);
+    assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 0);
   }
 });
 
@@ -104,9 +119,9 @@ test('disk failure cannot leave a registered identity while deleting its key and
 });
 
 test('key cleanup failure cannot prevent remote cleanup and leaves only an owned retry marker', async t => {
-  const f = await fixture(t, { stepUp: { ...stepUpClaims(), scope: 'openid' } });
+  const f = await fixture(t, { beforeFinish: () => { throw new Error('fixture finish failure'); } });
   f.deviceKey.deleteDeviceKey = async () => { throw new Error('private-key-operation-detail'); };
-  await assert.rejects(f.authorize(), { code: 'INVALID_STEP_UP' });
+  await assert.rejects(f.authorize(), { code: 'REMOTE_REQUEST_FAILED' });
   assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 1);
   const status = await f.controller.status();
   assert.equal(status.enrolled, false);
@@ -178,11 +193,11 @@ test('concurrent setup clicks create only one candidate and closing cancels and 
   const outcomes = await Promise.allSettled([f.controller.startAuthorization(), f.controller.startAuthorization()]);
   assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(outcomes.find(result => result.status === 'rejected').reason.code, 'AUTH_IN_PROGRESS');
-  assert.equal(f.created, 1);
-  assert.equal(f.calls.filter(call => call.url.endsWith('/client/enroll/start')).length, 1);
+  assert.equal(f.created, 0);
+  assert.equal(f.calls.filter(call => call.url.endsWith('/client/enroll/start')).length, 0);
   await f.controller.close();
   assert.equal(f.keys.size, 0);
-  assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 1);
+  assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 0);
   await assert.rejects(access(join(f.stateDir, 'pending.json')));
 });
 
@@ -192,7 +207,7 @@ test('a competing controller instance cannot delete a candidate while its owner 
   const second = await createRemoteController({ authFile: f.authFile, stateDir: f.stateDir, deviceKey: f.deviceKey, fetch: f.fetch });
   t.after(() => second.close());
   await assert.rejects(second.startAuthorization(), { code: 'AUTH_IN_PROGRESS' });
-  assert.equal(f.keys.size, 1);
+  assert.equal(f.keys.size, 0);
   assert.equal(f.calls.filter(call => call.method === 'DELETE').length, 0);
 });
 
@@ -227,7 +242,7 @@ test('relay proof is bound to the enrolled server, session token, target, expira
 test('invalid challenge and failed DELETE retain the candidate before key creation and restart retries cleanup', async t => {
   const options = { challenge: { purpose: 'invalid-purpose' }, deleteStatus: 503 };
   const f = await fixture(t, options);
-  await assert.rejects(f.controller.startAuthorization(), { code: 'INVALID_CHALLENGE' });
+  await assert.rejects(f.authorize(), { code: 'INVALID_CHALLENGE' });
   const marker = JSON.parse(await readFile(join(f.stateDir, 'pending.json'), 'utf8'));
   assert.equal(marker.enrollment.clientId, 'server-created-client');
   assert.equal(marker.enrollment.keyId, undefined);
@@ -245,7 +260,7 @@ test('invalid challenge and failed DELETE retain the candidate before key creati
 test('key creation failure with failed DELETE retains a durable owned candidate', async t => {
   const f = await fixture(t, { deleteStatus: 503 });
   f.deviceKey.createDeviceKey = async () => { throw new Error('fixture key creation failed'); };
-  await assert.rejects(f.controller.startAuthorization(), /fixture key creation failed/);
+  await assert.rejects(f.authorize(), /fixture key creation failed/);
   const marker = JSON.parse(await readFile(join(f.stateDir, 'pending.json'), 'utf8'));
   assert.equal(marker.enrollment.clientId, 'server-created-client');
   assert.equal(marker.inProgress, false);
@@ -258,7 +273,7 @@ test('failed cleanup reports inability to persist when candidate storage becomes
     await rm(f.stateDir, { recursive: true }); await writeFile(f.stateDir, 'blocked', { mode: 0o600 });
     throw new Error('fixture key creation failed');
   };
-  await assert.rejects(f.controller.startAuthorization(), { code: 'CLEANUP_RECORD_FAILED' });
+  await assert.rejects(f.authorize(), { code: 'CLEANUP_RECORD_FAILED' });
   assert.deepEqual(await f.controller.status(), { enrolled: false, phase: 'cleanupRequired', errorCode: 'CLEANUP_RECORD_FAILED' });
 });
 
@@ -271,13 +286,28 @@ test('candidate key update and cleanup never overwrite a competing owner marker'
     await writeFile(join(f.stateDir, 'pending.json'), foreign, { mode: 0o600 });
     return key;
   };
-  await assert.rejects(f.controller.startAuthorization(), { code: 'CLEANUP_RECORD_FAILED' });
+  await assert.rejects(f.authorize(), { code: 'CLEANUP_RECORD_FAILED' });
   assert.equal(await readFile(join(f.stateDir, 'pending.json'), 'utf8'), foreign);
   assert.equal(f.keys.size, 0);
   assert.equal(f.calls.filter(c => c.method === 'DELETE').length, 1);
 });
 
-test('initial marker disk failure reports lost cleanup persistence and never creates a key', async t => {
+test('challenge allocation never overwrites authorization ownership from a competing controller', async t => {
+  const f = await fixture(t, { deleteStatus: 503 });
+  const foreign = JSON.stringify({ instanceId: 'competing-owner', enrollment: { clientId: 'another-client' }, inProgress: true });
+  const controller = await createRemoteController({ authFile: f.authFile, stateDir: f.stateDir, deviceKey: f.deviceKey,
+    fetch: async (url, request) => {
+      const response = await f.fetch(url, request);
+      if (url.endsWith('/client/enroll/start')) await writeFile(join(f.stateDir, 'pending.json'), foreign, { mode: 0o600 });
+      return response;
+    } });
+  t.after(() => controller.close());
+  await assert.rejects(f.authorize(controller), { code: 'CLEANUP_RECORD_FAILED' });
+  assert.equal(await readFile(join(f.stateDir, 'pending.json'), 'utf8'), foreign);
+  assert.equal(f.created, 0);
+});
+
+test('allocated candidate disk failure reports lost cleanup persistence and never creates a key', async t => {
   const f = await fixture(t, { deleteStatus: 503 });
   const controller = await createRemoteController({ authFile: f.authFile, stateDir: f.stateDir, deviceKey: f.deviceKey,
     fetch: async (url, request) => {
@@ -288,7 +318,7 @@ test('initial marker disk failure reports lost cleanup persistence and never cre
       return response;
     } });
   t.after(() => controller.close());
-  await assert.rejects(controller.startAuthorization(), { code: 'CLEANUP_RECORD_FAILED' });
+  await assert.rejects(f.authorize(controller), { code: 'CLEANUP_RECORD_FAILED' });
   assert.equal(f.created, 0);
   assert.equal(f.calls.filter(c => c.method === 'DELETE').length, 1);
   assert.equal((await controller.status()).errorCode, 'CLEANUP_RECORD_FAILED');

@@ -326,20 +326,7 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, re
           }
         }
         candidate = { version: 1, accountId: current.accountId, instanceId, owner, inProgress: true, enrollment: {} };
-        const started = await request('/codex/remote/control/client/enroll/start', current, { body: {} });
-        if (!text(started.client_id)) throw fault('INVALID_CHALLENGE', 'The service returned an invalid server identity.');
-        candidate.enrollment = { clientId: started.client_id, accountUserId: started.account_user_id };
         await save(pendingPath, candidate); pending = candidate;
-        if (!owners(current).includes(started.account_user_id)) throw fault('INVALID_CHALLENGE', 'The server account does not match the enrollment challenge.');
-        validateChallenge(started.device_key_challenge, candidate.enrollment, enrollmentPath);
-        const key = await deviceKey.createDeviceKey('allow_os_protected_nonextractable');
-        candidate.enrollment = { ...candidate.enrollment, ...keyIdentity(key) };
-        await matchingKey(candidate.enrollment);
-        const marker = await load(pendingPath);
-        if (marker?.instanceId !== instanceId || marker?.enrollment?.clientId !== candidate.enrollment.clientId) {
-          throw fault('STATE_WRITE_FAILED', 'The candidate record belongs to another controller operation.');
-        }
-        await save(pendingPath, candidate, true); pending = candidate;
         attempt = await startRemoteAuthorization({ accountId: current.accountId, fetchToken: requestFetch, signal: stopped.signal });
         phase = 'authorizing';
         authorizing = attempt.completion.then(async token => {
@@ -347,6 +334,24 @@ export async function createRemoteController({ authFile, stateDir, deviceKey, re
           validateStepUp(token, identity.chatgpt_account_user_id ?? identity.account_user_id, current.accountId);
           if ((await auth()).accountId !== current.accountId) throw fault('ACCOUNT_CHANGED', 'The server account changed during authorization.');
           phase = 'enrolling';
+          const started = await request('/codex/remote/control/client/enroll/start', current, { body: {} });
+          if (!text(started.client_id)) throw fault('INVALID_CHALLENGE', 'The service returned an invalid server identity.');
+          candidate.enrollment = { clientId: started.client_id, accountUserId: started.account_user_id };
+          const marker = await load(pendingPath);
+          if (marker?.instanceId !== instanceId || marker?.enrollment?.clientId != null) {
+            throw fault('STATE_WRITE_FAILED', 'The candidate record belongs to another controller operation.');
+          }
+          await save(pendingPath, candidate, true); pending = candidate;
+          if (!owners(current).includes(started.account_user_id)) throw fault('INVALID_CHALLENGE', 'The server account does not match the enrollment challenge.');
+          validateChallenge(started.device_key_challenge, candidate.enrollment, enrollmentPath);
+          const protectedKey = await deviceKey.createDeviceKey('allow_os_protected_nonextractable');
+          candidate.enrollment = { ...candidate.enrollment, ...keyIdentity(protectedKey) };
+          await matchingKey(candidate.enrollment);
+          const keyMarker = await load(pendingPath);
+          if (keyMarker?.instanceId !== instanceId || keyMarker?.enrollment?.clientId !== candidate.enrollment.clientId) {
+            throw fault('STATE_WRITE_FAILED', 'The candidate record belongs to another controller operation.');
+          }
+          await save(pendingPath, candidate, true); pending = candidate;
           const device_key_proof = await proof(started.device_key_challenge, candidate.enrollment, enrollmentPath, false);
           const key = candidate.enrollment;
           const response = await request(enrollmentPath, current, { body: { client_id: key.clientId, step_up_token: token,
