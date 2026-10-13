@@ -50,7 +50,7 @@ If the service starts only after login, check `loginctl show-user "$(id -un)" -p
 3. Inspect the listener with `ss -ltn`; local-only binding to `127.0.0.1` cannot accept connections from your phone.
 4. Match the browser protocol to the configuration: HTTP by default, HTTPS when both TLS certificate paths are set. For HTTPS, check that the certificate is trusted and matches the hostname.
 
-If the login page opens but the connection fails, inspect browser console errors and Xpra logs for WebSocket/TLS or authentication errors. Both page requests and the WS/WSS connection use the same configured port.
+If the login page opens but the connection fails, inspect browser console errors and Xpra logs for WebSocket or authentication errors. Both page requests and the WS connection use the same configured port.
 
 ## Password rejected
 
@@ -89,6 +89,8 @@ are separate.
 | Incorrect taps on an older small display | Restart the session to use the 4096 × 4096 Xvfb configuration |
 | UI slow over the network | Choose Smooth; check host CPU load and link quality |
 | Old UI after updating | Rerun deployment to rebuild assets, restart, and refresh the browser |
+
+New phone sessions default to Smooth; a saved choice or URL parameter overrides that default. For Chrome's fast video path, configure [HTTPS/WSS](configuration.md#http-and-https-access). Codec and decoder support varies by browser; verify the negotiated encoding before assuming hardware acceleration.
 
 ## Client network diagnostics
 

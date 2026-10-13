@@ -19,6 +19,8 @@
 - Single taps click immediately; two-finger taps right-click and two-finger slides scroll, without a double-tap recognition delay.
 - IME commits paste without the extra 100 ms pre-paste wait while retaining the guard between clipboard replacements.
 - Clipboard requests for IME and upload pastes use the advertised text even when HTTPS exposes a different device clipboard.
+- New mobile sessions default to Smooth while preserving saved or URL-selected quality profiles.
+- The last selected quality preset is remembered in the browser and restored on later visits.
 
 - Startup uses the user's configuration and has no machine-specific application network arguments.
 - Systemd service paths are generated from the actual checkout location.

@@ -91,6 +91,8 @@ Use a certificate trusted by the browser for the hostname you visit, keep the ke
 
 The supported HTML5 client's [Chrome offscreen/video decoder](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js) requires HTTPS. Browser codec support still determines the decoder; HTTPS alone does not guarantee H.264 or hardware acceleration, and Safari may use the fallback path.
 
+The last quality preset is saved in this browser for this server address and restored when reopening the page. An explicit `performance` URL parameter takes priority. Without either choice, phones default to Smooth and desktops to Balanced.
+
 ### HTTPS using only port 15443
 
 Xpra serves HTTPS and WSS directly on `CONSOLE_PORT=15443`; it needs no reverse proxy or privileged listener. For a public IP, Let's Encrypt's [HTTP-01 and TLS-ALPN-01 challenges](https://letsencrypt.org/docs/challenge-types/) require inbound port 80 or 443 respectively. DNS-01 cannot validate an IP address. Changing a local challenge port to 15443 does not change the CA's validation port.

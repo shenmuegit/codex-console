@@ -90,6 +90,11 @@ browser.visualViewport = new Surface();
 browser.visualViewport.width = 360;
 browser.visualViewport.height = 680;
 browser.location = { href: 'http://localhost:15443/?sound=true', search: '?sound=true' };
+const preferences = new Map();
+browser.localStorage = {
+  getItem: key => preferences.get(key) ?? null,
+  setItem: (key, value) => preferences.set(key, String(value)),
+};
 browser.history = { replaceState: (_state, _title, url) => {
   browser.location.href = String(url);
   browser.location.search = new URL(url).search;
@@ -537,6 +542,47 @@ for (const [profile, density, quality, speed] of [
 if (process.env.CONSOLE_TEST_CLIENT_HELLO) {
   fs.writeFileSync(process.env.CONSOLE_TEST_CLIENT_HELLO, JSON.stringify(client.capabilities));
 }
+profileButtons.get('sharp').dispatchEvent(new Event('click'));
+browser.history.replaceState(null, '', 'http://localhost:15443/?sound=true');
+const reopened = Object.assign(Object.create(Client.prototype), client, {
+  connected: false, id_to_window: {}, encoding_options: {}, _render_density: 1,
+  _effective_density: 1, _viewport_resize: noop,
+});
+reopened.init();
+assert.equal(reopened.encoding_options['min-quality'], 95, 'Reopening the base URL must restore the last selected preset');
+assert.equal(reopened._get_DPI(), 192, 'The remembered preset must also restore its rendering density');
+assert.equal(profileButtons.get('sharp').getAttribute('aria-pressed'), 'true', 'The menu must reflect the remembered preset');
+reopened.init_state();
+reopened._make_hello_base();
+reopened._make_hello();
+assert.equal(reopened.capabilities.encoding['min-quality'], 95, 'Reconnecting must send the remembered quality to the server');
+assert.equal(reopened.capabilities.encoding['min-speed'], 70, 'Reconnecting must also retain the preset speed');
+browser.history.replaceState(null, '', 'http://localhost:15443/?sound=true&performance=smooth');
+reopened.init();
+assert.equal(reopened.encoding_options['min-quality'], 45, 'An explicit URL preset must override the remembered choice');
+browser.history.replaceState(null, '', 'http://localhost:15443/?sound=true');
+for (const key of preferences.keys()) preferences.set(key, '__proto__');
+reopened.init();
+assert.equal(reopened.encoding_options['min-quality'], 70, 'An invalid stored preset must fall back to balanced');
+const desktopAgent = browser.navigator.userAgent;
+browser.navigator.userAgent = 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0.0.0';
+preferences.clear();
+reopened.init();
+assert.equal(reopened.encoding_options['min-quality'], 45, 'A new phone session must default to Smooth');
+assert.equal(reopened._get_DPI(), 96, 'The phone default must avoid rendering extra pixels');
+profileButtons.get('sharp').dispatchEvent(new Event('click'));
+browser.history.replaceState(null, '', 'http://localhost:15443/?sound=true');
+reopened.init();
+assert.equal(reopened.encoding_options['min-quality'], 95, 'The phone default must preserve an explicit remembered choice');
+browser.navigator.userAgent = desktopAgent;
+const storage = browser.localStorage;
+Object.defineProperty(browser, 'localStorage', { configurable: true, get() { throw new Error('Storage is blocked'); } });
+assert.doesNotThrow(() => reopened.init(), 'Storage restrictions must not prevent page initialization');
+profileButtons.get('smooth').dispatchEvent(new Event('click'));
+assert.equal(reopened.encoding_options['min-quality'], 45, 'Changing quality must still work when storage is blocked');
+Object.defineProperty(browser, 'localStorage', { configurable: true, writable: true, value: storage });
+browser.history.replaceState(null, '', 'http://localhost:15443/?sound=true&performance=balanced');
+client.init();
 profileButtons.get('sharp').dataset.performance = '__proto__';
 profileButtons.get('sharp').dispatchEvent(new Event('click'));
 profileButtons.get('sharp').dataset.performance = 'sharp';

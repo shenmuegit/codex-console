@@ -200,6 +200,7 @@
     smooth: [1, 45, 90], balanced: [1.5, 70, 80], sharp: [2, 95, 70],
   };
   const setProfile = (client, name) => {
+    try { window.localStorage.setItem('codex-console.performance', name); } catch {}
     const [density, quality, speed] = profiles[name];
     client._render_density = density;
     const options = { 'min-quality': quality, 'min-speed': speed };
@@ -371,8 +372,11 @@
   });
   const init = XpraClient.prototype.init;
   XpraClient.prototype.init = function (...args) {
-    let profile = new URLSearchParams(window.location.search).get('performance') || 'balanced';
-    if (!Object.hasOwn(profiles, profile)) profile = 'balanced';
+    let profile = new URLSearchParams(window.location.search).get('performance');
+    if (!profile) {
+      try { profile = window.localStorage.getItem('codex-console.performance'); } catch {}
+    }
+    if (!Object.hasOwn(profiles, profile)) profile = Utilities.isMobile() ? 'smooth' : 'balanced';
     setProfile(this, profile);
     const menu = document.getElementById('float_menu');
     if (menu) menu.onkeydown = menu.onkeyup = event => event.stopPropagation();

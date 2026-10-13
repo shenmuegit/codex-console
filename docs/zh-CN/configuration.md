@@ -91,6 +91,8 @@ CONSOLE_TLS_KEY=/absolute/path/to/privkey.pem
 
 支持的 HTML5 客户端中，[Chrome 的离屏视频解码路径](https://github.com/Xpra-org/xpra-html5/blob/master/html5/js/OffscreenDecodeWorkerHelper.js)需要 HTTPS。最终解码器仍取决于浏览器的编码支持；HTTPS 本身不保证 H.264 或硬件加速，Safari 仍可能使用回退路径。
 
+上次选择的流畅度会保存在当前浏览器中，再次打开同一服务器地址时自动恢复。网址中明确指定的 `performance` 参数优先。没有既有选择时，手机默认使用流畅，桌面默认使用均衡。
+
 ### 仅使用 15443 端口的 HTTPS
 
 Xpra 直接通过 `CONSOLE_PORT=15443` 提供 HTTPS 和 WSS，不需要反向代理或特权监听端口。针对公网 IP，Let's Encrypt 的 [HTTP-01 与 TLS-ALPN-01 验证](https://letsencrypt.org/docs/challenge-types/)分别需要入站 80 或 443 端口，DNS-01 无法验证 IP 地址。把本地验证端口改为 15443，不会改变 CA 的验证端口。
