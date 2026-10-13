@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mountChat, itemText, createChatState, installSnapshot, applyNativeEvent } from '../public/chat.js';
 import { renderTranscript, boundedHistoryItem, collectTargets } from '../transcript.mjs';
+import { mountAttachments, mountImageViewer } from '../public/composer.js';
 import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
 
@@ -20,6 +21,22 @@ function pictureEvent(dom, picture, type, key) {
   const event = new Event(type, { cancelable: true }); Object.defineProperty(event, 'target', { value: picture });
   if (key) Object.assign(event, { key }); dom.document.body.dispatchEvent(event); return event;
 }
+
+test('restored remote draft photos retain host-scoped thumbnails and same-origin previews', async t => {
+  const dom = domFixture(), state = createChatState('t'), imageHref = '/api/images/photo-ref?host=host-a';
+  state.ready = state.online = true; state.draft = '保留草稿'; state.attachments = [{ id: 'photo', name: '远端图片.png', status: 'complete' }];
+  const attachments = mountAttachments({ viewId: 'view', selectedHost: 'host-a', getState: () => state, getStates: () => [state], onChange() {}, uploadLimitBytes: 32,
+    api: async () => ({ id: 'photo', name: '远端图片.png', size: 10, mime: 'image/png', status: 'complete', refId: 'photo-ref', href: '/api/files/photo-ref?host=host-a', imageHref, imageMime: 'image/png' }) });
+  const viewer = mountImageViewer(); t.after(() => { viewer.dispose(); attachments.dispose(); dom.restore(); });
+  await attachments.hydrate(state); attachments.render(state);
+  const picture = dom.get('attachments').children[0].children[0];
+  assert.equal(picture.tagName, 'IMG'); assert.equal(picture.src, imageHref);
+  pictureEvent(dom, picture, 'click'); assert.equal(dom.get('image-viewer').open, true);
+  assert.equal(dom.get('image-viewer-image').src, 'https://fixture.test' + imageHref);
+  dom.get('close-image-viewer').click(); assert.equal(state.draft, '保留草稿');
+  state.attachments[0].imageHref = 'https://external.invalid/api/images/photo-ref?host=host-a'; attachments.render(state);
+  assert.equal(dom.get('attachments').children[0].children[0].tagName, 'SPAN');
+});
 
 test('large image-generation results retain saved paths without copying inline bytes into history previews', () => {
   const image = { id: 'generated', type: 'imageGeneration', status: 'completed', result: 'A'.repeat(4_475_076), savedPath: '/native/generated_images/t/cat.png' };

@@ -323,7 +323,7 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
     if (renderedState === state && renderedKey === key && attachments.every((record, index) => renderedRecords[index] === record)) return;
     container.replaceChildren();
     for (const record of attachments) {
-      const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+$/.test(record.imageHref) ? record.imageHref : null);
+      const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+(?:\?[^#]*)?$/.test(record.imageHref) ? record.imageHref : null);
       const node = document.createElement('div'); node.className = 'attachment' + (src ? ' attachment-image' : '');
       if (src) { const image = document.createElement('img'); image.src = src; image.alt = record.name; image.width = image.height = 80; image.className = 'chat-image'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + record.name); node.append(image); }
       if (!src) {

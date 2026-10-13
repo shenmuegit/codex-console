@@ -623,6 +623,8 @@ Completed draft photos are compact thumbnails without filenames or uploaded
 labels. Click to enlarge; hover or keyboard focus reveals a red × in the upper
 right to remove that photo. Touch devices keep the × visible. Upload progress,
 failure feedback and retry remain available, and removal preserves the draft.
+Restored remote draft thumbnails and their full-size previews retain the original
+device's `host` query parameter; only same-origin image endpoints are accepted.
 
 Use **Files** or **Photos** to select multiple attachments. Uploads run serially
 with native browser progress and removable previews; sending waits for completion.
