@@ -98,6 +98,47 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       return { actual, metadata };
     } catch { throw fail(409, 'UNSAFE_REFERENCE', '远端文件已变化或不在允许的目录中，请刷新会话。'); }
   }
+  async function readRemote(path, prefixBytes) {
+    const limit = prefixBytes ?? 24_000_000, prefix = prefixBytes !== undefined;
+    const input = Buffer.from(JSON.stringify({ path, limit, prefix })).toString('base64');
+    const unix = String.raw`import base64, json, os, stat, sys
+p = json.loads(base64.b64decode(sys.argv[1]))
+fd = os.open(p['path'], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+with os.fdopen(fd, 'rb') as stream:
+    info = os.fstat(stream.fileno())
+    if not stat.S_ISREG(info.st_mode): raise RuntimeError('Not a regular file')
+    if not p['prefix'] and info.st_size > p['limit']:
+        print('FILE_TOO_LARGE'); sys.exit(2)
+    data = stream.read(p['limit'] + 1)
+    if not p['prefix'] and len(data) > p['limit']:
+        print('FILE_TOO_LARGE'); sys.exit(2)
+    print(json.dumps({'dataBase64': base64.b64encode(data[:p['limit']]).decode()}))
+`;
+    const windows = String.raw`$ErrorActionPreference = 'Stop'
+$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__INPUT__')) | ConvertFrom-Json
+$item = Get-Item -LiteralPath $p.path -Force
+if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Not a regular file' }
+$stream = [IO.File]::Open($p.path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+try {
+    if (-not $p.prefix -and $stream.Length -gt $p.limit) { Write-Output 'FILE_TOO_LARGE'; exit 2 }
+    [byte[]]$data = ([IO.BinaryReader]::new($stream)).ReadBytes($p.limit + 1)
+    if ($null -eq $data) { $data = [byte[]]::new(0) }
+    if (-not $p.prefix -and $data.Length -gt $p.limit) { Write-Output 'FILE_TOO_LARGE'; exit 2 }
+    @{ dataBase64 = [Convert]::ToBase64String($data, 0, [Math]::Min($p.limit, $data.Length)) } | ConvertTo-Json -Compress
+} finally { $stream.Dispose() }
+`;
+    const command = remoteFs.paths().sep === '\\' ? ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(windows.replace('__INPUT__', input), 'utf16le').toString('base64')] : ['python3', '-c', unix, input];
+    const { result } = await codex.rpc('command/exec', { command, cwd: remoteFs.paths().dirname(path), timeoutMs: 10_000, outputBytesCap: Math.ceil(limit / 3) * 4 + 1024 });
+    if (result.exitCode === 2 && result.stdout.trim() === 'FILE_TOO_LARGE') throw fail(413, 'FILE_TOO_LARGE', '远端下载单文件上限为 24,000,000 字节，请在原主机获取此文件。');
+    try {
+      if (result.exitCode !== 0) throw new Error();
+      const encoded = JSON.parse(result.stdout).dataBase64;
+      if (typeof encoded !== 'string' || encoded.length > Math.ceil(limit / 3) * 4) throw new Error();
+      const data = Buffer.from(encoded, 'base64');
+      if (data.length > limit || data.toString('base64') !== encoded) throw new Error();
+      return data;
+    } catch { throw fail(409, 'REMOTE_FILE_READ_FAILED', '远端文件读取失败。Unix 需要已安装 Python 3，Windows 需要系统 PowerShell；请检查文件权限和主机沙箱。'); }
+  }
   async function issueRemote(path, roots, target) {
     const checked = await checkedRemote(path, roots), key = `remote\0${checked.actual}\0${checked.metadata.createdAtMs}\0${checked.metadata.modifiedAtMs}`;
     const existing = refKeys.get(key);
@@ -106,7 +147,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     if (refs.size >= 4096) { const oldest = refs.keys().next().value; refKeys.delete(refs.get(oldest).key); refs.delete(oldest); }
     const publicRef = { id, name: byPath.get(path)?.name ?? remoteFs.paths().basename(path), href: hostHref(`/api/files/${id}`) };
     // shortcut: native fs has no atomic no-follow read or inode, recheck scope/timestamps until those RPCs exist.
-    const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+    const data = await readRemote(checked.actual, 64);
     await checkedRemote(path, roots, checked.metadata);
     const mime = imageMime(data.subarray(0, 64));
     if (mime) Object.assign(publicRef, { imageHref: hostHref(`/api/images/${id}`), imageMime: mime });
@@ -139,7 +180,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     const expected = await file.handle.readFile();
     if (entries.length) {
       const checked = await checkedRemote(path, [directory]);
-      const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+      const data = await readRemote(checked.actual);
       await checkedRemote(path, [directory], checked.metadata);
       if (!data.equals(expected)) throw fail(409, 'UNSAFE_REFERENCE', '远端附件已变化，请重新上传。');
     } else {
@@ -270,7 +311,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       if (!ref) throw fail(404, 'UNKNOWN_REFERENCE', '文件链接已失效，请重新打开会话。');
       if (ref.remote) {
         const checked = await checkedRemote(ref.path, ref.roots, ref);
-        const data = Buffer.from((await remoteFs.read('fs/readFile', { path: checked.actual })).dataBase64, 'base64');
+        const data = await readRemote(checked.actual);
         await checkedRemote(ref.path, ref.roots, ref);
         return { name: ref.public.name, size: data.length, imageMime: imageMime(data.subarray(0, 64)), handle: { async close() {}, async readFile() { return data; }, createReadStream() { return Readable.from([data]); } } };
       }

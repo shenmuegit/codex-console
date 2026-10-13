@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, lstat, open, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, win32, posix } from 'node:path';
 import { Readable } from 'node:stream';
@@ -16,7 +17,20 @@ function host(windows = false) {
   const metadata = node => ({ isFile: false, isDirectory: false, isSymlink: false, createdAtMs: 1, modifiedAtMs: 1, ...node });
   const codex = { info: () => ({ platformFamily: windows ? 'windows' : 'unix', codexHome: home }), async rpc(method, params) {
     calls.push({ method, params }); let result = {};
-    if (method === 'command/exec') { addDirectory(paths.join(home, 'console-uploads')); return { result: { exitCode: 0, stdout: 'codex-console-private-v1\n', stderr: '' } }; }
+    if (method === 'command/exec') {
+      let input;
+      try {
+        const encoded = windows ? Buffer.from(params.command.at(-1), 'base64').toString('utf16le').match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/)[1] : params.command.at(-1);
+        input = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+      } catch {}
+      if (input?.limit != null) {
+        const node = nodes.get(input.path), data = Buffer.from(node?.dataBase64 ?? '', 'base64');
+        if (!node?.isFile || node.isSymlink) return { result: { exitCode: 1, stdout: '', stderr: 'Unsafe file' } };
+        if (!input.prefix && data.length > input.limit) return { result: { exitCode: 2, stdout: 'FILE_TOO_LARGE\n', stderr: '' } };
+        return { result: { exitCode: 0, stdout: JSON.stringify({ dataBase64: data.subarray(0, input.limit).toString('base64') }), stderr: '' } };
+      }
+      addDirectory(paths.join(home, 'console-uploads')); return { result: { exitCode: 0, stdout: 'codex-console-private-v1\n', stderr: '' } };
+    }
     if (method === 'fs/createDirectory') { if (params.recursive === false && nodes.has(params.path)) throw new Error('Already exists'); addDirectory(params.path); }
     else if (method === 'fs/writeFile') nodes.set(params.path, { isFile: true, dataBase64: params.dataBase64 });
     else if (method === 'fs/unwatch') {}
@@ -38,6 +52,58 @@ async function upload(files, content, name = 'photo.png', mime = 'image/png') {
   const meta = await files.beginUpload({ threadId: 'collision', name, size: content.length, mime });
   return files.receiveUpload(meta.id, Readable.from([content]));
 }
+
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} file headers and downloads stay within the relay bound, including file growth`, { skip: windows !== (process.platform === 'win32') }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'remote-read-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, '产物 with spaces.png'); await writeFile(path, tinyPng());
+  let growBeforeRead = false;
+  const codex = { info: () => ({ platformFamily: windows ? 'windows' : 'unix' }), async rpc(method, params) {
+    if (method === 'fs/getMetadata') {
+      const info = await lstat(params.path);
+      return { result: { isFile: info.isFile(), isDirectory: info.isDirectory(), isSymlink: info.isSymbolicLink(), createdAtMs: info.birthtimeMs, modifiedAtMs: info.mtimeMs } };
+    }
+    if (method === 'command/exec') {
+      if (growBeforeRead) { growBeforeRead = false; const file = await open(path, 'r+'); await file.truncate(30 * 1024 * 1024); await file.close(); }
+      let exitCode = 0, stdout;
+      try { stdout = execFileSync(params.command[0], params.command.slice(1), { encoding: 'utf8', maxBuffer: params.outputBytesCap, timeout: 15_000 }); }
+      catch (error) { exitCode = error.status; stdout = String(error.stdout); }
+      const result = { exitCode, stdout, stderr: '' };
+      assert.ok(Buffer.byteLength(JSON.stringify({ result })) < 33_554_432, 'Native responses must fit the existing relay cap');
+      return { result };
+    }
+    throw new Error('Unbounded remote file reads are forbidden: ' + method);
+  } };
+  const files = createFiles({ stateDir: join(dir, 'state'), remoteHost: { id: 'host-a' }, codex });
+  const references = () => files.issueTranscriptRefs({ cwd: dir }, [{ items: [{ id: 'artifact', type: 'fileChange', changes: [{ path }] }] }]);
+  let ref = (await references()).get('artifact')[0];
+  assert.ok(ref?.imageHref, 'A remote file must remain previewable without a whole-file RPC');
+  growBeforeRead = true;
+  await assert.rejects(files.openReference(ref.id), { status: 413, code: 'FILE_TOO_LARGE' });
+  ref = (await references()).get('artifact')[0]; assert.ok(ref?.imageHref, 'A large file must still have a header-only preview');
+  await assert.rejects(files.openReference(ref.id), { status: 413, code: 'FILE_TOO_LARGE' });
+  const file = await open(path, 'r+'); await file.truncate(24_000_000); await file.close();
+  ref = (await references()).get('artifact')[0];
+  const downloaded = await files.openReference(ref.id), data = await downloaded.handle.readFile();
+  assert.equal(data.length, 24_000_000); assert.deepEqual(data.subarray(0, tinyPng().length), tinyPng()); await downloaded.handle.close();
+  await writeFile(path, Buffer.alloc(0)); ref = (await references()).get('artifact')[0];
+  const empty = await files.openReference(ref.id); assert.equal((await empty.handle.readFile()).length, 0); await empty.handle.close();
+});
+
+test('remote reader failures and truncated replies never produce partial downloads', async t => {
+  const h = host(), files = await filesAt(t, h, 'host-a'), path = h.paths.join(h.cwd, 'result.txt');
+  h.nodes.set(path, { isFile: true, dataBase64: Buffer.from('complete').toString('base64') });
+  const refs = await files.issueTranscriptRefs({ cwd: h.cwd }, [{ items: [{ id: 'result', type: 'fileChange', changes: [{ path }] }] }]);
+  const ref = refs.get('result')[0], rpc = h.codex.rpc;
+  for (const result of [
+    { exitCode: 1, stdout: '', stderr: 'Runtime unavailable' },
+    { exitCode: 0, stdout: '{"dataBase64":"Y29tcGxldGU=', stderr: '' },
+    { exitCode: 0, stdout: '{"dataBase64":"invalid!"}', stderr: '' },
+  ]) {
+    h.codex.rpc = async (method, params) => method === 'command/exec' ? { result } : rpc(method, params);
+    await assert.rejects(files.openReference(ref.id), { status: 409, code: 'REMOTE_FILE_READ_FAILED' });
+  }
+});
+
 for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} generated pictures use native home and host-scoped references`, async t => {
   const h = host(windows), generated = h.paths.join(h.home, 'generated_images'), savedPath = h.paths.join(generated, 'cat.png'); h.addDirectory(generated);
   h.nodes.set(savedPath, { isFile: true, dataBase64: tinyPng().toString('base64') });

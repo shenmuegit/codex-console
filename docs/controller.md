@@ -196,9 +196,13 @@ despite the protocol comment describing a canonical path. We therefore check
 Downloads recheck scope and native timestamps before and after reading. The
 native RPCs expose neither an inode nor an atomic no-follow file handle, so these
 checks cannot provide the same atomic replacement protection as local downloads.
-Remote files are read as complete Base64 RPC results rather than streamed from
-a remote file descriptor. Large files can exceed the current relay implementation's
-32 MiB message bound; such failures do not authorize a local-file fallback.
+Remote references read only a 64-byte file header through a bounded, read-only
+native `command/exec`; downloads and attachment reconciliation use the same reader
+with a 24,000,000-byte cap. Unix needs installed Python 3; Windows needs system
+PowerShell. The native command inherits host permissions, has a ten-second timeout
+and caps its output within the existing 32 MiB relay limit. Oversized files, including
+files that grow during reading, return `413/FILE_TOO_LARGE` without closing the host
+stream. Truncated or invalid replies fail closed, with no server-local fallback.
 
 Uploads retain the existing bounded server staging, filename/image validation,
 and local no-follow checks in a private state namespace per host. Sending an
