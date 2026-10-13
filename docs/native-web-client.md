@@ -713,7 +713,11 @@ native caches; Refresh explicitly forces discovery and locks stale choices until
 the reply. Failed sources cannot leave selectable stale entries, and sending
 still rechecks native identities. Catalogs are not persisted to browser storage.
 
-Desktop uses a dialog anchored above the composer; phones use a bottom sheet.
+Desktop uses a dialog up to 720 × 720 px, with a 12 px viewport margin; it sits
+above the composer when space permits and moves down to use the available height.
+Phones use a full-width bottom sheet up to 92% of the dynamic viewport height.
+Picker lists, details, status and selected tags hide their scrollbars while
+retaining wheel, touch and keyboard scrolling. Short windows keep the footer reachable.
 Escape closes and restores focus, Return to editing focuses the draft, and
 keyboard navigation and IME confirmation remain separate from sending.
 Browser QA and reproducible checks are documented in

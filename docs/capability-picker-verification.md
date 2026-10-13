@@ -31,8 +31,10 @@ Cache isolation covers thread, cwd and native generation; account invalidation
 discards pending replies. Explicit refresh still locks stale choices and failures
 remove them. The browser fixture returns the requested catalog section.
 
-Current results: 65 focused checks passed. The complete web suite passed 504
-checks, with eight Windows-only ACL checks skipped on Linux and no failures.
+Current layout verification: 65 focused checks passed. The previous loading
+optimization's complete web run passed 504 checks, with eight Windows-only ACL
+checks skipped on Linux and no failures; this layout-only change did not rerun
+the full suite.
 
 ## Direct endpoint timing
 
@@ -59,14 +61,14 @@ uv run --offline --with playwright python web/test/capabilities-browser.py \
   --chromium /absolute/path/to/chrome --output /tmp/codex-console-capability-qa
 ```
 
-The initial feature's browser run captured 36 screenshots across these nine cases.
-This loading optimization did not rerun that visual check; it updated and syntax-
-checked the section-aware browser fixture and used the automated and direct
-endpoint checks above.
+The expanded-picker browser run passed these nine cases and captured 36 screenshots.
+It verifies the 720 × 720 px desktop limit, the phone sheet's enlarged height,
+hidden scrollbar styles and actual wheel scrolling in each viewport. Short-window
+checks cover dialog scrolling and reachable footer actions.
 
 | Viewport | Theme | Main check |
 | --- | --- | --- |
-| 1280 × 850 | light and dark | Dialog anchored above the composer |
+| 1280 × 850 | light and dark | Expanded dialog, bounded within the viewport |
 | 375 × 812 | light and dark | Full-width bottom sheet and readable details |
 | 667 × 375 | dark | Landscape scroll and reachable footer |
 | 1024 × 500 | light | Short desktop window |

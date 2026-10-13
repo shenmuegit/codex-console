@@ -50,10 +50,10 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
     if (edit && !draft.disabled) draft.focus();
   }
   function position() {
-    const box = document.querySelector('#composer').getBoundingClientRect(), width = Math.min(480, window.innerWidth - 24);
+    const box = document.querySelector('#composer').getBoundingClientRect(), width = Math.min(720, window.innerWidth - 24), height = Math.min(720, window.innerHeight - 24);
     dialog.style.left = Math.max(12, Math.min(box.left, window.innerWidth - width - 12)) + 'px';
-    dialog.style.bottom = Math.max(12, Math.min(window.innerHeight - box.top + 8, window.innerHeight - 240)) + 'px';
-    dialog.style.maxHeight = Math.max(200, Math.min(560, box.top - 24)) + 'px';
+    dialog.style.bottom = Math.max(12, Math.min(window.innerHeight - box.top + 8, window.innerHeight - height - 12)) + 'px';
+    dialog.style.maxHeight = height + 'px';
   }
   function choose(item) {
     if (!valid(context)) { close(); return; }

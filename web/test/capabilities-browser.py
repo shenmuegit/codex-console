@@ -70,16 +70,20 @@ def main():
           const f=document.querySelector('.capability-footer').getBoundingClientRect();
           const panel=document.querySelector('#capability-panel').getBoundingClientRect();
           const composer=document.querySelector('#composer').getBoundingClientRect();
-          return {left:d.left,right:d.right,top:d.top,bottom:d.bottom,width:innerWidth,height:innerHeight,footer:f.bottom,panel:panel.height,scrollWidth:document.documentElement.scrollWidth,composerTop:composer.top};
+          const scrollbars=[...document.querySelectorAll('#capabilities-dialog, #capability-panel, #capability-status, #selected-capabilities')].map(n=>({width:getComputedStyle(n).scrollbarWidth,display:getComputedStyle(n,'::-webkit-scrollbar').display}));
+          return {left:d.left,right:d.right,top:d.top,bottom:d.bottom,dialogWidth:d.width,dialogHeight:d.height,width:innerWidth,height:innerHeight,footer:f.bottom,panel:panel.height,scrollWidth:document.documentElement.scrollWidth,composerTop:composer.top,scrollbars};
         }""")
         assert metrics['left'] >= -1 and metrics['right'] <= metrics['width'] + 1, metrics
         assert metrics['top'] >= -1 and metrics['bottom'] <= metrics['height'] + 1, metrics
         assert metrics['footer'] <= metrics['bottom'] and metrics['panel'] >= 50, metrics
         assert metrics['scrollWidth'] <= metrics['width'], metrics
+        assert all(bar['width'] == 'none' and bar['display'] == 'none' for bar in metrics['scrollbars']), metrics
         if metrics['width'] > 760:
-            assert abs(metrics['bottom'] - (metrics['composerTop'] - 8)) <= 2, metrics
+            assert abs(metrics['dialogWidth'] - min(720, metrics['width'] - 24)) <= 1, metrics
+            assert abs(metrics['dialogHeight'] - min(720, metrics['height'] - 24)) <= 1, metrics
         else:
             assert abs(metrics['right'] - metrics['width']) <= 1, metrics
+            assert metrics['dialogHeight'] >= metrics['height'] * .9, metrics
         return metrics
 
     try:
@@ -100,6 +104,13 @@ def main():
                 prefix = f'{width}x{height}-{scheme}'
                 page.screenshot(path=str(output / f'{prefix}-skills.png'))
                 metrics = bounds(page)
+                scroll_selector = '#capability-panel' if height > 560 else '#capabilities-dialog'
+                scroll = page.locator(scroll_selector)
+                assert scroll.evaluate('(n) => n.scrollHeight > n.clientHeight'), metrics
+                scroll.hover()
+                page.mouse.wheel(0, 180)
+                page.wait_for_function('(selector) => document.querySelector(selector).scrollTop > 0', arg=scroll_selector)
+                scroll.evaluate('(n) => n.scrollTop = 0')
                 page.locator('#capability-search').fill('回归')
                 expect(page.locator('#capability-results > li')).to_have_count(1)
                 page.get_by_role('button', name='收藏 代码审查', exact=True).click()
