@@ -80,11 +80,13 @@
           </section>
           <div class="composer-surface">
             <div id="attachments" aria-label="待发送附件"></div>
+            <div id="selected-capabilities" class="selected-capabilities" aria-label="本条消息使用的技能和插件" hidden></div>
             <input id="file-input" type="file" multiple hidden><input id="photo-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" hidden>
             <div id="completion-menu" role="listbox" aria-label="原生补全" hidden></div>
             <label class="sr-only" for="draft">发送消息</label><textarea id="draft" rows="2" placeholder="向 Codex 发送消息…" aria-autocomplete="list" aria-controls="completion-menu" aria-expanded="false" disabled></textarea>
             <div class="composer-footer">
               <details id="attachment-actions" class="attachment-actions"><summary class="icon-button" aria-label="添加附件" title="添加附件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></summary><div class="attachment-menu"><button id="choose-files" type="button" disabled>添加文件</button><button id="choose-photos" type="button" disabled>添加照片</button></div></details>
+              <button id="show-capabilities" class="capability-trigger" type="button" aria-haspopup="dialog" aria-controls="capabilities-dialog" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7Z"/></svg><span>技能 / 插件</span></button>
               <button id="goal-mode" class="goal-mode" type="button" aria-label="取消目标模式" title="取消目标模式" hidden><svg class="goal-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 9-9m-4 0h4v4"/></svg><span>目标</span></button>
               <label class="select-control" title="选择模型"><span class="sr-only">模型</span><select id="model" aria-label="选择模型" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
               <label class="select-control effort-control" title="选择思考强度"><span class="sr-only">思考强度</span><select id="effort" aria-label="选择思考强度" disabled></select><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></label>
@@ -100,6 +102,19 @@
       <aside id="side-chat" class="side-chat" aria-label="侧边聊天" hidden><header><h2>侧边聊天</h2><button id="close-side-chat" class="icon-button" type="button" aria-label="关闭侧边聊天">×</button></header><iframe id="side-chat-frame" title="侧边聊天"></iframe></aside>
     </div>
   </main>
+  <dialog id="capabilities-dialog" class="capabilities-dialog" aria-labelledby="capabilities-title">
+    <div class="dialog-heading"><h2 id="capabilities-title">技能 / 插件</h2><button id="close-capabilities" class="icon-button" type="button" aria-label="关闭技能和插件选择">×</button></div>
+    <p class="capability-hint muted small">浏览用途，选择本条消息要使用的能力</p>
+    <div class="capability-tabs" role="tablist" aria-label="能力类型">
+      <button id="capability-tab-skills" type="button" role="tab" aria-controls="capability-panel" aria-selected="true">技能</button>
+      <button id="capability-tab-plugins" type="button" role="tab" aria-controls="capability-panel" aria-selected="false" tabindex="-1">插件与应用</button>
+    </div>
+    <label class="sr-only" for="capability-search">搜索名称或用途</label><input id="capability-search" type="search" placeholder="搜索名称、用途或关键词" autocomplete="off">
+    <div class="capability-filters" aria-label="能力筛选"><button id="capability-filter-all" type="button" aria-pressed="true">全部</button><button id="capability-filter-favorites" type="button" aria-pressed="false">收藏</button><button id="capability-filter-recent" type="button" aria-pressed="false">最近使用</button></div>
+    <section id="capability-panel" class="capability-panel" role="tabpanel" aria-labelledby="capability-tab-skills"><ul id="capability-results" class="capability-results"></ul><section id="capability-details" class="capability-details" aria-label="能力详情" hidden></section></section>
+    <p id="capability-status" class="muted small" role="status" aria-live="polite"></p>
+    <div class="capability-footer"><button id="refresh-capabilities" type="button">刷新列表</button><button id="done-capabilities" class="primary" type="button">返回编辑</button></div>
+  </dialog>
   <dialog id="connections-dialog" aria-labelledby="connections-title">
     <div class="dialog-heading"><h2 id="connections-title">连接 Codex 设备</h2><button id="close-connections" class="icon-button" type="button" aria-label="关闭设备连接">×</button></div>
     <p id="controller-state" class="muted" role="status" aria-live="polite">正在读取 server 状态…</p>

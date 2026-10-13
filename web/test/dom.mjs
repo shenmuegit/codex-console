@@ -73,7 +73,8 @@ export function domFixture() {
   const globals = { document, location, history: { replaceState(_state, _title, url) { location.href = String(url); } },
     window: { confirm: () => true, prompt: () => null, innerWidth: 1280, innerHeight: 820 }, navigator: { clipboard: { async writeText(value) { clipboardWrites.push(value); } } },
     matchMedia: query => { if (!media.has(query)) { const value = new EventTarget(); value.matches = query === '(max-width: 760px)' ? window.innerWidth <= 760 : true; media.set(query, value); } return media.get(query); }, requestAnimationFrame: fn => queueMicrotask(fn),
-    sessionStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) } };
+    sessionStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    localStorage: { getItem: key => storage.get('local:' + key) ?? null, setItem: (key, value) => storage.set('local:' + key, value) } };
   for (const [key, value] of Object.entries(globals)) { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); }
   return { document, location, clipboardWrites, get: id => document.querySelector('#' + id),
     resize(width) { window.innerWidth = width; for (const [query, value] of media) { const next = query === '(max-width: 760px)' ? width <= 760 : true; if (next !== value.matches) { value.matches = next; value.dispatchEvent(new Event('change')); } } },

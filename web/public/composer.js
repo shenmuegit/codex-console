@@ -133,7 +133,19 @@ export function encodeComposer({ text, selections = [], uploads = [], threadId, 
   return { input, additionalContext };
 }
 
-export function mountCompletions({ api, viewId, getState, onChange, onCommand }) {
+export function insertSelection(state, item, { start, end }) {
+  const original = state.draft, token = item.kind === 'command' ? '/' + item.command : item.label ?? (item.kind === 'skill' ? '$' : '@') + item.name;
+  utf8Range(original, start, end);
+  const prefix = original.slice(0, start), pad = prefix && !/\s$/.test(prefix) ? ' ' : '', tokenStart = start + pad.length;
+  const tail = original.slice(end), space = /^\s/.test(tail) ? '' : ' ', next = prefix + pad + token + space + tail;
+  const delta = next.length - original.length;
+  state.selections = (state.selections ?? []).flatMap(item => item.end <= start ? [item] : item.start >= end ? [{ ...item, start: item.start + delta, end: item.end + delta }] : []);
+  if (item.kind !== 'command') state.selections.push({ kind: item.kind, ...(item.id ? { id: item.id } : {}), ...(item.path ? { path: item.path } : {}), start: tokenStart, end: tokenStart + token.length, token });
+  state.draft = next;
+  return tokenStart + token.length + (space || tail ? 1 : 0);
+}
+
+export function mountCompletions({ api, viewId, getState, onChange, onCommand, onSelect }) {
   const draft = document.querySelector('#draft'), menu = document.querySelector('#completion-menu'), abort = new AbortController();
   const groups = { file: '文件和文件夹', directory: '文件和文件夹', thread: '会话', app: '应用', plugin: '插件', skill: '技能', command: '命令' };
   let timer, revision = 0, context, entries = [], active = -1, alive = true, loading = false;
@@ -155,12 +167,9 @@ export function mountCompletions({ api, viewId, getState, onChange, onCommand })
   function choose(item, selected = context) {
     if (selected !== context || item.disabled) return;
     if (!valid(selected)) { close(); return; }
-    const { state, source: original, start, end } = selected, token = item.kind === 'command' ? '/' + item.command : item.label ?? (item.kind === 'skill' ? '$' : '@') + item.name;
-    const tail = original.slice(end), space = /^\s/.test(tail) ? '' : ' ', next = original.slice(0, start) + token + space + tail;
-    state.selections = updateSelections(original, next, state.selections);
-    if (item.kind !== 'command') state.selections.push({ kind: item.kind, ...(item.id ? { id: item.id } : {}), ...(item.path ? { path: item.path } : {}), start, end: start + token.length, token });
-    state.draft = next; draft.value = next; draft.focus(); const caret = start + token.length + (space || tail ? 1 : 0); draft.setSelectionRange(caret, caret); close(); onChange(state);
-    if (item.kind === 'command' && !tail.trim()) onCommand?.(item.command);
+    const { state, source, start, end } = selected, caret = insertSelection(state, item, { start, end });
+    draft.value = state.draft; draft.focus(); draft.setSelectionRange(caret, caret); close(); onSelect?.(item); onChange(state);
+    if (item.kind === 'command' && !source.slice(end).trim()) onCommand?.(item.command);
   }
   function highlight() {
     for (let i = 0; i < entries.length; i++) { const node = document.querySelector('#completion-' + i), value = String(i === active); if (node?.getAttribute('aria-selected') !== value) node?.setAttribute('aria-selected', value); }
@@ -173,7 +182,7 @@ export function mountCompletions({ api, viewId, getState, onChange, onCommand })
     for (let i = 0; i < entries.length; i++) {
       if (groups[entries[i].kind] !== group) { group = groups[entries[i].kind]; const heading = document.createElement('p'); heading.className = 'completion-group'; heading.setAttribute('aria-hidden', 'true'); heading.textContent = group; menu.append(heading); }
       const item = entries[i], button = document.createElement('button'); button.type = 'button'; button.role = 'option'; button.id = 'completion-' + i;
-      const name = document.createElement('span'), detail = document.createElement('small'); name.className = 'completion-name'; name.textContent = item.kind === 'command' ? item.label : item.name ?? item.label;
+      const name = document.createElement('span'), detail = document.createElement('small'); name.className = 'completion-name'; name.textContent = item.kind === 'command' ? item.label : item.displayName ?? item.name ?? item.label;
       const path = ['file', 'directory'].includes(item.kind) ? item.label.slice(1) : null;
       detail.className = 'completion-detail'; detail.textContent = (item.description ?? (path === item.name ? item.kind === 'directory' ? '文件夹' : '文件' : path ?? groups[item.kind])) + (item.disabled ? ' · 当前不可用' : '');
       button.setAttribute('role', 'option'); button.setAttribute('aria-label', item.label + '，' + detail.textContent); button.setAttribute('aria-disabled', String(Boolean(item.disabled))); button.append(name, detail);

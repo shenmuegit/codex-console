@@ -29,6 +29,7 @@ const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/connections.js', ['connections.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
+  ['/capabilities.js', ['capabilities.js', 'text/javascript; charset=utf-8']],
   ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
   ['/requests.js', ['requests.js', 'text/javascript; charset=utf-8']],
   ['/goals.js', ['goals.js', 'text/javascript; charset=utf-8']],
@@ -206,10 +207,47 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   const nativeRead = async (method, params) => (await codex.rpc(method, params)).result;
   async function skillsAt(cwd) { return (await nativeRead('skills/list', { cwds: [cwd] })).data.flatMap(entry => entry.skills); }
   async function pluginsAt(cwd) { return (await nativeRead('plugin/installed', { cwds: [cwd] })).marketplaces.flatMap(market => market.plugins); }
-  async function appsAt(threadId) {
-    const [catalog, runtime] = await Promise.all([nativeRead('app/list', { threadId, limit: 100 }), nativeRead('app/installed', { threadId })]);
+  async function appsAt(threadId, unavailable) {
+    const [catalog, runtime] = await Promise.all([(async () => {
+      const data = []; let cursor;
+      do {
+        try { const page = await nativeRead('app/list', { threadId, limit: 100, ...(cursor ? { cursor } : {}), ...(unavailable && !cursor ? { forceRefetch: true } : {}) }); data.push(...page.data); cursor = page.nextCursor; }
+        catch (error) { if (!unavailable) throw error; unavailable.push({ kind: '应用', message: error.message }); break; }
+      } while (cursor);
+      return data;
+    })(), nativeRead('app/installed', { threadId, ...(unavailable ? { forceRefresh: true } : {}) })]);
     const installed = new Map(runtime.apps.map(app => [app.id, app]));
-    return catalog.data.map(app => ({ ...app, callable: Boolean(installed.get(app.id)?.callable && installed.get(app.id)?.enabled && app.isAccessible && app.isEnabled) }));
+    return catalog.map(app => ({ ...app, callable: Boolean(installed.get(app.id)?.callable && installed.get(app.id)?.enabled && app.isAccessible && app.isEnabled) }));
+  }
+  function skillEntry(skill, plugin) {
+    return { kind: 'skill', path: skill.path, name: skill.name, label: '$' + skill.name,
+      displayName: skill.interface?.displayName || skill.name,
+      description: skill.interface?.shortDescription || skill.shortDescription || skill.description || '',
+      source: plugin ? (plugin.interface?.displayName || plugin.name) + ' 插件' : ({ repo: '当前项目', user: '个人技能', system: '内置技能', admin: '组织技能' }[skill.scope] || '技能'),
+      pluginId: skill.pluginId ?? null, keywords: plugin?.keywords ?? [], disabled: !skill.enabled, status: skill.enabled ? '可用' : '未启用' };
+  }
+  function pluginEntry(plugin, skills = []) {
+    const status = !plugin.installed ? '未安装' : !plugin.enabled ? '未启用' : plugin.availability === 'DISABLED_BY_ADMIN' ? '组织已禁用' : '可用';
+    return { kind: 'plugin', id: plugin.id, name: plugin.name, label: '@' + plugin.name,
+      displayName: plugin.interface?.displayName || plugin.name, description: plugin.interface?.shortDescription || plugin.description || '',
+      source: plugin.interface?.developerName ? '插件 · ' + plugin.interface.developerName : '已安装插件',
+      keywords: plugin.keywords ?? [], status, disabled: status !== '可用', skills: skills.filter(skill => skill.pluginId === plugin.id) };
+  }
+  function appEntry(app) {
+    return { kind: 'app', id: app.id, name: app.name, label: '@' + app.name, displayName: app.name,
+      description: app.description || '', source: '应用 / 连接器', keywords: [], disabled: !app.callable,
+      status: !app.isAccessible ? '未连接或不可访问' : !app.isEnabled ? '未启用' : !app.callable ? '当前不可调用' : '可用' };
+  }
+  async function capabilities(state) {
+    const unavailable = [], cwd = state.thread.cwd;
+    const calls = await Promise.allSettled([nativeRead('skills/list', { cwds: [cwd], forceReload: true }), nativeRead('plugin/installed', { cwds: [cwd] }), appsAt(state.threadId, unavailable)]);
+    for (let i = 0; i < calls.length; i++) if (calls[i].status === 'rejected') unavailable.push({ kind: ['技能', '插件', '应用'][i], message: calls[i].reason.message });
+    const entries = calls[0].status === 'fulfilled' ? calls[0].value.data : [], marketplaces = calls[1].status === 'fulfilled' ? calls[1].value.marketplaces : [];
+    for (const entry of entries) for (const issue of entry.errors ?? []) unavailable.push({ kind: '技能', message: issue.message });
+    if (calls[1].status === 'fulfilled') for (const issue of calls[1].value.marketplaceLoadErrors ?? []) unavailable.push({ kind: '插件', message: issue.message });
+    const plugins = marketplaces.flatMap(market => market.plugins), owners = new Map(plugins.map(plugin => [plugin.id, plugin]));
+    const skills = entries.flatMap(entry => entry.skills).map(skill => skillEntry(skill, owners.get(skill.pluginId)));
+    return { items: [...skills, ...plugins.map(plugin => pluginEntry(plugin, skills)), ...(calls[2].status === 'fulfilled' ? calls[2].value.map(appEntry) : [])], unavailable };
   }
   async function referenceSnapshot(threadId) {
     const { thread } = await nativeRead('thread/read', { threadId, includeTurns: false });
@@ -267,9 +305,9 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   }
   async function completions(state, sigil, query, viewId) {
     if (!['@', '$'].includes(sigil) || !text(query, 256)) throw error(400, 'INVALID_COMPLETION', '补全查询不正确。');
-    const match = name => name.toLocaleLowerCase().includes(query.toLocaleLowerCase()), items = [], unavailable = [];
+    const match = item => [item.name, item.displayName, item.description, ...(item.keywords ?? [])].some(value => value?.toLocaleLowerCase().includes(query.toLocaleLowerCase())), items = [], unavailable = [];
     if (sigil === '$') {
-      for (const skill of await skillsAt(state.thread.cwd)) if (match(skill.name)) items.push({ kind: 'skill', path: skill.path, name: skill.name, label: '$' + skill.name, disabled: !skill.enabled });
+      for (const skill of await skillsAt(state.thread.cwd)) { const item = skillEntry(skill); if (match(item)) items.push(item); }
       return { items, unavailable };
     }
     const cwd = state.thread.cwd, slash = Math.max(query.lastIndexOf('/'), remoteFs?.paths().sep === '\\' ? query.lastIndexOf('\\') : -1), search = query.length > 0 && slash < 0;
@@ -284,8 +322,8 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       for (const entry of entries) if (inside(entry.path, cwd)) items.push({ kind: entry.isDirectory ? 'directory' : 'file', path: entry.path, name: entry.fileName, label: '@' + (nativePaths().relative(cwd, entry.path) || '.') });
     }
     if (calls[1].status === 'fulfilled') for (const thread of calls[1].value.data) if (thread.id !== state.threadId) items.push({ kind: 'thread', id: thread.id, name: [...(thread.name || thread.preview || thread.id)].slice(0, 160).join(''), label: '@' + (thread.name || thread.preview || thread.id) });
-    if (calls[2].status === 'fulfilled') for (const app of calls[2].value) if (match(app.name)) items.push({ kind: 'app', id: app.id, name: app.name, label: '@' + app.name, disabled: !app.callable });
-    if (calls[3].status === 'fulfilled') for (const plugin of calls[3].value) if (match(plugin.name)) items.push({ kind: 'plugin', id: plugin.id, name: plugin.name, label: '@' + plugin.name, disabled: !plugin.installed || !plugin.enabled || plugin.availability === 'DISABLED_BY_ADMIN' });
+    if (calls[2].status === 'fulfilled') for (const app of calls[2].value) { const item = appEntry(app); if (match(item)) items.push(item); }
+    if (calls[3].status === 'fulfilled') for (const plugin of calls[3].value) { const item = pluginEntry(plugin); if (match(item)) items.push(item); }
     return { items: items.slice(0, 100), unavailable };
   }
   mkdirSync(config.stateDir, { recursive: true, mode: 0o700 }); chmodSync(config.stateDir, 0o700);
@@ -805,6 +843,10 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         fields(body, ['viewId', 'projectId', 'confirmed']); requireView(body.viewId, session);
         if (!id(body.projectId) || body.confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认移除项目登记。');
         await codex.rpc('project/delete', { projectId: body.projectId }); reply(res, 200, {});
+      } else if (url.pathname === '/api/capabilities') {
+        fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
+        reply(res, 200, await capabilities(state));
       } else if (url.pathname === '/api/completions') {
         fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');

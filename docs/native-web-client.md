@@ -688,6 +688,29 @@ metadata against the source backend.
 
 ## Native @, $ and / actions
 
+The composer also has a visible **Skills / Plugins** button (shown as
+“技能 / 插件” in the Chinese UI). Browse the Skills or Plugins and Apps tab,
+search native names, display names, purposes, sources and keywords, and use
+Details to inspect a capability or a plugin's discovered skills. Unavailable
+entries explain their state. Select several entries, return to editing, and
+remove individual “this message” tags without deleting the surrounding draft.
+Picking does not send a message or change installation, authorization or
+enablement; sending rechecks the native identity and availability.
+
+Stars save favorites; Recent keeps the last 20 selected capabilities, including
+selections through `$` and `@`. These preferences contain identities only and
+are stored in this browser separately for each host and actual working
+directory. They do not automatically select capabilities in another message.
+If browser storage is unavailable, selection still works and preferences remain
+in memory for the page. Refresh rereads the native catalog; reopening also
+refreshes it. Plugins' skill lists reflect the current workspace's discovery.
+
+Desktop uses a dialog anchored above the composer; phones use a bottom sheet.
+Escape closes and restores focus, Return to editing focuses the draft, and
+keyboard navigation and IME confirmation remain separate from sending.
+Browser QA and reproducible checks are documented in
+[capability picker verification](capability-picker-verification.md).
+
 Type `@` to choose a file/directory in the conversation's actual workspace,
 another conversation, or an available native app/plugin. Nested paths such as
 `@src/` resolve from that conversation's directory. A filename search uses Codex's

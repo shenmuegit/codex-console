@@ -1,4 +1,5 @@
 import { scopeHostPath, displayNativeText, mountAttachments, mountCompletions, mountImageViewer, commandAction, updateSelections } from './composer.js';
+import { mountCapabilities } from './capabilities.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
 import { createRequestCard } from './requests.js';
@@ -274,7 +275,8 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
   const attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
-  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit() });
+  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit(), onSelect: item => capabilities.remember(item) });
+  const capabilities = mountCapabilities({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); draw(); }, onOpen: () => completions.close() });
   const followups = mountFollowups({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
   const imageViewer = mountImageViewer();
   const goals = mountGoals({ api, viewId, getState: () => selected, onChange: state => { save(state); if (selected === state) draw(); } });
@@ -552,7 +554,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       $('#messages').replaceChildren(...cached?.messages ?? []); $('#native-requests').replaceChildren(...formNodes.values());
     }
     setLevel('chat');
-    completions.close(); if (menuTarget) closeThreadMenu();
+    completions.close(); capabilities.close(); if (menuTarget) closeThreadMenu();
     draft.value = state.draft; if (top !== undefined) feed.scrollTop = top; draw();
     if (top !== undefined) feed.scrollTop = top; lastScrollTop = feed.scrollTop;
     if (narrow.matches) $('#thread-title').focus();
@@ -756,6 +758,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     attachments.render(state);
     followups.render();
     usage.render();
+    capabilities.render();
   }
   function scheduleDraw() { if (!drawing) { drawing = true; requestAnimationFrame(() => { drawing = false; draw(); }); } }
   async function loadPresentation() {
@@ -952,6 +955,6 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); cachedViews.clear(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); cachedViews.clear(); attachments.dispose(); usage.dispose(); completions.dispose(); capabilities.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }

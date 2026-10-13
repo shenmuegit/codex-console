@@ -219,6 +219,52 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 #completion-menu .completion-group { padding: 10px 12px 4px; color: var(--muted); font-weight: 500; }
 .completion-name, .completion-detail { display: block; overflow-wrap: anywhere; }
 .completion-detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.capability-trigger { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.capability-trigger svg { width: 15px; height: 15px; }
+.selected-capabilities { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-height: min(24dvh, 144px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 8px; }
+.capability-chip { max-width: 100%; background: var(--user); border: 1px solid var(--border); font-size: 12px; text-align: left; overflow-wrap: anywhere; }
+dialog.capabilities-dialog { --picker-bottom-pad: 16px; position: fixed; inset: auto; margin: 0; width: min(480px, calc(100vw - 24px)); padding: 16px; overflow: hidden; }
+.capabilities-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
+.capabilities-dialog .dialog-heading { flex: 0 0 auto; margin: 0; }
+.capability-hint { margin: -6px 0 0; }
+.capability-tabs, .capability-filters, .capability-footer { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.capability-tabs { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.capability-tabs [aria-selected="true"], .capability-filters [aria-pressed="true"] { background: var(--selected); color: var(--text); font-weight: 500; }
+.capability-filters { color: var(--muted); font-size: 12px; }
+#capability-search { flex: 0 0 auto; width: 100%; min-height: 40px; padding: 8px 10px; }
+.capability-panel { flex: 1 1 auto; min-height: 80px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.capability-results { list-style: none; margin: 0; padding: 0; }
+.capability-row { display: flex; align-items: start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.capability-row:last-child { border-bottom: 0; }
+.capability-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.capability-copy strong, .capability-copy small { display: block; }
+.capability-copy strong { font-size: 14px; font-weight: 500; }
+.capability-copy p { font-size: 13px; margin: 5px 0; }
+.capability-state { display: inline-block; font-size: 11px; color: var(--muted); }
+.capability-actions { display: grid; grid-template-columns: 32px 52px; align-items: center; gap: 4px; flex-shrink: 0; }
+.capability-actions > .small { grid-column: 2; }
+.capability-favorite { color: var(--muted); font-size: 20px; padding: 3px; }
+.capability-favorite[aria-pressed="true"] { color: var(--text); }
+.capability-choice { border: 1px solid var(--border); font-size: 12px; }
+.capability-details { overflow-wrap: anywhere; }
+.capability-details h3 { font-size: 16px; margin: 12px 0 6px; }
+.capability-details h4 { font-size: 13px; font-weight: 500; margin: 16px 0 0; }
+.capability-details p { margin: 6px 0; }
+.capability-empty { padding: 18px 4px; font-size: 13px; }
+#capability-status { margin: 0; flex: 0 0 auto; max-height: 80px; overflow-y: auto; overflow-wrap: anywhere; }
+.capability-footer { justify-content: space-between; }
+@media (max-width: 760px) {
+  dialog.capabilities-dialog { --picker-bottom-pad: max(16px, env(safe-area-inset-bottom)); inset: auto 0 0 !important; width: 100%; max-width: 100%; max-height: min(85dvh, calc(var(--app-height, 100dvh) - 16px)) !important; border-radius: 20px 20px 0 0; padding: 16px 16px var(--picker-bottom-pad); }
+  #capability-search { font-size: 16px; }
+  .capability-actions { grid-template-columns: 44px 52px; gap: 8px; }
+}
+@media (max-height: 560px) {
+  dialog.capabilities-dialog { overflow-y: auto; scroll-padding-block: 8px 64px; }
+  .capabilities-dialog[open] { gap: 6px; }
+  .capability-hint { display: none; }
+  .capability-panel { flex: 0 0 auto; overflow: visible; }
+  .capability-footer { position: sticky; bottom: calc(-1 * var(--picker-bottom-pad)); margin-bottom: calc(-1 * var(--picker-bottom-pad)); padding: 8px 0 var(--picker-bottom-pad); background: var(--surface); }
+}
 dialog { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; width: min(440px, calc(100vw - 24px)); max-height: 88dvh; padding: 20px; box-shadow: 0 12px 48px #0003; }
 dialog::backdrop { background: #0006; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
