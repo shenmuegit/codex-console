@@ -114,23 +114,20 @@ html = html.replace('content="width=device-width, initial-scale=1"',
                     'content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"')
 html = html.replace('src="js/Client.js"', f'src="Client.js?v={version}"')
 html = html.replace('<ul class="Menu -horizontal">', '<ul class="Menu -horizontal -alignRight">')
-# Keep Xpra's event targets, but expose only the three mobile controls.
+# Keep Xpra's action targets; mobile.js handles disclosure, dismissal and dragging.
+html = html.replace('    <script type="application/javascript" src="js/Menu.js"></script>', '')
 html = re.sub(r'(<li class="-hasSubmenu -noChevron")(?=>\s*<a[^>]*id="(?:open_windows|clipboard_button|cursor_lock_button)")',
               r'\1 hidden', html, flags=re.S)
-html = re.sub(r'(<li class="-hasSubmenu -noChevron")(?=>\s*<a[^>]*id="xpramenu")',
-              r'\1 style="display: contents"', html, flags=re.S)
-html = html.replace('id="xpramenu"', 'id="xpramenu" hidden')
+html = html.replace('title="Xpra"', 'title="设置" aria-label="设置" aria-expanded="false" aria-controls="menu_list" role="button"')
 html = re.sub(r'var widget_ids = \[.*?\];',
-              'var widget_ids = ["fullscreen_button", "keyboard_button", "sound_button"];', html, count=1, flags=re.S)
+              'var widget_ids = ["xpramenu", "fullscreen_button", "keyboard_button", "sound_button"];', html, count=1, flags=re.S)
 html = html.replace('float_menu_element.on("mouseover", expand_float_menu);', '')
 html = html.replace('float_menu_element.on("mouseout", retract_float_menu);', '')
-# Reconnection must replace the toggle handler, rather than accumulating toggles.
-html = html.replace('float_menu_button_element.on("click", toggle_float_menu);',
-                    'float_menu_button_element.off("click", toggle_float_menu).on("click", toggle_float_menu);')
+html = html.replace('float_menu_button_element.on("click", toggle_float_menu);', '')
 html = html.replace('<div id="float_menu_button">', '<div id="float_menu_button" class="noDrag">')
 html = html.replace('<div id="float_menu">', '<div id="float_menu" class="noDrag">')
 html = html.replace('id="float_menu_arrow" title="Expand Menu" data-icon="chevron_right"',
-                    'id="float_menu_arrow" title="Expand Menu" data-icon="chevron_left"')
+                    'id="float_menu_arrow" title="菜单，可上下拖动或用上下方向键移动" aria-label="菜单，可上下拖动或用上下方向键移动" role="button" aria-expanded="false" data-icon="chevron_left"')
 html = html.replace('$("#float_menu_arrow").attr("data-icon", "chevron_right");',
                     '$("#float_menu_arrow").attr("data-icon", "chevron_left");')
 html = html.replace('init_keyboard(client);', 'window.init_mobile_keyboard(client);')

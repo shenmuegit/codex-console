@@ -39,18 +39,17 @@ body {overscroll-behavior: none}
 #connection-retry {width: 100%}
 
 /* Reuse the Xpra toolbar and its actions, with a consistent touch target. */
-#float_menu {top: max(12px, env(safe-area-inset-top)) !important; left: auto !important; right: 0 !important; pointer-events: none}
+#float_menu {top: var(--menu-top, max(12px, env(safe-area-inset-top))) !important; left: auto !important; right: var(--menu-right, 0px) !important; width: 44px !important; height: 44px; pointer-events: none}
 #float_menu .Menu, #float_menu_button, #float_tray {pointer-events: auto}
 #float_menu .Menu {box-sizing: border-box; width: 52px; padding: 4px; border: 1px solid var(--console-line); border-radius: 14px; background: #fff; color: var(--console-text); box-shadow: 0 4px 16px rgb(32 33 36 / 9%); font: 14px/44px system-ui, sans-serif}
-#float_menu > .Menu {position: absolute; top: 0; right: 52px; max-height: calc(100dvh - 24px); overflow-y: auto; scrollbar-width: none}
+#float_menu > .Menu {position: fixed; top: max(12px, env(safe-area-inset-top)); right: 52px; max-height: calc(100dvh - 16px); overflow-y: auto; scrollbar-width: none}
 #float_menu .Menu li, #float_menu .Menu li > :first-child {height: auto}
 #float_menu .Menu > li > a {box-sizing: border-box; width: 44px; height: 44px; padding: 0; border-radius: 9px}
 #float_menu .Menu > li > a[data-icon]::before {width: 44px; height: 44px; line-height: 44px; font-size: 22px}
 #float_menu .Menu > li {margin: 2px 0}
 #float_menu .Menu li > a {min-height: 44px; line-height: 44px; border-radius: 8px}
 #float_menu .Menu li:hover > a:first-child, #float_menu .Menu li.-active > a:first-child {background: #f0f2f5}
-#float_menu .Menu > li > ul {box-sizing: border-box; position: fixed; top: max(12px, env(safe-area-inset-top)); left: auto; right: 116px; width: min(264px, calc(100vw - 132px)); min-width: 0; max-height: calc(100dvh - 24px); overflow: auto; padding: 8px; border: 1px solid var(--console-line); border-radius: 14px; background: #fff; box-shadow: 0 8px 32px rgb(32 33 36 / 12%); transform-origin: right top}
-#menu_list {display: block !important}
+#float_menu .Menu > li > ul {box-sizing: border-box; position: fixed; top: max(12px, env(safe-area-inset-top)); left: auto; right: 116px; width: min(264px, calc(100vw - 16px)); min-width: 0; max-height: calc(100dvh - 16px); overflow: auto; padding: 8px; border: 1px solid var(--console-line); border-radius: 14px; background: #fff; box-shadow: 0 8px 32px rgb(32 33 36 / 12%); transform-origin: right top}
 #float_menu .Menu details {height: auto; padding: 0}
 #float_menu .Menu summary {min-height: 44px; padding: 0 10px; border-radius: 8px; line-height: 44px; font-weight: 600; cursor: pointer}
 #float_menu .Menu summary:hover {background: #f0f2f5}
@@ -60,7 +59,8 @@ body {overscroll-behavior: none}
 #performance_menu_entry button:hover {background: #f0f2f5}
 #performance_menu_entry button[aria-pressed="true"] {background: #edf2f5; font-weight: 650}
 #performance_menu_entry button[aria-pressed="true"]::after {content: '✓'; float: right}
-#float_menu_button {position: absolute; left: auto !important; right: 0; top: 0 !important; width: 44px; height: 44px; border: 1px solid var(--console-line); border-radius: 12px 0 0 12px; background: #fff; box-shadow: 0 4px 16px rgb(32 33 36 / 9%)}
+#float_menu_button {box-sizing: border-box; position: absolute; left: auto !important; right: 0; top: 0 !important; width: 44px; height: 44px; border: 1px solid var(--console-line); border-radius: 12px 0 0 12px; background: #fff; box-shadow: 0 4px 16px rgb(32 33 36 / 9%); touch-action: none; user-select: none; cursor: grab}
+#float_menu_button:active {cursor: grabbing}
 #float_menu_arrow {display: flex; align-items: center; justify-content: center; height: 100%; right: 0; top: 0; color: var(--console-text); text-decoration: none}
 
 #mobile-ime {position: fixed; top: 0; left: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; font-size: 16px}

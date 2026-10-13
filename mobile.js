@@ -260,6 +260,115 @@
     });
     for (const win of Object.values(client.id_to_window)) win.scale = client.scale;
   };
+  window.addEventListener('load', () => {
+    const menu = document.getElementById('float_menu');
+    const button = document.getElementById('float_menu_button');
+    const arrow = document.getElementById('float_menu_arrow');
+    const controls = menu.querySelector('.Menu');
+    const settings = document.getElementById('xpramenu');
+    const submenu = document.getElementById('menu_list');
+    let drag = null;
+    let dragged = false;
+    const position = y => {
+      const rect = button.getBoundingClientRect();
+      if (!rect.width) return;
+      const viewport = window.visualViewport;
+      const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
+      const width = viewport?.width || window.innerWidth, height = viewport?.height || window.innerHeight;
+      const right = left + width, bottom = top + height;
+      const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
+      const x = right - rect.width;
+      y = clamp(y ?? rect.top, top + 8, bottom - rect.height - 8);
+      menu.style.setProperty('--menu-right', `${Math.max(0, window.innerWidth - right)}px`);
+      menu.style.setProperty('--menu-top', `${y}px`);
+      controls.style.maxHeight = submenu.style.maxHeight = `${Math.max(1, height - 16)}px`;
+      const cw = controls.offsetWidth || 52;
+      const cx = clamp(x - cw - 8, left + 8, right - cw - 8);
+      Object.assign(controls.style, { left: `${cx}px`, right: 'auto',
+        top: `${clamp(y, top + 8, bottom - controls.offsetHeight - 8)}px` });
+      const sw = Math.min(264, Math.max(1, cx - left - 16));
+      Object.assign(submenu.style, { width: `${sw}px`, right: 'auto',
+        left: `${cx - sw - 8}px` });
+      submenu.style.top = `${clamp(y, top + 8, bottom - submenu.offsetHeight - 8)}px`;
+    };
+    const collapse = () => {
+      submenu.classList.remove('-visible', '-animating');
+      submenu.parentElement.classList.remove('-active');
+      settings.setAttribute('aria-expanded', 'false');
+      for (const details of menu.querySelectorAll('details')) details.open = false;
+    };
+    const close = () => {
+      window.retract_float_menu();
+      collapse();
+      arrow.setAttribute('aria-expanded', 'false');
+    };
+    const dismiss = event => { if (!menu.contains(event.target)) close(); };
+    // Canvas touch handlers stop propagation and suppress clicks, so dismiss in capture.
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('click', dismiss, true);
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (dragged && event.detail !== 0) { dragged = false; return; }
+      dragged = false;
+      collapse();
+      window.toggle_float_menu();
+      arrow.setAttribute('aria-expanded', String(window.float_menu_expanded));
+      position();
+    }, true);
+    settings.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const open = submenu.classList.toggle('-visible');
+      submenu.parentElement.classList.toggle('-active', open);
+      settings.setAttribute('aria-expanded', String(open));
+      position();
+    }, true);
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.isPrimary === false || drag) return;
+      const rect = button.getBoundingClientRect();
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, top: rect.top };
+      dragged = false;
+      button.setPointerCapture(drag.id);
+      event.stopPropagation();
+    });
+    button.addEventListener('pointermove', event => {
+      if (event.pointerId !== drag?.id) return;
+      const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+      if (!dragged && Math.hypot(dx, dy) <= 6) return;
+      dragged = true;
+      close();
+      position(drag.top + dy);
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    const end = event => {
+      if (event.pointerId !== drag?.id) return;
+      drag = null;
+      if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+      if (event.type === 'pointercancel') dragged = false;
+      if (dragged) event.preventDefault();
+      event.stopPropagation();
+    };
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, end);
+    menu.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { close(); arrow.focus({ preventScroll: true }); event.preventDefault(); }
+      if (event.key === ' ' && (event.target === arrow || event.target === settings)) {
+        (event.target === arrow ? button : settings).click();
+        event.preventDefault();
+      }
+      const moves = { ArrowUp: -16, ArrowDown: 16 };
+      if (event.target === arrow && moves[event.key]) {
+        const rect = button.getBoundingClientRect();
+        close();
+        position(rect.top + moves[event.key]);
+        event.preventDefault();
+      }
+    });
+    menu.addEventListener('toggle', () => position(), true);
+    window.addEventListener('resize', () => position());
+    for (const type of ['resize', 'scroll']) window.visualViewport?.addEventListener(type, () => position());
+  });
   const init = XpraClient.prototype.init;
   XpraClient.prototype.init = function (...args) {
     let profile = new URLSearchParams(window.location.search).get('performance') || 'balanced';

@@ -19,12 +19,30 @@ sys.stdout.buffer.write(packet.get_buffer(int(sys.argv[1])))
 }
 
 class Surface extends EventTarget {
-  style = {};
+  style = { setProperty(name, value) { this[name] = value; } };
   children = [];
+  classes = new Set();
+  classList = {
+    add: (...names) => names.forEach(name => this.classes.add(name)),
+    remove: (...names) => names.forEach(name => this.classes.delete(name)),
+    contains: name => this.classes.has(name),
+    toggle: (name, force = !this.classes.has(name)) => {
+      if (force) this.classes.add(name); else this.classes.delete(name);
+      return force;
+    },
+  };
   value = '';
   onwheel = null;
   captured = new Set();
-  append(...children) { this.children.push(...children); }
+  append(...children) { this.children.push(...children); children.forEach(child => { child.parentElement = this; }); }
+  contains(target) { return target === this || this.children.some(child => child.contains(target)); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  querySelectorAll(selector) {
+    return this.children.flatMap(child => {
+      const matches = selector === 'details' ? child.tagName === 'DETAILS' : child.classList.contains(selector.slice(1));
+      return [...(matches ? [child] : []), ...child.querySelectorAll(selector)];
+    });
+  }
   dispatchEvent(event) {
     const result = super.dispatchEvent(event);
     this[`on${event.type}`]?.(event);
@@ -52,9 +70,11 @@ class Surface extends EventTarget {
   releasePointerCapture(id) { this.captured.delete(id); }
   get clientWidth() { return Number.parseFloat(this.style.width) || 360; }
   get clientHeight() { return Number.parseFloat(this.style.height) || 680; }
+  get offsetWidth() { return this.style.display === 'none' ? 0 : this.clientWidth; }
+  get offsetHeight() { return this.style.display === 'none' ? 0 : this.clientHeight; }
   getBoundingClientRect() {
     const scales = this.style.transform?.match(/scale\(([^)]+)\)/)?.[1].split(',').map(Number) || [1];
-    return { left: this.left || 0, top: this.top || 0,
+    return { left: this.left || Number.parseFloat(this.style.left) || 0, top: this.top || Number.parseFloat(this.style.top) || 0,
       width: this.clientWidth * scales[0], height: this.clientHeight * (scales[1] ?? scales[0]) };
   }
 }
@@ -75,6 +95,31 @@ browser.history = { replaceState: (_state, _title, url) => {
   browser.location.search = new URL(url).search;
 } };
 const toolbar = new Surface();
+const menuControls = new Surface();
+Object.assign(menuControls.style, { width: '52px', height: '194px' });
+menuControls.classList.add('Menu');
+const menuButton = new Surface();
+Object.assign(menuButton.style, { width: '44px', height: '44px' });
+menuButton.getBoundingClientRect = () => ({
+  left: Number.parseFloat(toolbar.style['--menu-left'] ??
+    String(browser.innerWidth - Number.parseFloat(toolbar.style['--menu-right'] || '0') - 44)),
+  top: Number.parseFloat(toolbar.style['--menu-top'] ?? '12'), width: 44, height: 44,
+});
+const menuArrow = new Surface();
+menuButton.append(menuArrow);
+const settingsButton = new Surface();
+const settingsList = new Surface();
+Object.assign(settingsList.style, { width: '264px', height: '150px' });
+const settingsItem = new Surface();
+settingsItem.append(settingsButton, settingsList);
+menuControls.append(settingsItem);
+toolbar.append(menuControls, menuButton);
+const qualityDetails = new Surface();
+qualityDetails.tagName = 'DETAILS';
+qualityDetails.open = false;
+settingsList.append(qualityDetails);
+const menuUI = { float_menu_button: menuButton, float_menu_arrow: menuArrow,
+  xpramenu: settingsButton, menu_list: settingsList };
 const profileButtons = new Map();
 const connectionStatus = Object.fromEntries(
   ['progress', 'progress-label', 'progress-details', 'progress-bar', 'connection-retry'].map(id => [id, new Surface()]));
@@ -106,7 +151,7 @@ const document = new Surface();
 document.createElement = () => new Surface();
 document.body = new Surface();
 document.getElementById = id => id === 'screen' ? screen :
-  id === 'float_menu' ? toolbar : connectionStatus[id] || uploadUI[id] || null;
+  id === 'float_menu' ? toolbar : menuUI[id] || connectionStatus[id] || uploadUI[id] || null;
 document.querySelector = selector => selector === '#screen' ? screen : null;
 document.querySelectorAll = selector => selector === '#performance_menu_entry [data-performance]' ? [...profileButtons.values()] : [];
 const context = vm.createContext({ window: browser, document,
@@ -128,6 +173,7 @@ for (const file of ['Utilities', 'Constants', 'Keycodes', 'Window']) {
 const mobile = path.join(__dirname, 'mobile.js');
 // Load the same adapted client that console.sh serves, without starting a session.
 const web = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-console-test-'));
+let menuContext;
 try {
   const builder = fs.readFileSync(path.join(__dirname, 'console.sh'), 'utf8')
     .split(" <<'PY'\n")[1].split('\nPY\n')[0];
@@ -138,6 +184,7 @@ try {
     const button = new Surface();
     button.dataset = { performance: match[1] };
     profileButtons.set(match[1], button);
+    qualityDetails.append(button);
   }
   assert.equal(profileButtons.size, 3, 'The submenu must expose all three profiles as buttons');
   assert.ok(!html.includes('<select id="performance_profile"'), 'The browser dropdown must be removed');
@@ -174,36 +221,127 @@ try {
     assert.equal(event.defaultPrevented, false, 'Password typing must retain native browser behavior');
   }
   // Each successful reconnect initializes the real toolbar again.
-  let menuClicks = [];
-  const menuElement = { style: {} };
   const menuQuery = {
-    on(type, handler) { if (type === 'click') menuClicks.push(handler); return this; },
-    off(type, handler) { if (type === 'click') menuClicks = menuClicks.filter(fn => fn !== handler); return this; },
+    on(type, handler) { menuButton.addEventListener(type, handler); return this; },
+    off(type, handler) { menuButton.removeEventListener(type, handler); return this; },
+    show() { menuControls.style.display = 'block'; return this; },
+    hide() { menuControls.style.display = 'none'; return this; },
   };
-  for (const method of ['children', 'removeClass', 'addClass', 'css', 'hide', 'show', 'fadeIn', 'attr']) {
+  for (const method of ['children', 'removeClass', 'addClass', 'css', 'fadeIn', 'attr']) {
     menuQuery[method] = () => menuQuery;
   }
-  const menuContext = vm.createContext({
-    $: () => menuQuery, document: { getElementById: () => menuElement },
+  menuContext = vm.createContext({
+    $: () => menuQuery, document: { getElementById: () => toolbar },
     client: { reconfigure_all_trays() {} },
     float_menu_item_size: 30, float_menu_item_count: 7, float_menu_padding: 0,
     getstrparam: () => 'novnc', getboolparam: (name, fallback) => name === 'autohide' || fallback,
   });
   vm.runInContext(html.slice(html.indexOf('var float_menu_expanded ='),
     html.indexOf('      function init_auth_autosubmit()')), menuContext);
-  for (let connection = 0; connection < 6; connection++) {
-    vm.runInContext('init_float_menu()', menuContext);
-    menuClicks.forEach(handler => handler());
-    assert.equal(menuElement.style.width, '90px', 'A click after reconnect must open the three-control drawer exactly once');
-    menuClicks.forEach(handler => handler());
-    assert.equal(menuElement.style.width, '0px', 'The next click must close the drawer');
-  }
   const clientScript = html.match(/src="([^"]*Client\.js[^"]*)"/)[1].split('?')[0];
   vm.runInContext(fs.readFileSync(path.join(web, clientScript), 'utf8'), context);
 } finally {
   fs.rmSync(web, { recursive: true, force: true });
 }
 if (fs.existsSync(mobile)) vm.runInContext(fs.readFileSync(mobile, 'utf8'), context);
+browser.toggle_float_menu = () => menuContext.toggle_float_menu();
+browser.retract_float_menu = () => menuContext.retract_float_menu();
+Object.defineProperty(browser, 'float_menu_expanded', { get: () => menuContext.float_menu_expanded });
+browser.dispatchEvent(new Event('load'));
+for (let connection = 0; connection < 6; connection++) {
+  menuContext.init_float_menu();
+  menuButton.click();
+  assert.equal(menuControls.style.display, 'block', 'A click after reconnect must open the toolbar exactly once');
+  assert.equal(menuButton.getBoundingClientRect().left + 44, 360, 'The floating button must touch the right edge without a gap');
+  assert.equal(settingsList.classList.contains('-visible'), false, 'Opening the toolbar must leave settings collapsed');
+  settingsButton.click();
+  assert.equal(settingsList.classList.contains('-visible'), true, 'Settings must open only after clicking its entry');
+  settingsButton.click();
+  assert.equal(settingsList.classList.contains('-visible'), false, 'Clicking settings again must collapse it');
+  settingsButton.click();
+  qualityDetails.open = true;
+  const inside = new Event('pointerdown');
+  Object.defineProperty(inside, 'target', { value: profileButtons.get('balanced') });
+  document.dispatchEvent(inside);
+  assert.equal(menuControls.style.display, 'block', 'Using a menu control must keep the toolbar open');
+  const outside = new Event('pointerdown', { cancelable: true });
+  document.dispatchEvent(outside);
+  assert.equal(menuControls.style.display, 'none', 'A screen tap must close the toolbar before canvas handlers swallow it');
+  assert.equal(outside.defaultPrevented, false, 'Dismissing must retain the remote screen gesture');
+  assert.equal(qualityDetails.open, false, 'Closing must reset nested sections');
+  menuButton.click();
+  assert.equal(settingsList.classList.contains('-visible'), false, 'Reopening must not restore expanded settings');
+  menuButton.click();
+  assert.equal(menuControls.style.display, 'none', 'Clicking the floating button again must close the toolbar');
+}
+function dragMenu(type, x, y, pointerType = 'touch', pointerId = 31) {
+  const event = new Event(type, { cancelable: true });
+  Object.assign(event, { clientX: x, clientY: y, pointerType, pointerId, button: 0, isPrimary: true });
+  menuButton.dispatchEvent(event);
+}
+dragMenu('pointerdown', 330, 26);
+dragMenu('pointermove', 164, 304);
+dragMenu('pointerup', 164, 304);
+assert.equal(menuButton.getBoundingClientRect().left + 44, 360, 'Diagonal touch dragging must keep the button attached to the right edge');
+assert.equal(toolbar.style['--menu-top'], '290px', 'Touch dragging must move the floating button vertically');
+const dragClick = new Event('click', { cancelable: true });
+Object.assign(dragClick, { detail: 1 });
+menuButton.dispatchEvent(dragClick);
+assert.equal(menuControls.style.display, 'none', 'Releasing a drag must not toggle the toolbar');
+assert.equal(menuButton.captured.size, 0, 'Ending a drag must release pointer capture');
+dragMenu('pointerdown', 330, 304, 'mouse');
+dragMenu('pointermove', -500, 1500, 'mouse');
+dragMenu('pointerup', -500, 1500, 'mouse');
+assert.equal(menuButton.getBoundingClientRect().left + 44, 360, 'Mouse dragging must not pull the button away from the right edge');
+assert.ok(Number.parseFloat(toolbar.style['--menu-top']) <= 636, 'Dragging must keep the button within the bottom edge');
+dragMenu('pointerdown', 330, 620);
+dragMenu('pointermove', 332, 622);
+dragMenu('pointerup', 330, 620);
+menuButton.click();
+settingsButton.click();
+for (const panel of [menuControls, settingsList]) {
+  const rect = panel.getBoundingClientRect();
+  assert.ok(rect.left >= 0 && rect.left + rect.width <= 360, 'Menus must stay visible after vertical dragging');
+  assert.ok(rect.top >= 0 && rect.top + rect.height <= 680, 'Menus must stay visible near the bottom edge');
+}
+document.dispatchEvent(new Event('click'));
+assert.equal(menuControls.style.display, 'none', 'Keyboard or assistive clicks outside must also close the toolbar');
+function menuKey(key, target = menuArrow) {
+  const event = new Event('keydown', { cancelable: true });
+  Object.assign(event, { key });
+  Object.defineProperty(event, 'target', { value: target });
+  toolbar.dispatchEvent(event);
+  return event;
+}
+assert.equal(menuKey(' ').defaultPrevented, true, 'Menu buttons must support Space without scrolling');
+assert.equal(menuControls.style.display, 'block', 'Space must open the floating menu');
+menuKey(' ', settingsButton);
+assert.equal(settingsList.classList.contains('-visible'), true, 'Space must open settings');
+menuKey('Escape', settingsButton);
+assert.equal(menuControls.style.display, 'none', 'Escape must close the toolbar');
+assert.equal(document.activeElement, menuArrow, 'Escape must return focus to the floating button');
+menuKey('ArrowUp');
+assert.equal(toolbar.style['--menu-top'], '612px', 'Keyboard users must be able to move the button vertically');
+menuKey('ArrowLeft');
+menuKey('ArrowRight');
+assert.equal(menuButton.getBoundingClientRect().left + 44, 360, 'Horizontal arrow keys must keep the button on the right edge');
+assert.equal(toolbar.style['--menu-top'], '612px', 'Horizontal arrow keys must not move the button vertically');
+dragMenu('pointerdown', 330, 620);
+dragMenu('pointermove', 100, 500);
+dragMenu('pointercancel', 100, 500);
+assert.equal(menuButton.captured.size, 0, 'Cancelling a drag must release pointer capture');
+menuButton.click();
+assert.equal(menuControls.style.display, 'block', 'A cancelled drag must not swallow the next click');
+browser.visualViewport.height = 240;
+browser.visualViewport.dispatchEvent(new Event('resize'));
+assert.ok(Number.parseFloat(toolbar.style['--menu-top']) <= 196, 'A smaller viewport must keep the button reachable');
+browser.visualViewport.height = 680;
+browser.innerWidth = browser.visualViewport.width = 512;
+browser.visualViewport.dispatchEvent(new Event('resize'));
+assert.equal(menuButton.getBoundingClientRect().left + 44, 512, 'Viewport changes must keep the button flush with the new right edge');
+browser.innerWidth = browser.visualViewport.width = 360;
+browser.visualViewport.dispatchEvent(new Event('resize'));
+menuButton.click();
 const Client = vm.runInContext('XpraClient', context);
 const Window = vm.runInContext('XpraWindow', context);
 const types = vm.runInContext('PACKET_TYPES', context);
@@ -877,5 +1015,5 @@ async function checkUpload() {
   advance(250);
   assert.equal(uploadUI['mobile-upload'].open, false, 'Closing the native picker must release the modal surface');
 }
-checkClipboard().then(checkPasswordHandshake).then(checkUploadChunks).then(checkUpload).then(() => console.log('PASS: quality submenu, reconnect lifecycle, browser password authentication, disconnect status, gestures, sizing, IME, UTF-8 paste, and native chooser upload'))
+checkClipboard().then(checkPasswordHandshake).then(checkUploadChunks).then(checkUpload).then(() => console.log('PASS: menu disclosure, dismissal, dragging and bounds; quality, reconnect, password authentication, gestures, sizing, IME, UTF-8 paste, and upload'))
   .catch(error => { console.error(error); process.exitCode = 1; });
