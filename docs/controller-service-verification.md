@@ -20,7 +20,8 @@ remote pairing/control or Windows hardware evidence.
 
 Official owner account confirmation, live enrollment and Windows desktop pairing
 have passed. Real remote control/events and attachment write/read have passed;
-two independent real hosts/reconnect remain required. Public documentation does not establish a supported third-party
+two real official runtimes have also passed concurrent control and isolation.
+Recovery checks are recorded below. Public documentation does not establish a supported third-party
 controller SDK; the observed protocol is version-specific. Software vTPM is an
 experiment and does not prove physical hardware protection. Reboot startup is
 not configured. Do not claim overall completion from fixtures.
@@ -173,5 +174,46 @@ storage, and reject a junction. Run it on Windows with `node --test
 --test-name-pattern="^Windows native ACL" web/test/remote-upload-storage.test.mjs`.
 The full Linux suite has 443 passes, zero failures and eight Windows-only skips.
 The Windows host ran the same test file through native command/exec: all eight
-checks passed; the previous helper failed the positive case. Two-host concurrency,
-disconnect recovery and machine reboot remain unverified.
+checks passed; the previous helper failed the positive case. Machine reboot
+remains unverified.
+
+## Two official runtimes concurrently (2026-10-12)
+
+A temporary official CLI app-server `0.159.2` used the same authorized account,
+an isolated private Codex home and a separate empty workspace. Its native
+`remoteControl/enable` and `remoteControl/pairing/start` generated the host's
+code, which the existing Web/controller claimed with HTTP 200. No desktop GUI
+was involved. The Windows test reused the existing verification conversation.
+
+At 14:43 UTC, simultaneous Web sends to the Windows desktop and isolated CLI
+both returned 200. Native turn lifetimes overlapped and both completed. Each
+rendered conversation contained its own random marker and excluded the other;
+the two SSE streams were isolated (57 and 48 events). Requesting the Windows
+attachment under the CLI host returned 404. This is real two-runtime evidence
+through the official relay, including independent remote workspaces.
+
+To reproduce, use a separate official app-server with private external state,
+authorized account credentials and a loopback transport. Enable native remote
+control, obtain its manual pairing code, and claim it through the existing
+controller API. Use separate host-scoped views/events and existing test chats.
+Compare concurrent native turn intervals, reply markers and a cross-host file
+request. Keep codes, identities, credentials and application data outside Git.
+
+## Web service recovery (2026-10-13)
+
+At 02:51 UTC, restarting only the Web preserved the controller enrollment
+identity, both paired host identities and the native backend process. After
+owner login, new host-scoped views opened both existing test conversations;
+both rendered transcripts recovered their original markers. No new host code
+or controller enrollment was needed. The server desktop GUI stayed inactive.
+
+Read-only checks encountered intermittent upstream inventory failures and used
+bounded retries; this remains a reliability limitation. This check covers Web
+restart recovery. A complete controlled-client cold start and machine reboot
+are not verified; the software vTPM startup limitation still applies.
+
+The temporary CLI host's controller relationship was revoked using its explicit
+environment ID; remote control was disabled, its isolated runtime stopped and
+its copied credential file removed. At 03:03 UTC, the owner API confirmed ready
+enrollment, one paired online Windows desktop and no temporary CLI host. The
+native backend and Web remained active; the desktop GUI remained inactive.
