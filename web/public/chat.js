@@ -928,6 +928,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     },
     onEvent(event) {
       if (!alive) return;
+      if (event.native?.method === 'account/updated') capabilities.invalidate();
       const connected = event.kind === 'status' && event.native.online && (!receivedStatus || !online);
       if (event.kind === 'status') { online = event.native.online; receivedStatus = true; }
       if (connected) Promise.all([loadProjects(), loadThreads()]).catch(showError);

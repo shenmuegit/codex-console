@@ -9,12 +9,13 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
   const $ = selector => document.querySelector(selector), dialog = $('#capabilities-dialog'), draft = $('#draft'), search = $('#capability-search');
   const results = $('#capability-results'), details = $('#capability-details'), status = $('#capability-status'), trigger = $('#show-capabilities'), tags = $('#selected-capabilities');
   if (!pagePreferences.has(document)) pagePreferences.set(document, new Map());
-  const abort = new AbortController(), metadata = new Map(), memoryPreferences = pagePreferences.get(document);
+  const abort = new AbortController(), metadata = new Map(), catalogs = new Map(), memoryPreferences = pagePreferences.get(document);
   let context, revision = 0, alive = true, items = [], unavailable = [], tab = 'skills', filter = 'all', choices = [], preferenceKey;
-  let favorites = [], recent = [], storageLimited = false, loading = false, composing = false, tagSnapshot;
+  let favorites = [], recent = [], storageLimited = false, loading = false, refreshing = false, pendingSection, composing = false, tagSnapshot;
   const node = (tag, text, className) => { const value = document.createElement(tag); if (text != null) value.textContent = text; if (className) value.className = className; return value; };
   const button = (text, label, action, className) => { const value = node('button', text, className); value.type = 'button'; value.setAttribute('aria-label', label); value.onclick = action; return value; };
-  const valid = value => alive && value && getState() === value.state && value.state.ready && value.state.online !== false && !value.state.deleting && value.generation === value.state.generation && value.cwd === value.state.settings?.cwd && value.source === value.state.draft;
+  const valid = value => alive && value && getState() === value.state && value.threadId === value.state.threadId && value.state.ready && value.state.online !== false && !value.state.deleting && value.generation === value.state.generation && value.cwd === value.state.settings?.cwd && value.source === value.state.draft;
+  const blocked = item => loading && (refreshing || (pendingSection === 'apps' ? item.kind === 'app' : item.kind !== 'app'));
   const selections = () => (getState()?.selections ?? []).filter(item => capability(item) && getState().draft.slice(item.start, item.end) === item.token);
   const selected = item => selections().some(selection => identity(selection) === identity(item));
   function preferences() {
@@ -44,7 +45,7 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
     recent = [key, ...recent.filter(value => value !== key)].slice(0, 20); persist();
   }
   function close(edit = false) {
-    ++revision; context = null; loading = false; trigger.setAttribute('aria-expanded', 'false');
+    ++revision; context = null; loading = refreshing = false; pendingSection = null; trigger.setAttribute('aria-expanded', 'false');
     if (dialog.open) dialog.close();
     if (edit && !draft.disabled) draft.focus();
   }
@@ -56,7 +57,7 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
   }
   function choose(item) {
     if (!valid(context)) { close(); return; }
-    if (loading || composing || item.disabled || context.state.composing || selected(item)) return;
+    if (blocked(item) || composing || item.disabled || context.state.composing || selected(item)) return;
     const caret = insertSelection(context.state, item, context);
     draft.value = context.state.draft; draft.setSelectionRange(caret, caret);
     context = { ...context, start: caret, end: caret, source: context.state.draft };
@@ -77,7 +78,7 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
     const state = node('span', selected(item) ? '已选 · ' + item.status : item.status, 'capability-state');
     content.append(state);
     const actions = node('div', null, 'capability-actions'), choice = button(selected(item) ? '已选' : '选择', '选择 ' + name, () => choose(item), 'capability-choice');
-    choice.disabled = Boolean(loading || item.disabled || selected(item)); choices.push(choice);
+    choice.disabled = Boolean(blocked(item) || item.disabled || selected(item)); choices.push(choice);
     const wasFavorite = favorites.includes(key);
     const favorite = button(wasFavorite ? '★' : '☆', (wasFavorite ? '取消收藏 ' : '收藏 ') + name, () => {
       if (!valid(context)) { close(); return; }
@@ -91,7 +92,7 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
   }
   function showDetails(item) {
     if (!valid(context)) { close(); return; }
-    details.replaceChildren(); details.hidden = false; results.hidden = true; choices = [];
+    details.replaceChildren(); details.hidden = false; details.dataset.kind = item.kind; results.hidden = true; choices = [];
     const back = button('← 返回列表', '返回能力列表', () => { renderList(); search.focus(); }, 'small');
     details.append(back, node('h3', title(item)), node('p', item.description || '暂无用途说明'), node('p', item.source + ' · ' + item.status, 'muted small'));
     details.append(node('p', item.path ?? item.id, 'muted small'));
@@ -101,8 +102,13 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
       const list = node('ul', null, 'capability-results'); for (const skill of item.skills ?? []) row(skill, list, true); details.append(list);
     }
     details.append(button(selected(item) ? '已选' : '选择此能力', '选择 ' + title(item), () => choose(item), 'capability-choice'));
-    details.lastChild.disabled = Boolean(loading || item.disabled || selected(item)); choices.push(details.lastChild);
+    details.lastChild.disabled = Boolean(blocked(item) || item.disabled || selected(item)); choices.push(details.lastChild);
     back.focus();
+  }
+  function renderStatus(count = choices.length) {
+    const issues = unavailable.filter(issue => tab === 'plugins' || issue.kind !== '应用');
+    status.textContent = [...issues.map(issue => issue.kind + '：' + issue.message), loading ? pendingSection === 'apps' ? '正在读取应用…' : '正在读取技能和插件…' : count + ' 项', storageLimited ? '收藏和最近使用暂时只保存在当前页面。' : '收藏和最近使用保存在此浏览器'].join(' · ');
+    $('#refresh-capabilities').disabled = loading;
   }
   function renderList() {
     if (!valid(context)) return;
@@ -116,29 +122,41 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
     for (const value of ['skills', 'plugins']) { const control = $('#capability-tab-' + value); control.setAttribute('aria-selected', String(tab === value)); control.setAttribute('tabindex', tab === value ? '0' : '-1'); }
     $('#capability-panel').setAttribute('aria-labelledby', 'capability-tab-' + tab);
     for (const value of ['all', 'favorites', 'recent']) $('#capability-filter-' + value).setAttribute('aria-pressed', String(filter === value));
-    status.textContent = [...unavailable.map(issue => issue.kind + '：' + issue.message), loading ? '正在读取…' : visible.length + ' 项', storageLimited ? '收藏和最近使用暂时只保存在当前页面。' : '收藏和最近使用保存在此浏览器'].join(' · ');
-    $('#refresh-capabilities').disabled = loading;
+    renderStatus(visible.length);
   }
-  async function load() {
-    if (!valid(context)) return;
-    const current = context, version = ++revision; loading = true; unavailable = []; renderList();
-    try {
-      const catalog = await api('/api/capabilities', { viewId, threadId: current.state.threadId });
-      if (version !== revision || !valid(current)) { if (version === revision) close(); return; }
-      items = catalog.items; unavailable = catalog.unavailable ?? []; metadata.clear();
+  async function load(force = false) {
+    if (!valid(context) || loading) return;
+    const current = context, version = ++revision, key = JSON.stringify([selectedHost, current.generation, current.cwd, current.threadId]);
+    const catalog = catalogs.get(key) ?? {};
+    const active = () => version === revision && valid(context) && context.state === current.state && context.threadId === current.threadId && context.generation === current.generation && context.cwd === current.cwd;
+    const paint = () => { render(); if (!details.hidden && pendingSection === 'apps' && details.dataset.kind !== 'app') renderStatus(); else renderList(); };
+    const show = () => {
+      items = [...(catalog.workspace?.items ?? []), ...(catalog.apps?.items ?? [])];
+      unavailable = [...(catalog.workspace?.unavailable ?? []), ...(catalog.apps?.unavailable ?? [])]; metadata.clear();
       for (const item of items) { metadata.set(identity(item), item); for (const child of item.skills ?? []) metadata.set(identity(child), child); }
-    } catch (error) {
-      if (version !== revision || !valid(current)) { if (version === revision) close(); return; }
-      items = []; unavailable = [{ kind: '列表暂时无法读取', message: error.message }];
+      paint();
+    };
+    show(); loading = true; refreshing = force;
+    try {
+      for (const section of ['workspace', 'apps']) {
+        if (section === 'apps' && tab !== 'plugins' || !force && catalog[section] && !catalog[section].unavailable?.length) continue;
+        pendingSection = section; renderList();
+        let response;
+        try { response = await api('/api/capabilities', { viewId, threadId: current.threadId, section, refresh: force }); }
+        catch (error) { response = { items: [], unavailable: [{ kind: section === 'apps' ? '应用' : '列表暂时无法读取', message: error.message }] }; }
+        if (!active()) { if (version === revision) close(); return; }
+        catalog[section] = response; catalogs.set(key, catalog); show();
+      }
+    } finally {
+      if (version === revision) { loading = refreshing = false; paint(); pendingSection = null; }
     }
-    loading = false; render(); renderList();
   }
   function open() {
     const state = getState(); if (!alive || !state?.ready || state.online === false || state.deleting || state.composing) return;
     onOpen?.(); preferences(); readPreferences(); let start = draft.selectionStart ?? state.draft.length, end = draft.selectionEnd ?? start;
     const binding = state.selections?.find(item => item.start < start && start < item.end);
     if (start === end && binding) start = end = binding.end;
-    context = { state, generation: state.generation, cwd: state.settings?.cwd, source: state.draft, start, end };
+    context = { state, threadId: state.threadId, generation: state.generation, cwd: state.settings?.cwd, source: state.draft, start, end };
     search.value = ''; filter = 'all'; composing = false; position(); dialog.showModal(); trigger.setAttribute('aria-expanded', 'true'); search.focus(); load();
   }
   function render() {
@@ -156,7 +174,7 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
   }
   const bind = (element, event, action) => element.addEventListener(event, action, { signal: abort.signal });
   bind(trigger, 'click', open); bind($('#close-capabilities'), 'click', () => close()); bind($('#done-capabilities'), 'click', () => close(true));
-  bind($('#refresh-capabilities'), 'click', load); bind(dialog, 'cancel', () => close()); bind(dialog, 'close', () => close());
+  bind($('#refresh-capabilities'), 'click', () => load(true)); bind(dialog, 'cancel', () => close()); bind(dialog, 'close', () => close());
   bind(dialog, 'click', event => { if (event.target !== dialog) return; const box = dialog.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) close(); });
   bind(search, 'input', renderList);
   bind(search, 'compositionstart', () => { composing = true; });
@@ -174,11 +192,11 @@ export function mountCapabilities({ api, viewId, selectedHost = 'local', getStat
   });
   for (const value of ['skills', 'plugins']) {
     const control = $('#capability-tab-' + value);
-    bind(control, 'click', () => { tab = value; renderList(); });
-    bind(control, 'keydown', event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); tab = event.key === 'Home' ? 'skills' : event.key === 'End' ? 'plugins' : value === 'skills' ? 'plugins' : 'skills'; renderList(); $('#capability-tab-' + tab).focus(); });
+    bind(control, 'click', () => { tab = value; renderList(); load(); });
+    bind(control, 'keydown', event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); tab = event.key === 'Home' ? 'skills' : event.key === 'End' ? 'plugins' : value === 'skills' ? 'plugins' : 'skills'; renderList(); load(); $('#capability-tab-' + tab).focus(); });
   }
   for (const value of ['all', 'favorites', 'recent']) bind($('#capability-filter-' + value), 'click', () => { filter = value; renderList(); });
   window.addEventListener?.('resize', position, { signal: abort.signal });
   window.addEventListener?.('storage', event => { if (event.key !== null && event.key !== preferenceKey) return; readPreferences(); if (valid(context)) renderList(); }, { signal: abort.signal });
-  return { render, close, remember, dispose() { alive = false; abort.abort(); close(); } };
+  return { render, close, remember, invalidate() { catalogs.clear(); metadata.clear(); items = []; unavailable = []; close(); render(); }, dispose() { alive = false; abort.abort(); close(); catalogs.clear(); } };
 }

@@ -703,8 +703,13 @@ selections through `$` and `@`. These preferences contain identities only and
 are stored in this browser separately for each host and actual working
 directory. They do not automatically select capabilities in another message.
 If browser storage is unavailable, selection still works and preferences remain
-in memory for the page. Refresh rereads the native catalog; reopening also
-refreshes it. Plugins' skill lists reflect the current workspace's discovery.
+in memory for the page. Skills and local plugins load first; app discovery runs
+only when opening Plugins and Apps, without blocking local plugin selection or
+details. Reopening uses page-memory catalogs scoped to host, workspace, thread
+and native connection generation. Account changes clear them. Normal reads use
+native caches; Refresh explicitly forces discovery and locks stale choices until
+the reply. Failed sources cannot leave selectable stale entries, and sending
+still rechecks native identities. Catalogs are not persisted to browser storage.
 
 Desktop uses a dialog anchored above the composer; phones use a bottom sheet.
 Escape closes and restores focus, Return to editing focuses the draft, and

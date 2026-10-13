@@ -207,15 +207,15 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   const nativeRead = async (method, params) => (await codex.rpc(method, params)).result;
   async function skillsAt(cwd) { return (await nativeRead('skills/list', { cwds: [cwd] })).data.flatMap(entry => entry.skills); }
   async function pluginsAt(cwd) { return (await nativeRead('plugin/installed', { cwds: [cwd] })).marketplaces.flatMap(market => market.plugins); }
-  async function appsAt(threadId, unavailable) {
+  async function appsAt(threadId, unavailable, refresh = false) {
     const [catalog, runtime] = await Promise.all([(async () => {
       const data = []; let cursor;
       do {
-        try { const page = await nativeRead('app/list', { threadId, limit: 100, ...(cursor ? { cursor } : {}), ...(unavailable && !cursor ? { forceRefetch: true } : {}) }); data.push(...page.data); cursor = page.nextCursor; }
+        try { const page = await nativeRead('app/list', { threadId, limit: 100, ...(cursor ? { cursor } : {}), ...(refresh && !cursor ? { forceRefetch: true } : {}) }); data.push(...page.data); cursor = page.nextCursor; }
         catch (error) { if (!unavailable) throw error; unavailable.push({ kind: '应用', message: error.message }); break; }
       } while (cursor);
       return data;
-    })(), nativeRead('app/installed', { threadId, ...(unavailable ? { forceRefresh: true } : {}) })]);
+    })(), nativeRead('app/installed', { threadId, ...(refresh ? { forceRefresh: true } : {}) })]);
     const installed = new Map(runtime.apps.map(app => [app.id, app]));
     return catalog.map(app => ({ ...app, callable: Boolean(installed.get(app.id)?.callable && installed.get(app.id)?.enabled && app.isAccessible && app.isEnabled) }));
   }
@@ -238,9 +238,13 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       description: app.description || '', source: '应用 / 连接器', keywords: [], disabled: !app.callable,
       status: !app.isAccessible ? '未连接或不可访问' : !app.isEnabled ? '未启用' : !app.callable ? '当前不可调用' : '可用' };
   }
-  async function capabilities(state) {
+  async function capabilities(state, { section, refresh = false } = {}) {
     const unavailable = [], cwd = state.thread.cwd;
-    const calls = await Promise.allSettled([nativeRead('skills/list', { cwds: [cwd], forceReload: true }), nativeRead('plugin/installed', { cwds: [cwd] }), appsAt(state.threadId, unavailable)]);
+    const calls = await Promise.allSettled([
+      section === 'apps' ? { data: [] } : nativeRead('skills/list', { cwds: [cwd], ...(refresh ? { forceReload: true } : {}) }),
+      section === 'apps' ? { marketplaces: [] } : nativeRead('plugin/installed', { cwds: [cwd] }),
+      section === 'workspace' ? [] : appsAt(state.threadId, unavailable, refresh),
+    ]);
     for (let i = 0; i < calls.length; i++) if (calls[i].status === 'rejected') unavailable.push({ kind: ['技能', '插件', '应用'][i], message: calls[i].reason.message });
     const entries = calls[0].status === 'fulfilled' ? calls[0].value.data : [], marketplaces = calls[1].status === 'fulfilled' ? calls[1].value.marketplaces : [];
     for (const entry of entries) for (const issue of entry.errors ?? []) unavailable.push({ kind: '技能', message: issue.message });
@@ -844,9 +848,10 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         if (!id(body.projectId) || body.confirmed !== true) throw error(400, 'CONFIRM_REQUIRED', '请确认移除项目登记。');
         await codex.rpc('project/delete', { projectId: body.projectId }); reply(res, 200, {});
       } else if (url.pathname === '/api/capabilities') {
-        fields(body, ['viewId', 'threadId']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
+        fields(body, ['viewId', 'threadId', 'section', 'refresh']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');
-        reply(res, 200, await capabilities(state));
+        if (body.section !== undefined && !['workspace', 'apps'].includes(body.section) || body.refresh !== undefined && typeof body.refresh !== 'boolean') throw error(400, 'INVALID_CAPABILITIES', '能力目录参数不正确。');
+        reply(res, 200, await capabilities(state, body));
       } else if (url.pathname === '/api/completions') {
         fields(body, ['viewId', 'threadId', 'sigil', 'query']); const view = requireView(body.viewId, session), state = chats.get(body.threadId);
         if (view.threadId !== body.threadId || !state?.ready) throw error(403, 'THREAD_NOT_OPEN', '请先打开目标会话。');

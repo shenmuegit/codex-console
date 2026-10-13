@@ -42,7 +42,8 @@ def main():
         if path == '/api/thread/open':
             result = dict(snapshot=snapshot, cursor=dict(generation=1, seq=1))
         elif path == '/api/capabilities':
-            result = catalog
+            result = dict(catalog, items=[item for item in catalog['items'] if
+                body.get('section') is None or (item['kind'] == 'app') == (body['section'] == 'apps')])
         elif path == '/api/thread/goal':
             result = dict(result=dict(goal=None), cursor=dict(generation=1, seq=1))
         else:

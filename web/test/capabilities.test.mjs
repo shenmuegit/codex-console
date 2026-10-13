@@ -8,7 +8,7 @@ import { insertSelection, encodeComposer } from '../public/composer.js';
 const skill = (path = '/work/review/SKILL.md') => ({ kind: 'skill', name: 'review', path, label: '$review', displayName: '代码审查', description: '检查代码和回归风险', source: 'Ponytail 插件', status: '可用', disabled: false, pluginId: 'pony@market', keywords: ['审查'] });
 const plugin = () => ({ kind: 'plugin', id: 'pony@market', name: 'pony', label: '@pony', displayName: 'Ponytail', description: '代码质量工具', source: '已安装插件', status: '可用', disabled: false, keywords: ['代码'], skills: [skill()] });
 function deferred() { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; }
-async function fixture(t, api = async () => ({ items: [skill(), plugin()], unavailable: [] }), host = 'local') {
+async function fixture(t, api = async (_path, body) => ({ items: body.section === 'apps' ? [] : [skill(), plugin()], unavailable: [] }), host = 'local') {
   const dom = domFixture(), state = { ready: true, online: true, generation: 1, threadId: 't', draft: '请检查 😀 后文', selections: [], settings: { cwd: '/work' } };
   const draft = dom.get('draft'); draft.value = state.draft; draft.setSelectionRange(4, 4);
   const { mountCapabilities } = await import('../public/capabilities.js');
@@ -36,7 +36,7 @@ async function catalogFixture(t, results = {}) {
     }
   }, 5); t.after(() => clearInterval(timer));
   await f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
-  return { ...f, cookie, viewId, catalog: () => f.request('/api/capabilities', { method: 'POST', cookie, body: { viewId, threadId: 't' } }) };
+  return { ...f, cookie, viewId, catalog: (options = {}) => f.request('/api/capabilities', { method: 'POST', cookie, body: { viewId, threadId: 't', ...options } }) };
 }
 
 test('catalog uses the opened native workspace, includes metadata and plugin skills, and excludes file/thread searches', async t => {
@@ -60,14 +60,30 @@ test('catalog preserves usable sources on partial failure and loads connector pa
   assert.ok(response.json.unavailable.some(issue => issue.kind === '技能' && issue.message.includes('Skills offline')));
 });
 
-test('catalog forces fresh native discovery and preserves native skill/marketplace errors', async t => {
+test('explicit catalog refresh forces native discovery and preserves native skill/marketplace errors', async t => {
   const f = await catalogFixture(t, { skills: { data: [{ skills: [{ name: 'okay', path: '/skills/okay/SKILL.md', enabled: true }], errors: [{ path: '/skills/bad', message: 'Unreadable skill' }] }] }, plugins: { marketplaces: [], marketplaceLoadErrors: [{ message: 'Unreadable marketplace' }] } });
-  const response = await f.catalog(); assert.equal(response.status, 200); assert.ok(response.json.items.some(item => item.name === 'okay'));
+  const response = await f.catalog({ refresh: true }); assert.equal(response.status, 200); assert.ok(response.json.items.some(item => item.name === 'okay'));
   assert.ok(response.json.unavailable.some(issue => issue.message.includes('Unreadable skill')));
   assert.ok(response.json.unavailable.some(issue => issue.message.includes('Unreadable marketplace')));
   assert.equal(f.peer.sent.findLast(call => call.method === 'skills/list').params.forceReload, true);
   assert.equal(f.peer.sent.findLast(call => call.method === 'app/list').params.forceRefetch, true);
   assert.equal(f.peer.sent.findLast(call => call.method === 'app/installed').params.forceRefresh, true);
+});
+
+test('workspace capabilities return without reading the external app catalog', async t => {
+  const f = await catalogFixture(t), response = await f.catalog({ section: 'workspace' }); assert.equal(response.status, 200);
+  assert.ok(response.json.items.some(item => item.kind === 'skill')); assert.ok(response.json.items.some(item => item.kind === 'plugin'));
+  assert.equal(f.peer.sent.some(call => ['app/list', 'app/installed'].includes(call.method)), false);
+  assert.notEqual(f.peer.sent.findLast(call => call.method === 'skills/list').params.forceReload, true);
+});
+
+test('apps can load separately and normal catalog reads do not force native refetches', async t => {
+  const f = await catalogFixture(t), response = await f.catalog({ section: 'apps' }); assert.equal(response.status, 200);
+  assert.deepEqual(response.json.items.map(item => item.kind), ['app']);
+  assert.equal(f.peer.sent.some(call => ['skills/list', 'plugin/installed'].includes(call.method)), false);
+  assert.notEqual(f.peer.sent.findLast(call => call.method === 'app/list').params.forceRefetch, true);
+  assert.notEqual(f.peer.sent.findLast(call => call.method === 'app/installed').params.forceRefresh, true);
+  for (const options of [{ section: 'all' }, { refresh: 'true' }]) assert.equal((await f.catalog(options)).status, 400);
 });
 
 test('a later connector page failure retains usable entries from successful pages', async t => {
@@ -207,11 +223,56 @@ test('search composition suppresses even an unflagged Enter until composition en
   f.dom.event('capability-search', 'compositionend'); f.dom.event('capability-search', 'keydown', { key: 'Enter' }); assert.equal(f.state.selections.length, 1);
 });
 
-test('cached choices cannot be selected while a refreshed native catalog is pending', async t => {
+test('cached choices cannot be selected while an explicit native refresh is pending', async t => {
   const response = deferred(); let calls = 0;
   const f = await fixture(t, () => ++calls === 1 ? { items: [skill()], unavailable: [] } : response.promise);
-  await f.open(); f.picker.close(); await f.open(); f.choose(); assert.equal(f.state.selections.length, 0);
+  await f.open(); f.dom.get('refresh-capabilities').click(); await delay(0); f.choose(); assert.equal(f.state.selections.length, 0);
   response.resolve({ items: [{ ...skill(), disabled: true, status: '未启用' }], unavailable: [] }); await delay(0); assert.equal(f.button('选择 代码审查').disabled, true);
+});
+
+test('reopening a successfully loaded picker uses its page cache immediately', async t => {
+  const calls = [], f = await fixture(t, async (_path, body) => { calls.push(body); return { items: [skill(), plugin()], unavailable: [] }; });
+  await f.open(); f.picker.close(); await f.open(); assert.equal(calls.length, 1);
+  f.choose(); assert.equal(f.state.selections.length, 1); assert.equal(f.dom.get('capabilities-dialog').open, true);
+});
+
+test('apps load lazily while local plugins remain usable, including after a selection changes the draft', async t => {
+  const apps = deferred(), calls = [], f = await fixture(t, async (_path, body) => {
+    calls.push(body); return body.section === 'apps' ? apps.promise : { items: [skill(), plugin()], unavailable: [] };
+  });
+  await f.open(); assert.deepEqual(calls.map(call => call.section), ['workspace']);
+  f.dom.get('capability-tab-plugins').click(); await delay(0);
+  assert.deepEqual(calls.map(call => call.section), ['workspace', 'apps']);
+  assert.equal(f.button('选择 Ponytail').disabled, false); f.choose('Ponytail'); assert.equal(f.state.selections.length, 1);
+  apps.resolve({ items: [{ kind: 'app', id: 'github', name: 'GitHub', label: '@GitHub', status: '可用', disabled: false }], unavailable: [] }); await delay(0);
+  assert.equal(f.dom.get('capabilities-dialog').open, true); assert.equal(f.button('选择 GitHub').disabled, false);
+  f.picker.close(); await f.open(); assert.equal(calls.length, 2);
+});
+
+test('catalog caches stay separate for native generations, conversations and workspaces', async t => {
+  for (const scope of ['generation', 'thread', 'cwd']) await t.test(scope, async t => {
+    let reads = 0; const f = await fixture(t, async () => { reads++; return { items: [skill()], unavailable: [] }; });
+    await f.open(); f.picker.close();
+    if (scope === 'generation') f.state.generation++; else if (scope === 'thread') f.state.threadId = 'other'; else f.state.settings.cwd = '/other';
+    f.picker.render(); await f.open(); assert.equal(reads, 2);
+    f.picker.close(); await f.open(); assert.equal(reads, 2);
+  });
+});
+
+test('late app catalogs leave the already opened local plugin details intact', async t => {
+  const apps = deferred(), f = await fixture(t, async (_path, body) => body.section === 'apps' ? apps.promise : { items: [skill(), plugin()], unavailable: [] });
+  await f.open(); f.dom.get('capability-tab-plugins').click(); await delay(0); f.button('查看 Ponytail 详情').click();
+  const heading = f.dom.get('capability-details').children[1]; assert.equal(f.dom.get('capability-details').hidden, false);
+  apps.resolve({ items: [], unavailable: [] }); await delay(0);
+  assert.equal(f.dom.get('capability-details').hidden, false); assert.ok(f.dom.get('capability-details').children[1] === heading);
+  assert.doesNotMatch(f.dom.get('capability-status').textContent, /正在读取/);
+});
+
+test('account invalidation closes the picker and discards pending catalog responses', async t => {
+  const apps = deferred(), calls = [], f = await fixture(t, async (_path, body) => { calls.push(body.section); return body.section === 'apps' ? apps.promise : { items: [skill(), plugin()], unavailable: [] }; });
+  await f.open(); f.dom.get('capability-tab-plugins').click(); await delay(0); f.picker.invalidate();
+  apps.resolve({ items: [], unavailable: [] }); await delay(0); assert.equal(f.dom.get('capabilities-dialog').open, false);
+  await f.open(); assert.deepEqual(calls, ['workspace', 'apps', 'workspace', 'apps']);
 });
 
 test('streaming renders preserve keyboard focus on unchanged selected tags', async t => {
