@@ -767,6 +767,92 @@ assert.ok(!bar, 'There must be no extra input bar above the phone keyboard');
 const input = document.body.children.find(element => element.id === 'mobile-ime');
 assert.ok(input, 'Chinese composition still needs a focusable input receiver');
 assert.ok(!input.focused, 'Page initialization must not bring up the phone keyboard');
+const keyboardMap = (overrides = {}) => client._process_notify_show([
+  types.notify_show, 0, 7272, 'control channel', 0, '', 'codex-console-keyboard',
+  JSON.stringify({ width: win.w, height: win.h, dpr: 1, rects: [[90, 90, 210, 180]], focused: false, ...overrides }),
+  [], {}, 10, '',
+]);
+const tapInput = () => {
+  touch('pointerdown', 100, 100);
+  touch('pointerup', 100, 100);
+};
+keyboardMap();
+packets.length = 0;
+const expectedMouse = client.getMouse({ clientX: 100, clientY: 100 });
+tapInput();
+assert.equal(input.focused, true, 'A mapped editable tap must focus the phone IME inside the pointer event, without waiting for a timer');
+assert.deepEqual(clicks().map(packet => [packet[2], packet[3], ...packet[4].slice(0, 2)]),
+  [[1, true, expectedMouse.x, expectedMouse.y], [1, false, expectedMouse.x, expectedMouse.y]],
+  'The remote click must use the pre-keyboard layout and happen before keyboard resize');
+keyboardMap({ focused: true });
+keyboardMap();
+assert.equal(input.focused, false, 'Remote focus leaving an editable field must close an automatically opened keyboard');
+advance(250);
+keyboardMap();
+packets.length = 0;
+tapInput();
+tapInput();
+assert.deepEqual(clicks().map(packet => [packet[2], packet[3]]), [[1, true], [1, false], [1, true], [1, false]],
+  'Editable fields must also send consecutive left clicks immediately');
+client._set_keyboard(false);
+advance(250);
+client._keyboard_map = null;
+tapInput();
+assert.equal(input.focused, false, 'An unconfirmed tap must wait for the remote editable focus');
+advance(250);
+keyboardMap({ focused: true });
+assert.equal(input.focused, true, 'A recent editable tap must open the IME when delayed remote metadata confirms its focus');
+client._set_keyboard(false);
+advance(250);
+client._keyboard_map = null;
+tapInput();
+advance(250);
+keyboardMap({ focused: true, rects: [[0, 0, 10, 10]] });
+assert.equal(input.focused, false, 'Remote focus alone must not open the IME for a tap outside the editable region');
+advance(2250);
+keyboardMap({ focused: true });
+assert.equal(input.focused, false, 'An old tap must not reopen the IME when metadata eventually arrives');
+advance(250);
+keyboardMap({ width: win.w + 1, height: win.h + 1, dpr: 1.5 });
+tapInput();
+assert.equal(input.focused, true, 'Fractional-DPI renderer rounding must not reject a matching native window');
+client._set_keyboard(false);
+advance(250);
+keyboardMap({ width: win.w + 1, height: win.h + 1, dpr: 1.5, rects: [[0, 0, win.w + 1, win.h + 1]] });
+assert.equal(client._editable_at({ clientX: screen.getBoundingClientRect().left + win.w / client.scale, clientY: 100 }, win), false,
+  'Renderer rounding must never treat pixels outside the native window as editable');
+for (const [reason, prepare] of [
+  ['missing region', () => keyboardMap({ rects: [] })],
+  ['stale geometry', () => keyboardMap({ width: win.w + 20 })],
+  ['expired geometry', () => { keyboardMap(); advance(3500); }],
+  ['read-only session', () => { keyboardMap(); client.server_readonly = true; }],
+  ['disconnected session', () => { keyboardMap(); client.connected = false; }],
+  ['grabbed pointer', () => { keyboardMap(); client.mouse_grabbed = true; }],
+  ['malformed region', () => keyboardMap({ rects: [[0, 0, -1, 5]] })],
+]) {
+  prepare();
+  tapInput();
+  assert.equal(input.focused, false, `${reason} must not open the keyboard`);
+  advance(250);
+  client.server_readonly = false;
+  client.connected = true;
+  client.mouse_grabbed = false;
+}
+keyboardMap();
+touch('pointerdown', 100, 100);
+touch('pointermove', 130, 120);
+touch('pointerup', 130, 120);
+assert.equal(input.focused, false, 'Dragging inside an editable region must retain remote selection without opening the keyboard');
+touch('pointerdown', 100, 100);
+touch('pointercancel', 100, 100);
+assert.equal(input.focused, false, 'A cancelled editable tap must not open the keyboard');
+keyboardMap();
+tapInput();
+input.blur();
+assert.equal(client._ime_open, false, 'System keyboard dismissal must reset the keyboard button state');
+browser.init_mobile_keyboard(client);
+assert.equal(document.body.children.filter(element => element.id === 'mobile-ime').length, 1,
+  'Reinitializing after reconnect must reuse the same input receiver');
 browser.toggle_mobile_keyboard();
 assert.equal(input.focused, true);
 browser.innerWidth = browser.visualViewport.width = 360;

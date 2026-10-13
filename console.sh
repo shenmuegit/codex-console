@@ -226,7 +226,7 @@ export XPRA_PRIVATE_PULSEAUDIO=1
 
 # Xpra parses this command into argv; quote each argument without evaluating it.
 # Keep the native picker in the app process instead of an external XDG portal.
-child=$(python3 - "$script_dir/app-watch.sh" "$CONSOLE_APP_BIN" "--user-data-dir=$state/profile" "${CONSOLE_APP_ARGS[@]}" --xdg-portal-required-version=999 <<'CHILD'
+child=$(python3 - "$script_dir/app-watch.sh" "$CONSOLE_APP_BIN" "--user-data-dir=$state/profile" "${CONSOLE_APP_ARGS[@]}" --xdg-portal-required-version=999 --remote-debugging-port=0 --remote-debugging-address=127.0.0.1 <<'CHILD'
 import shlex
 import sys
 print(shlex.join(sys.argv[1:]))

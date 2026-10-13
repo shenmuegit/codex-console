@@ -105,7 +105,7 @@ Only the custom Codex Console page is published. Upstream connection and diagnos
 | Drag / select | Touch and slide |
 | Right-click | Tap with two fingers together |
 | Scroll | Slide with two fingers together |
-| Keyboard | Focus a remote text field, then open the keyboard button in the top-right drawer |
+| Keyboard | Tap an editable remote field to open automatically; the drawer's keyboard button also opens/closes it |
 | Fullscreen / audio | Open the right-edge drawer and use the matching control |
 
 Single taps click as soon as the finger lifts; consecutive taps remain left-clicks. A single touch-and-slide drags. Compose text using your phone's input method; committed text is sent through the remote clipboard and paste shortcut without a pre-paste delay. Consecutive pastes retain a 100 ms clipboard guard. The remote field must have focus and the Xpra clipboard must remain enabled. Committing text replaces the remote clipboard contents. Over HTTPS, input commits and uploads reuse their prepared clipboard contents so the device clipboard cannot substitute older text.

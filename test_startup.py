@@ -39,6 +39,8 @@ with tempfile.TemporaryDirectory() as directory:
         assert not (state / 'cert.pem').exists() and not (state / 'key.pem').exists(), 'HTTP startup must not generate certificates'
         child = shlex.split(next(argument.split('=', 1)[1] for argument in arguments if argument.startswith('--start-child=')))
         assert '--xdg-portal-required-version=999' in child, "Native upload must use the app-owned GTK picker"
+        assert '--remote-debugging-port=0' in child, "Keyboard detection must use a private, dynamically allocated renderer endpoint"
+        assert '--remote-debugging-address=127.0.0.1' in child, "The DOM bridge must stay on loopback"
         assert sorted(path.name for path in web.glob('*.html*')) == ['index.html'], \
             'Only the custom page may be served, including after upgrading existing assets'
 

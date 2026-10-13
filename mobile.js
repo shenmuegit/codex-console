@@ -8,6 +8,8 @@
   const connect = XpraClient.prototype.connect;
   XpraClient.prototype.connect = function (...args) {
     const start = () => {
+      this._keyboard_map = null;
+      this._set_keyboard?.(false);
       this._connection_closed = false;
       this._upload_ready = false;
       this.capture_keyboard = false;
@@ -32,6 +34,8 @@
   };
   const close = XpraClient.prototype.close;
   XpraClient.prototype.close = function (...args) {
+    this._keyboard_map = null;
+    this._set_keyboard?.(false);
     if (!this.reconnect_in_progress) {
       this._connection_closed = true;
       this.connected = false;
@@ -165,7 +169,11 @@
         return;
       }
       if (mode === 'tap') {
+        const editable = this.client._editable_at?.(event, this);
+        this.client._note_keyboard_tap?.(event, this);
+        // Click in the original coordinates before the phone keyboard resizes.
         click(event);
+        if (editable) this.client._set_keyboard(true, true);
       } else if (mode === 'two') click(start, 2);
       else if (mode === 'drag') last = event;
       release();
@@ -435,6 +443,10 @@
 
   const notify = XpraClient.prototype._process_notify_show;
   XpraClient.prototype._process_notify_show = function (packet) {
+    if (Utilities.s(packet[6]) === 'codex-console-keyboard') {
+      this._keyboard_notify?.(Utilities.s(packet[7]));
+      return;
+    }
     if (Utilities.s(packet[6]) === 'codex-console-upload') {
       this._upload_notify?.(Utilities.s(packet[7]));
       return;
@@ -604,6 +616,7 @@
   };
 
   window.init_mobile_keyboard = client => {
+    if (client._set_keyboard) return;
     // Keep a focusable IME receiver without adding a visible input row.
     const input = document.createElement('textarea');
     input.id = 'mobile-ime';
@@ -614,6 +627,9 @@
     input.spellcheck = false;
     input.setAttribute('aria-label', '手机输入法，可使用双拼');
     document.body.append(input);
+    // Preserve the open state until the button's click toggles it. Otherwise
+    // native anchor focus blurs the receiver first and the click reopens it.
+    document.getElementById('keyboard_button')?.addEventListener('pointerdown', event => event.preventDefault());
     let composing = false;
     let busy = false;
     let queue = [];
@@ -698,13 +714,79 @@
         special(event.inputType === 'deleteContentBackward' ? 'Backspace' : 'Enter');
       }
     });
-    window.toggle_mobile_keyboard = () => {
-      client._ime_open = !client._ime_open;
-      if (client._ime_open) input.focus({ preventScroll: true });
-      else input.blur();
+    let confirmTimer, pendingTap;
+    const reflectFocus = () => {
+      client._ime_open = document.activeElement === input;
+      if (!client._ime_open) {
+        pendingTap = null;
+        client._ime_auto = false;
+        clearTimeout(confirmTimer);
+      }
       client._screen_resized();
       const button = document.getElementById('keyboard_button');
       button?.classList.toggle('icon-toggled', client._ime_open);
     };
+    input.addEventListener('focus', reflectFocus);
+    input.addEventListener('blur', reflectFocus);
+    client._set_keyboard = (open, automatic = false) => {
+      pendingTap = null;
+      clearTimeout(confirmTimer);
+      client._ime_auto = open && automatic;
+      if (open) input.focus({ preventScroll: true });
+      else input.blur();
+      if (automatic) confirmTimer = setTimeout(() => {
+        if (client._ime_auto && !client._keyboard_map?.focused) client._set_keyboard(false);
+      }, 2000);
+    };
+    client._keyboard_notify = message => {
+      try {
+        const map = JSON.parse(message);
+        const dpr = map?.dpr ?? 1;
+        if (!map || !Number.isInteger(map.width) || map.width <= 0 || map.width > 16384 ||
+            !Number.isInteger(map.height) || map.height <= 0 || map.height > 16384 ||
+            !Number.isFinite(dpr) || dpr <= 0 || dpr > 8 ||
+            typeof map.focused !== 'boolean' || !Array.isArray(map.rects) || map.rects.length > 4096 ||
+            !map.rects.every(rect => Array.isArray(rect) && rect.length === 4 && rect.every(Number.isInteger) &&
+              rect[0] >= 0 && rect[1] >= 0 && rect[2] > 0 && rect[3] > 0 &&
+              rect[0] + rect[2] <= map.width && rect[1] + rect[3] <= map.height)) {
+          client._keyboard_map = null;
+          if (client._ime_auto) client._set_keyboard(false);
+          return;
+        }
+        const wasFocused = client._keyboard_map?.focused;
+        client._keyboard_map = { ...map, dpr, at: performance.now() };
+        if (pendingTap && performance.now() - pendingTap.at > 2000) pendingTap = null;
+        if (map.focused && pendingTap && pendingTap.width === pendingTap.win.w &&
+            pendingTap.height === pendingTap.win.h && editableAt(pendingTap.x, pendingTap.y, pendingTap.win)) {
+          // Android can also open after a recent tap's remote focus confirmation.
+          // Mapped taps keep synchronous focus for browsers that require it.
+          client._set_keyboard(true, true);
+        }
+        if (map.focused) clearTimeout(confirmTimer);
+        else if (wasFocused && client._ime_auto) client._set_keyboard(false);
+      } catch {
+        client._keyboard_map = null;
+      }
+    };
+    const editableAt = (x, y, win) => {
+      const map = client._keyboard_map;
+      // Electron rounds fractional-DPI renderer sizes up to whole native pixels.
+      const rounding = map ? Math.ceil(map.dpr) - 1 : 0;
+      if (!client.connected || client.server_readonly || client.mouse_grabbed || win !== mainWindow(client) ||
+          !map || performance.now() - map.at > 3000 || Math.abs(map.width - win.w) > rounding ||
+          Math.abs(map.height - win.h) > rounding) return false;
+      return x >= 0 && y >= 0 && x < win.w && y < win.h && map.rects.some(([left, top, width, height]) =>
+        x >= left && y >= top && x < left + width && y < top + height);
+    };
+    client._note_keyboard_tap = (event, win) => {
+      const mouse = client.getMouse(event);
+      pendingTap = { win, x: mouse.x - win.x, y: mouse.y - win.y,
+        width: win.w, height: win.h, at: performance.now() };
+    };
+    client._editable_at = (event, win) => {
+      const mouse = client.getMouse(event);
+      return editableAt(mouse.x - win.x, mouse.y - win.y, win);
+    };
+    window.toggle_mobile_keyboard = () => client._set_keyboard(!client._ime_open);
   };
 })();

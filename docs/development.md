@@ -24,6 +24,7 @@ flowchart LR
 | `app-watch.sh` | Single supervisor lock, dedicated-window filter, app recovery and cleanup |
 | `mobile.js` | Touch, native IME, scaling, quality, authentication/reconnect behavior |
 | `upload.py` | Completed-upload validation, original filename and targeted browser callback |
+| `keyboard.py` | Loopback CDP DOM hit regions and focus, delivered through Xpra notifications |
 | `console.css` | Login, connection, and toolbar layout |
 | `codex-console.service` | User-service template rendered by deployment |
 | `scripts/check.sh` | Standard isolated checks and optional live endpoint verification |
@@ -59,6 +60,10 @@ CONSOLE_TEST_TLS=1 python3 test_integration.py
 ```
 
 This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity, text field, and native file picker without a profile class or transient parent. It verifies HTTP, correct and rejected passwords, window isolation, decoded WS audio, uploads, immediate Unicode clipboard/key packets, and sequential text commits followed by Enter. The TLS variant generates a temporary identity, explicitly trusts it for the test, and checks HTTPS/WSS. Both stop their sessions and use no desktop-app account or service; compatibility with a particular app build still needs that app.
+
+With the installed Electron app and Node.js 22+, run `node test_keyboard.cjs` to check the DOM keyboard bridge in a disposable Xvfb/profile. It covers editable fields, readonly/disabled controls, noneditable children, composer padding/buttons, clipping, overlays, focus and streaming updates without using an account. `CONSOLE_TEST_DPR=1.5 node test_keyboard.cjs` also checks fractional-DPI native coordinates and scrollbars. `CONSOLE_TEST_APP_BIN` overrides the test executable.
+
+The supervisor starts `keyboard.py` beside the app. Electron's `--remote-debugging-port=0` publishes an ephemeral port in the private profile's `DevToolsActivePort`; the endpoint stays on `127.0.0.1` and must not be exposed publicly. The probe uses native mouse-pixel `elementFromPoint` tests, sends geometry/focus only, and resynchronizes after navigation or reconnect. Web clients focus the existing IME receiver synchronously in the editable tap gesture. Stale or mismatched window geometry is ignored; the manual keyboard button remains available for unsupported/custom editors and large regions above the one-million-pixel scan limit. Restart the console and reload the Web page after installing this change. A real phone is still needed to verify its OS keyboard and input method.
 
 ## Existing-app live check
 

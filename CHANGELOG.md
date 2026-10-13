@@ -11,6 +11,7 @@
 - MIT license, contribution and security guides, issue templates, and continuous integration.
 - Dedicated app supervision that reopens a missing window and cleans up children on shutdown.
 - Responsive login and connection screens, connection retry, and a touch toolbar.
+- Automatic phone keyboard opening from verified remote DOM input regions, with focus, occlusion and stale-layout checks.
 - Optional native HTTPS/WSS using a supplied certificate and key, including a TLS integration check.
 
 ### Changed

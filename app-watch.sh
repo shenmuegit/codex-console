@@ -21,6 +21,9 @@ xpra control "${DISPLAY:-:100}" add-window-filter window class-instance '=' "('N
 # their owning process: forward only windows from this supervisor's app children.
 xpra control "${DISPLAY:-:100}" add-window-filter window ppid '!=' "$$" 9>&- >/dev/null
 
+# Keep the DOM bridge beside the app so its X11 parent filter and shutdown work.
+python3 "$(dirname "$(readlink -f "$0")")/keyboard.py" "$state/profile" 9>&- &
+
 while windows=$(xprop -root _NET_CLIENT_LIST 2>/dev/null); do
   visible=false
   for wid in $(printf '%s\n' "$windows" | grep -oE '0x[[:xdigit:]]+' || true); do
