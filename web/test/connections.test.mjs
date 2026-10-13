@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
 import { mountConnections } from '../public/connections.js';
+import { mountUsage } from '../public/usage.js';
 import { domFixture } from './dom.mjs';
 
 test('setup opens the official account link and keeps host-code submission disabled until enrollment', async t => {
@@ -105,4 +106,40 @@ test('preserved enrollment with revoked account login explains recovery and disa
   assert.match(dom.get('controller-state').textContent, /官方账号登录/);
   assert.equal(dom.get('controller-authorize').disabled, true);
   assert.equal(dom.get('pair-submit').disabled, true);
+});
+
+test('system settings opens device and usage dialogs and returns focus to their settings entries', async t => {
+  const dom = domFixture();
+  const api = async path => path === '/api/controller/status' ? { available: true, enrolled: true, phase: 'ready' } :
+    path === '/api/controller/hosts' ? { hosts: [] } : { result: { rateLimits: { secondary: { windowDurationMins: 10080, usedPercent: 25 } } } };
+  const connections = mountConnections({ api, selectHost() {} });
+  const usage = mountUsage({ api, viewId: 'view', getState: () => null, onChange() {}, onError() {} });
+  t.after(() => { connections.dispose(); usage.dispose(); dom.restore(); });
+  assert.ok(dom.get('show-settings'), 'System settings has a sidebar entry');
+  dom.get('show-settings').click(); assert.equal(dom.get('settings-dialog').open, true);
+  dom.get('show-connections').click();
+  assert.equal(dom.get('settings-dialog').open, false); assert.equal(dom.get('connections-dialog').open, true);
+  dom.get('close-connections').click();
+  assert.equal(dom.get('settings-dialog').open, true); assert.equal(dom.document.activeElement, dom.get('show-connections'));
+  dom.get('show-usage').click(); await tick();
+  assert.equal(dom.get('settings-dialog').open, false); assert.equal(dom.get('usage-dialog').open, true);
+  assert.match(dom.get('weekly-usage').textContent, /已用 25%/);
+  dom.get('close-usage').click();
+  assert.equal(dom.get('settings-dialog').open, true); assert.equal(dom.document.activeElement, dom.get('show-usage'));
+  dom.get('close-settings').click(); assert.equal(dom.get('settings-dialog').open, false);
+});
+
+test('direct connection recovery and slash-command usage do not reopen settings; disposal closes settings', t => {
+  const dom = domFixture();
+  const api = async path => path === '/api/controller/status' ? { available: true, enrolled: true, phase: 'ready' } :
+    path === '/api/controller/hosts' ? { hosts: [] } : { result: {} };
+  const connections = mountConnections({ api, selectHost() {} });
+  const usage = mountUsage({ api, viewId: 'view', getState: () => null, onChange() {}, onError() {} });
+  t.after(() => { connections.dispose(); usage.dispose(); dom.restore(); });
+  assert.ok(dom.get('show-settings'));
+  dom.get('show-connections').click(); dom.get('close-connections').click(); assert.notEqual(dom.get('settings-dialog').open, true);
+  dom.get('show-usage').click(); dom.get('close-usage').click(); assert.notEqual(dom.get('settings-dialog').open, true);
+  dom.get('show-settings').click(); dom.get('show-connections').click(); connections.dispose();
+  assert.equal(dom.get('settings-dialog').open, false); assert.equal(dom.get('connections-dialog').open, false);
+  dom.get('show-settings').click(); assert.equal(dom.get('settings-dialog').open, false);
 });

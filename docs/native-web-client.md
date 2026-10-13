@@ -144,8 +144,9 @@ remain visible until native previews arrive. Rejected steering retains the queue
 entry or draft; uncertain outcomes show **Steer status needs checking** and keep
 the existing recovery flow without automatically sending again.
 
-The sidebar footer opens account-wide seven-day usage, including when no
-conversation is selected. Switching conversations does not change its scope.
+The sidebar footer's **System settings** contains **Connect devices** and
+account-wide **7-day usage**, including when no conversation is selected.
+Switching conversations does not change its scope.
 The attachment plus opens the existing file/photo pickers. Ctrl+V (Cmd+V on
 macOS) in the composer also uploads clipboard files and images through that
 same queue, with its size/type validation, previews, progress and retry/removal.

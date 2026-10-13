@@ -62,6 +62,9 @@ nav { display: grid; gap: 2px; }
 .global-usage { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 8px 10px; text-align: left; }
 .global-usage svg { width: 17px; height: 17px; color: var(--muted); }
 .footer-arrow { margin-left: auto; color: var(--muted); font-size: 18px; }
+#settings-dialog { width: min(440px, calc(100vw - 32px)); }
+.settings-actions { gap: 6px; }
+.settings-actions .global-usage { min-height: 48px; }
 .chat-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg); }
 .chat-heading { display: flex; align-items: center; gap: 10px; flex: 0 0 52px; min-height: 52px; padding: max(8px, env(safe-area-inset-top)) 24px 8px; }
 .thread-title { max-width: 320px; min-width: 0; font-size: 14px; font-weight: 500; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

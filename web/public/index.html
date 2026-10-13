@@ -40,8 +40,7 @@
         </div>
         <footer class="sidebar-footer">
           <label class="device-picker" for="host-picker"><span>设备</span><select id="host-picker" aria-label="选择 Codex 设备"><option value="local">server 本机</option></select></label>
-          <button id="show-connections" class="global-usage" type="button" aria-controls="connections-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>连接设备</span><span class="footer-arrow" aria-hidden="true">›</span></button>
-          <button id="show-usage" class="global-usage" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+          <button id="show-settings" class="global-usage" type="button" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 4.4 9.8 2h4.4l.5 2.4 2 .9 2.1-.8L21 8.3l-1.7 1.6v4.2l1.7 1.6-2.2 3.8-2.1-.8-2 .9-.5 2.4H9.8l-.5-2.4-2-.9-2.1.8L3 15.7l1.7-1.6V9.9L3 8.3l2.2-3.8 2.1.8 2-.9Z"/><circle cx="12" cy="12" r="3"/></svg><span>系统设置</span><span class="footer-arrow" aria-hidden="true">›</span></button>
         </footer>
       </div>
       <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭侧栏" tabindex="-1" hidden></button>
@@ -114,6 +113,13 @@
     <section id="capability-panel" class="capability-panel" role="tabpanel" aria-labelledby="capability-tab-skills"><ul id="capability-results" class="capability-results"></ul><section id="capability-details" class="capability-details" aria-label="能力详情" hidden></section></section>
     <p id="capability-status" class="muted small" role="status" aria-live="polite"></p>
     <div class="capability-footer"><button id="refresh-capabilities" type="button">刷新列表</button><button id="done-capabilities" class="primary" type="button">返回编辑</button></div>
+  </dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading"><h2 id="settings-title">系统设置</h2><button id="close-settings" class="icon-button" type="button" aria-label="关闭系统设置">×</button></div>
+    <nav class="settings-actions" aria-label="系统设置选项">
+      <button id="show-connections" class="global-usage" type="button" aria-haspopup="dialog" aria-controls="connections-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>连接设备</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+      <button id="show-usage" class="global-usage" type="button" aria-haspopup="dialog" aria-controls="usage-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>7 天用量</span><span class="footer-arrow" aria-hidden="true">›</span></button>
+    </nav>
   </dialog>
   <dialog id="connections-dialog" aria-labelledby="connections-title">
     <div class="dialog-heading"><h2 id="connections-title">连接 Codex 设备</h2><button id="close-connections" class="icon-button" type="button" aria-label="关闭设备连接">×</button></div>

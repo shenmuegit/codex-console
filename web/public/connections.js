@@ -1,6 +1,6 @@
 export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   const $ = id => document.querySelector('#' + id), abort = new AbortController(), options = { signal: abort.signal };
-  let alive = true, enrolled = false, timer, generation = 0;
+  let alive = true, enrolled = false, timer, generation = 0, returnToSettings;
   const namesKey = 'codex-device-names';
   let savedNames = [];
   try {
@@ -61,6 +61,16 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
     try { await operation(); } catch (e) { error(e); }
     finally { if (alive) button.disabled = button.id === 'pair-submit' && !enrolled; }
   }
+  $('show-settings').addEventListener('click', () => $('settings-dialog').showModal(), options);
+  $('close-settings').addEventListener('click', () => $('settings-dialog').close(), options);
+  for (const [button, dialog] of [['show-connections', 'connections-dialog'], ['show-usage', 'usage-dialog']]) {
+    $(button).addEventListener('click', () => {
+      if ($('settings-dialog').open) { returnToSettings = button; $('settings-dialog').close(); }
+    }, { ...options, capture: true });
+    $(dialog).addEventListener('close', () => {
+      if (alive && returnToSettings === button) { returnToSettings = null; $('settings-dialog').showModal(); $(button).focus(); }
+    }, options);
+  }
   $('show-connections').addEventListener('click', () => { $('connections-dialog').showModal(); refresh(); }, options);
   $('close-connections').addEventListener('click', () => $('connections-dialog').close(), options);
   $('refresh-connections').addEventListener('click', refresh, options);
@@ -83,6 +93,6 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
     event.preventDefault(); if (!enrolled) return;
     action($('pair-submit'), async () => { await api('/api/controller/pair', { code: $('pair-code').value.trim() }); $('pair-code').value = ''; await refresh(); });
   }, options);
-  return { refresh, dispose() { alive = false; ++generation; clearTimeout(timer); abort.abort(); $('connections-dialog').close();
+  return { refresh, dispose() { alive = false; ++generation; clearTimeout(timer); abort.abort(); $('settings-dialog').close(); $('connections-dialog').close();
     $('controller-auth-link').removeAttribute('href'); $('controller-auth-link').hidden = true; $('controller-callback').value = ''; } };
 }

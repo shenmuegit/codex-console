@@ -126,7 +126,8 @@ next integration gates.
 
 ## Web setup and device routing
 
-The owner-authenticated Web now provides a **Connect devices** dialog, official
+The sidebar's **System settings → Connect devices** opens the owner-authenticated
+device dialog, official
 authorization link, copied callback input, controlled-host code input, and a
 device selector. Setup and code submission require the existing owner login and
 canonical origin. Only the authorization URL, expiration and public status are
@@ -137,6 +138,11 @@ retains the known label while inventory loads or temporarily fails. Only IDs
 and display names are cached; connection state and authorization stay live.
 Unknown devices use a readable fallback, and sign-in loss or controller
 deauthorization clears these hints.
+
+System settings also contains **7-day usage**. Closing either child dialog with
+its close button or Escape returns to settings and focuses the entry used;
+closing settings returns to the sidebar. Direct connection recovery and the
+usage slash command retain their existing entry paths.
 
 Optional private configuration enables the controller:
 

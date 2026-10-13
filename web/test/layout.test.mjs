@@ -6,14 +6,12 @@ import { mountUsage } from '../public/usage.js';
 import { createChatState } from '../public/chat.js';
 import { domFixture } from './dom.mjs';
 
-test('model effort and context are in the composer while weekly usage belongs to the global sidebar', () => {
+test('model effort and context are in the composer while weekly usage stays outside the conversation controls', () => {
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
   const start = html.indexOf('<form id="composer"'), composer = html.slice(start, html.indexOf('</form>', start));
   for (const id of ['model', 'effort', 'context-usage', 'context-meter']) assert.ok(composer.includes(`id="${id}"`), `${id} is inside the input surface`);
   for (const id of ['effective-settings', 'connection', 'refresh-usage']) assert.equal(html.includes(`id="${id}"`), false, `${id} is omitted`);
   assert.equal(composer.includes('id="show-usage"'), false);
-  const sidebar = html.indexOf('id="sidebar"');
-  assert.ok(sidebar >= 0); assert.ok(html.slice(sidebar, html.indexOf('id="sidebar-backdrop"', sidebar)).includes('id="show-usage"'));
 });
 
 test('weekly usage opens without a selected chat and keeps one account-scoped value across thread switches', async t => {
