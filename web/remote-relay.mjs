@@ -63,7 +63,7 @@ export function createRemoteRelay({ controller, openWebSocket = (url, headers) =
                     if (Date.now() - stream.lastPong > 600_000) { stream.finish(true); continue; }
                     send(stream.envelope('ping', { state: 'foreground', skip_history: true }));
                   }
-                } catch { disconnect(); } finally { checking = false; }
+                } catch { if (wire === socket) disconnect(); } finally { checking = false; }
               }, 30_000); heartbeat.unref?.();
               resolve();
             } else receive(packet);

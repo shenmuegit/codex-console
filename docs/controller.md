@@ -116,6 +116,8 @@ Connection loss rejects pending calls with an unknown outcome. A new connection
 initializes new host streams and resumes native snapshots rather than silently
 replaying a mutation. Pings maintain stream liveness; account/key validation and
 session refresh run with the heartbeat, and expired leases reconnect.
+Heartbeat failures close only the connection that started the check. A delayed
+failure from an old connection cannot tear down a successfully reconnected relay.
 
 The transport checks use a real local WebSocket peer and independently verify
 the device signature. They cover two hosts, colliding IDs, approval routing,

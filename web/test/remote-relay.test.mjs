@@ -179,3 +179,23 @@ test('an uncorrelated relay error fails a current RPC without guessing its reque
   await waitFor(() => client.status().online);
   await assert.rejects(client.rpc('turn/start', {}), e => e.code === 'NATIVE_DISCONNECTED' && e.outcome === 'unknown');
 });
+
+test('stale heartbeat failures leave a replacement usable, while current failures close it', async t => {
+  const f = await setup(t), heartbeats = [], interval = globalThis.setInterval;
+  t.mock.method(globalThis, 'setInterval', (callback, ...args) => { heartbeats.push(callback); return interval(callback, ...args); });
+  const a = f.relay.openHost('host-a'); await waitFor(() => a.readyState === 1);
+  const session = f.controller.session.bind(f.controller); let rejectOld;
+  t.mock.method(f.controller, 'session', () => {
+    if (!rejectOld) return new Promise((_resolve, reject) => { rejectOld = reject; });
+    return session();
+  });
+  const pending = heartbeats[0](); await waitFor(() => rejectOld);
+  f.peer.disconnect(); await waitFor(() => a.readyState === 3);
+  const b = f.relay.openHost('host-b'); await waitFor(() => b.readyState === 1);
+  rejectOld(new Error('Old session request failed')); await pending;
+  assert.equal(b.readyState, 1, 'An old heartbeat must not close the replacement connection');
+  b.send('{"id":"after-reconnect","method":"model/list","params":{}}');
+  await waitFor(() => f.peer.messages.some(packet => packet.env_id === 'host-b' && packet.message?.id === 'after-reconnect'));
+  t.mock.method(f.controller, 'session', async () => { throw new Error('Current session request failed'); });
+  await heartbeats.at(-1)(); assert.equal(b.readyState, 3, 'The current connection must still fail closed');
+});
