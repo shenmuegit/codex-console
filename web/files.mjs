@@ -222,9 +222,17 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
       return input;
     },
     async issueTranscriptRefs(thread, turns) {
-      const result = new Map(); let cwd;
+      const result = new Map(); let cwd, images;
       try { cwd = remoteFs ? await remoteFs.checkedPath(thread.cwd) : await realpath(thread.cwd); if (remoteFs ? remoteFs.paths().relative(thread.cwd, cwd) !== '' : cwd !== resolve(thread.cwd)) cwd = null; } catch {}
-      const roots = remoteFs ? [...(cwd ? [cwd] : []), ...[...uploads.values()].filter(meta => meta.remotePath).map(meta => remoteFs.paths().dirname(meta.remotePath))] : [...(cwd ? [cwd] : []), ...generated, root];
+      try {
+        const home = codex?.info?.()?.codexHome;
+        if (home) {
+          const path = remoteFs ? remoteFs.paths().join(home, 'generated_images') : join(home, 'generated_images');
+          const actual = remoteFs ? await remoteFs.directory(path) : await realpath(path);
+          if (remoteFs ? remoteFs.paths().relative(path, actual) === '' : actual === resolve(path)) images = actual;
+        }
+      } catch { /* Only the native host's existing, unchanged image directory is admitted. */ }
+      const roots = [...(cwd ? [cwd] : []), ...(images ? [images] : []), ...(remoteFs ? [...uploads.values()].filter(meta => meta.remotePath).map(meta => remoteFs.paths().dirname(meta.remotePath)) : [...generated, root])];
       for (const turn of turns) for (const item of turn.items ?? []) {
         const candidates = collectTargets(item);
         if (item.type === 'userMessage') for (const part of item.content ?? []) {

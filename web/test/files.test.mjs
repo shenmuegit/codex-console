@@ -21,6 +21,41 @@ async function openThread(f, cookie, viewId) {
   f.peer.replyTo('thread/resume', resumeFixture('t')); assert.equal((await pending).status, 200);
 }
 
+test('native generated images resolve outside the project without admitting the rest of Codex home', async t => {
+  const dir = await workspace(t), home = join(dir, 'home'), cwd = join(dir, 'project'), generated = join(home, 'generated_images');
+  await mkdir(generated, { recursive: true }); await mkdir(cwd);
+  const path = join(generated, 'cat.png'), secret = join(home, 'auth.json'); await writeFile(path, tinyPng()); await writeFile(secret, 'PRIVATE');
+  const files = createFiles({ stateDir: join(dir, 'state'), codex: { info: () => ({ codexHome: home }) } });
+  const refs = await files.issueTranscriptRefs({ id: 't', cwd }, [{ items: [{ id: 'image', type: 'imageGeneration', savedPath: path }] }]);
+  assert.equal(refs.get('image').length, 1); assert.equal(refs.get('image')[0].imageMime, 'image/png');
+  const opened = await files.openReference(refs.get('image')[0].id); assert.deepEqual(await opened.handle.readFile(), tinyPng()); await opened.handle.close();
+  const denied = await files.issueTranscriptRefs({ id: 't', cwd }, [{ items: [{ id: 'secret', type: 'imageGeneration', savedPath: secret }] }]);
+  assert.deepEqual(denied.get('secret'), []);
+  await rm(generated, { recursive: true }); await symlink(home, generated);
+  const redirected = await files.issueTranscriptRefs({ id: 't', cwd }, [{ items: [{ id: 'redirected', type: 'imageGeneration', savedPath: join(generated, 'auth.json') }] }]);
+  assert.deepEqual(redirected.get('redirected'), []);
+});
+
+test('large generated-image notifications keep SSE connected and publish authenticated picture references', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
+  t.after(() => stream.req.destroy());
+  const opening = f.request('/api/thread/open', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
+  for (let n = 0; n < 100 && !f.peer.sent.some(call => call.method === 'thread/resume'); n++) await delay(5);
+  const snapshot = resumeFixture('t'); snapshot.thread.cwd = snapshot.cwd = f.dir; f.peer.replyTo('thread/resume', snapshot); await opening;
+  const savedPath = join(f.dir, 'generated.png'); await writeFile(savedPath, tinyPng());
+  f.peer.notify('item/completed', { threadId: 't', turnId: 'turn', item: { id: 'generated', type: 'imageGeneration', status: 'completed', result: 'A'.repeat(4_475_076), savedPath } });
+  await delay(150);
+  assert.equal(stream.res.destroyed, false); assert.ok(stream.text().length < 10_000);
+  const event = stream.text().split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))).find(event => event.native?.method === 'item/completed');
+  assert.ok(event, 'Generated image metadata must arrive over SSE without a resync');
+  assert.equal(event.native.params.item.result, ''); assert.equal(event.native.params.item.savedPath, savedPath);
+  const rendered = await f.request('/api/thread/render', { method: 'POST', cookie, body: { viewId, threadId: 't' } });
+  const image = rendered.json.native.items.find(item => item.id === 'generated');
+  assert.equal(image.role, 'assistant'); assert.equal(image.files.length, 1);
+  assert.equal((await f.request(image.files[0].imageHref)).status, 401);
+  const response = await f.request(image.files[0].imageHref, { cookie }); assert.equal(response.status, 200); assert.equal(response.headers['content-type'], 'image/png');
+});
+
 test('native path formatting follows the composer and descriptors encode text files versus photos', async t => {
   assert.equal(formatNativePath('/a b/file.txt'), '"/a b/file.txt"');
   assert.equal(formatNativePath('/a "b"/file.txt'), '/a "b"/file.txt');

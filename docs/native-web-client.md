@@ -603,6 +603,13 @@ in a modal; its close button, Escape or backdrop dismisses it. Inline Markdown
 pictures use the same preview and are not repeated below the message. Ordinary
 files keep their download links; native message data and text exports retain
 their image markers. Previews use authenticated same-origin image references.
+Native image-generation results appear directly in the transcript, outside
+collapsed tool activity. Their saved paths resolve under the selected native
+host's `CODEX_HOME/generated_images`, including Unix and Windows remote hosts.
+Inline image bytes are omitted from browser previews before history limits and
+SSE framing, so large results retain their saved paths without forcing a resync.
+The existing raster checks, login requirement and symlink protections still apply;
+native records and generated files remain intact.
 Completed draft photos are compact thumbnails without filenames or uploaded
 labels. Click to enlarge; hover or keyboard focus reveals a red × in the upper
 right to remove that photo. Touch devices keep the × visible. Upload progress,

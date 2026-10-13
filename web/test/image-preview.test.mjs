@@ -2,24 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mountChat, itemText, createChatState, installSnapshot, applyNativeEvent } from '../public/chat.js';
-import { renderTranscript } from '../transcript.mjs';
+import { renderTranscript, boundedHistoryItem, collectTargets } from '../transcript.mjs';
 import { domFixture } from './dom.mjs';
 import { resumeFixture } from './helpers.mjs';
 
 const user = { id: 'user', type: 'userMessage', content: [{ type: 'text', text: '看这张图', text_elements: [] }, { type: 'localImage', path: '/private/photo.png' }] };
 const files = [{ name: '图片.png', href: '/api/files/photo', imageHref: '/api/images/photo' }, { name: 'notes.txt', href: '/api/files/notes' }];
-async function fixture(t) {
-  const dom = domFixture(), snapshot = resumeFixture('t', [{ id: 'turn', status: 'completed', items: [user] }]);
-  snapshot.transcript = renderTranscript(snapshot.thread, snapshot.initialTurnsPage.data, new Map([[user.id, files]]));
+async function fixture(t, message = user, references = files) {
+  const dom = domFixture(), snapshot = resumeFixture('t', [{ id: 'turn', status: 'completed', items: [message] }]);
+  snapshot.transcript = renderTranscript(snapshot.thread, snapshot.initialTurnsPage.data, new Map([[message.id, references]]));
   const api = async (path, body) => path === '/api/thread/open' ? { snapshot, cursor: { generation: 1, seq: 1 } } : { result: { data: [], nextCursor: null } };
   const chat = mountChat({ api, viewId: 'view', uploadLimitBytes: 32 }); t.after(() => { chat.dispose(); dom.restore(); });
   chat.connection(true); await chat.open('t');
-  return { dom, chat, picture: dom.get('messages').children[0].children[2].children[0] };
+  return { dom, chat, picture: dom.get('messages').children[0].children[2]?.children[0] };
 }
 function pictureEvent(dom, picture, type, key) {
   const event = new Event(type, { cancelable: true }); Object.defineProperty(event, 'target', { value: picture });
   if (key) Object.assign(event, { key }); dom.document.body.dispatchEvent(event); return event;
 }
+
+test('large image-generation results retain saved paths without copying inline bytes into history previews', () => {
+  const image = { id: 'generated', type: 'imageGeneration', status: 'completed', result: 'A'.repeat(4_475_076), savedPath: '/native/generated_images/t/cat.png' };
+  const preview = boundedHistoryItem(image);
+  assert.equal(preview.savedPath, image.savedPath); assert.equal(preview.result, '');
+  assert.ok(JSON.stringify(preview).length < 1000); assert.equal(image.result.length, 4_475_076);
+  assert.deepEqual(collectTargets(preview), [{ target: image.savedPath, encoded: false }]);
+});
+
+test('generated pictures appear directly in the transcript and use the existing accessible viewer', async t => {
+  const image = { id: 'generated', type: 'imageGeneration', status: 'completed', result: '', savedPath: '/native/generated_images/t/cat.png' };
+  const f = await fixture(t, image, [files[0]]), row = f.dom.get('messages').children[0];
+  assert.equal(row.className, 'message message-assistant'); assert.equal(f.picture.tagName, 'IMG');
+  assert.equal(f.picture.src, '/api/images/photo'); assert.equal(row.children[1].textContent, '');
+  pictureEvent(f.dom, f.picture, 'click'); assert.equal(f.dom.get('image-viewer').open, true);
+  assert.equal(f.dom.get('image-viewer-image').src, 'https://fixture.test/api/images/photo');
+});
 
 test('photo messages show pictures without generated image labels or download text, while raw context stays intact', async t => {
   const f = await fixture(t), message = f.dom.get('messages').children[0];

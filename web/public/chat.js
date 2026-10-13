@@ -210,6 +210,7 @@ export function permissionText(settings) {
 export function itemText(item) {
   switch (item.type) {
     case 'agentMessage': case 'plan': return item.text ?? '';
+    case 'imageGeneration': return item.failure || item.status === 'failed' ? '图片生成失败。' : item.status === 'completed' ? '' : '正在生成图片…';
     case 'userMessage': return (item.content ?? []).map(part => part.type === 'text' ? displayNativeText(part) : part.type === 'localImage' ? '［图片］' : part.name ?? '').join('\n');
     case 'reasoning': return [...(item.summary ?? []), ...(item.content ?? [])].join('\n');
     case 'commandExecution': return `${item.command ?? ''}${item.aggregatedOutput ? '\n' + item.aggregatedOutput : ''}`;
@@ -679,7 +680,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       const prefix = starts.filter(item => item._turnId === turn.id);
       for (const item of prefix.length ? [...prefix, ...turn.items ?? []] : turn.items ?? []) {
         if (item.type === 'reasoning' && !itemText(item).trim()) continue;
-        const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : item.type === 'subAgentActivity' ? 'subagent' : 'tool';
+        const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan', 'imageGeneration'].includes(item.type) ? 'assistant' : item.type === 'subAgentActivity' ? 'subagent' : 'tool';
         let group = groups.at(-1);
         if (role !== 'tool' || group?.role !== 'tool') { group = { role, items: [] }; groups.push(group); }
         group.items.push(item);

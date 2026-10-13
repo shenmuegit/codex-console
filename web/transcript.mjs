@@ -6,6 +6,7 @@ const escape = markdown.utils.escapeHtml;
 
 export function boundedHistoryItem(item) {
   if (['userMessage', 'agentMessage', 'plan'].includes(item.type)) return structuredClone(item);
+  if (item.type === 'imageGeneration') item = { ...item, result: '' };
   // One tool record can exceed a whole page; bound its preview before cloning or rendering.
   let remaining = 65_536, truncated = false;
   function visit(value, depth = 0) {
@@ -60,6 +61,7 @@ markdown.renderer.rules.image = (tokens, index, options, env) => {
 
 export function collectTargets(item) {
   const targets = [];
+  if (item.type === 'imageGeneration' && typeof item.savedPath === 'string') targets.push({ target: item.savedPath, encoded: false });
   for (const token of markdown.parse(itemText(item), {})) for (const child of token.children ?? []) {
     if (child.type === 'link_open' || child.type === 'image') {
       const target = child.attrGet(child.type === 'image' ? 'src' : 'href');
@@ -73,7 +75,7 @@ export function collectTargets(item) {
 
 export function renderTranscript(thread, turns, references = new Map()) {
   const items = turns.flatMap(turn => (turn.items ?? []).map(item => {
-    const text = messageText(item), role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan'].includes(item.type) ? 'assistant' : 'tool';
+    const text = messageText(item), role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan', 'imageGeneration'].includes(item.type) ? 'assistant' : 'tool';
     const label = role === 'user' ? '你' : role === 'assistant' ? 'Codex' : ({ reasoning: '思考', commandExecution: '命令', fileChange: '文件修改', mcpToolCall: '工具调用' }[item.type] ?? item.type);
     return { id: item.id, turnId: turn.id, type: item.type, role, label: label + (item._historyTruncated ? ' · 部分输出' : ''), text, status: item.status ?? turn.status,
       cursor: item._cursor, files: references.get(item.id) ?? [], html: role === 'assistant' ? markdown.render(text, { files: references.get(item.id) }) : `<pre>${escape(text)}</pre>` };

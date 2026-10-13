@@ -43,6 +43,7 @@ const secretKeys = new Set(['accesstoken', 'refreshtoken', 'idtoken', 'apikey', 
 function safe(value) {
   if (Array.isArray(value)) return value.map(safe);
   if (!object(value)) return value;
+  if (value.type === 'imageGeneration') value = { ...value, result: '' };
   return Object.fromEntries(Object.entries(value).filter(([key]) => !secretKeys.has(key.replace(/[_-]/g, '').toLowerCase())).map(([k, v]) => [k, safe(v)]));
 }
 function fields(params, allowed) {
@@ -642,7 +643,8 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         // The native client also invalidates its original request ID; HTTP races then return 409.
         for (const [key] of pending) if (key === `${checkpoint.generation}:${JSON.stringify(event.native.params.requestId)}`) pending.delete(key);
       }
-      updateChat(event); broadcast({ ...event, native: safe(event.native) });
+      const native = safe(event.native);
+      updateChat({ ...event, native }); broadcast({ ...event, native });
     }
   });
   const server = https.createServer({ cert: readFileSync(config.tlsCert), key: readFileSync(config.tlsKey), minVersion: 'TLSv1.2' }, async (req, res) => {

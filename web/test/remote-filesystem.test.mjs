@@ -38,6 +38,16 @@ async function upload(files, content, name = 'photo.png', mime = 'image/png') {
   const meta = await files.beginUpload({ threadId: 'collision', name, size: content.length, mime });
   return files.receiveUpload(meta.id, Readable.from([content]));
 }
+for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} generated pictures use native home and host-scoped references`, async t => {
+  const h = host(windows), generated = h.paths.join(h.home, 'generated_images'), savedPath = h.paths.join(generated, 'cat.png'); h.addDirectory(generated);
+  h.nodes.set(savedPath, { isFile: true, dataBase64: tinyPng().toString('base64') });
+  const files = await filesAt(t, h, 'host-a'), refs = await files.issueTranscriptRefs({ cwd: h.cwd }, [{ items: [{ id: 'generated', type: 'imageGeneration', savedPath }] }]);
+  assert.equal(refs.get('generated').length, 1); assert.match(refs.get('generated')[0].imageHref, /host=host-a/);
+  const opened = await files.openReference(refs.get('generated')[0].id); assert.deepEqual(await opened.handle.readFile(), tinyPng()); await opened.handle.close();
+  h.nodes.get(generated).isSymlink = true;
+  const denied = await files.issueTranscriptRefs({ cwd: h.cwd }, [{ items: [{ id: 'redirected', type: 'imageGeneration', savedPath }] }]);
+  assert.deepEqual(denied.get('redirected'), []);
+});
 for (const windows of [false, true]) test(`remote ${windows ? 'Windows' : 'Unix'} attachments use host private paths and transcript downloads stay scoped`, async t => {
   const h = host(windows), files = await filesAt(t, h, 'host-a');
   const image = await upload(files, tinyPng()), text = await upload(files, Buffer.from('hello'), 'report.txt', 'text/plain');
