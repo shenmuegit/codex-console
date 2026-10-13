@@ -86,7 +86,7 @@ Gtk.main()
                XDG_CONFIG_HOME=str(work / 'desktop-config'),
                XDG_DATA_HOME=str(work / 'desktop-data'), XDG_CACHE_HOME=str(work / 'desktop-cache'))
     try:
-        deployment = subprocess.run([str(root / "deploy.sh"), "--skip-deps", "--no-service"],
+        deployment = subprocess.run([str(root / "scripts/deploy.sh"), "--skip-deps", "--no-service"],
                                     env=env, capture_output=True, text=True, timeout=60)
         assert deployment.returncode == 0, deployment.stdout + deployment.stderr
         # Page readiness precedes app-watch's first window; wait for this fixture.
@@ -266,7 +266,7 @@ Gtk.main()
         print(f'PASS: real {transport.upper()} upload → targeted completion → immediate Unicode paste → original native chooser accepts file')
         print('PASS: two immediate Unicode pastes with 100 ms clipboard guard → Enter → GTK receives 中文😀第二段')
     finally:
-        stopped = subprocess.run([str(root / "console.sh"), "stop"], env=env,
+        stopped = subprocess.run([str(root / "desktop/console.sh"), "stop"], env=env,
                                  capture_output=True, text=True, timeout=30)
         if stopped.returncode != 0 and (state / "xpra.log").exists():
             raise AssertionError("Could not stop the temporary Xpra session: " + stopped.stderr)

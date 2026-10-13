@@ -5,18 +5,18 @@
 ## Start with configuration and logs
 
 ```bash
-./console.sh doctor
+./desktop/console.sh doctor
 systemctl --user status codex-console.service --no-pager
 journalctl --user -u codex-console.service -n 100 --no-pager
 ```
 
-`doctor` performs read-only checks and prints the selected config, app, listener, display, and state path. For manual sessions, use `./console.sh status` and the state's `xpra.log`. Check each command's exit status; a generated login page alone does not prove the app launched.
+`doctor` performs read-only checks and prints the selected config, app, listener, display, and state path. For manual sessions, use `./desktop/console.sh status` and the state's `xpra.log`. Check each command's exit status; a generated login page alone does not prove the app launched.
 
 ## Installation problems
 
 | Symptom | Resolution |
 | --- | --- |
-| Asked to run as desktop user | Run `./deploy.sh` without sudo; it elevates only package operations |
+| Asked to run as desktop user | Run `./scripts/deploy.sh` without sudo; it elevates only package operations |
 | App not found | Install the compatible desktop app, then pass `--app /absolute/path/to/chatgpt` |
 | Unsupported distribution | Install the runtime manually and use `--skip-deps`; read the supported-host list |
 | APT cannot download | Check connectivity to the configured package repositories; rerun after resolving it |
@@ -36,7 +36,7 @@ If the display is occupied, check existing sessions:
 
 ```bash
 xpra list
-./console.sh status
+./desktop/console.sh status
 ```
 
 Stop a previous manual console using its original configuration before enabling the service. Do not stop an unrelated display. You can assign another unused `CONSOLE_DISPLAY` and port.
@@ -54,7 +54,7 @@ If the login page opens but the connection fails, inspect browser console errors
 
 ## Password rejected
 
-Run `./console.sh password` on the host using the same config path as the service. Do not use your desktop app account password. Check `systemctl --user cat codex-console.service` if you have multiple config files.
+Run `./desktop/console.sh password` on the host using the same config path as the service. Do not use your desktop app account password. Check `systemctl --user cat codex-console.service` if you have multiple config files.
 
 After changing the password file, restart the managed service and reload the browser page. Passwords are not stored persistently in the browser. An authentication rejection clears the page's cached password so you can enter the correct one.
 
@@ -94,14 +94,14 @@ New phone sessions default to Smooth; a saved choice or URL parameter overrides 
 
 ## Client network diagnostics
 
-Refresh the browser after running `./console.sh prepare`. Once password authentication succeeds, the client sends a small network report every five seconds over the existing WS/WSS connection. HTTPS/WSS continues to use the configured port (15443 by default). No separate listener or public HTTP collector is required.
+Refresh the browser after running `./desktop/console.sh prepare`. Once password authentication succeeds, the client sends a small network report every five seconds over the existing WS/WSS connection. HTTPS/WSS continues to use the configured port (15443 by default). No separate listener or public HTTP collector is required.
 
 Read the most recent report for each client on the host:
 
 ```bash
-./console.sh network | python3 -m json.tool
+./desktop/console.sh network | python3 -m json.tool
 # For another instance, use its original configuration:
-CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
+CONSOLE_CONFIG=/absolute/path/config.sh ./desktop/console.sh network
 ```
 
 The command reads the matching service's journal (last ten minutes, up to 1,000 reports), or the last 1 MiB of a manual session's `xpra.log`. It prints only allowed diagnostic fields. `clients: []` means no valid report was found. `age_seconds` is measured from server receipt; `stale: true` means the last report is over 30 seconds old and does not establish that a client is still connected. In the browser console, `window.codexConsoleNetwork.snapshot()` returns the current local measurements.
@@ -120,7 +120,7 @@ Reports contain a random client identifier and numeric/boolean diagnostics, with
 
 ## Audio problems
 
-Enable audio in the toolbar and tap the page to allow browser playback. Check device volume, PulseAudio, and GStreamer codecs on the host. `./console.sh status` should include session/window information; detailed `xpra info <display>` can show audio initialization but may also contain private metadata.
+Enable audio in the toolbar and tap the page to allow browser playback. Check device volume, PulseAudio, and GStreamer codecs on the host. `./desktop/console.sh status` should include session/window information; detailed `xpra info <display>` can show audio initialization but may also contain private metadata.
 
 For a live check, use `./scripts/check.sh --live` when the session can tolerate an additional client and a brief test tone. The check requires Opus/WebM and AAC/MP4 support. Microphone forwarding is disabled by the launcher.
 

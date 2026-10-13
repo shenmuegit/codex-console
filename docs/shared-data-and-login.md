@@ -11,7 +11,7 @@ Install the explicit data-directory setting as that desktop user:
 
 ```bash
 mkdir -p ~/.config/systemd/user/codex-console.service.d
-cp codex-console-shared-data.conf ~/.config/systemd/user/codex-console.service.d/shared-data.conf
+cp config/codex-console-shared-data.conf ~/.config/systemd/user/codex-console.service.d/shared-data.conf
 systemctl --user daemon-reload
 systemctl --user restart codex-console.service
 ```

@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory() as directory:
                  'crypto.html', 'digest.html', 'mitm.html', 'index.html.gz', 'legacy.html'):
         (web / name).write_text('old upstream page')
     for mode, daemon in (("run", "no"), ("start", "yes")):
-        result = subprocess.run([str(root / "console.sh"), mode], env=env,
+        result = subprocess.run([str(root / "desktop/console.sh"), mode], env=env,
                                 capture_output=True, text=True, timeout=10)
         assert result.returncode == 0, f"Launch mode {mode} failed: {result.stderr}"
         arguments = json.loads(result.stdout)

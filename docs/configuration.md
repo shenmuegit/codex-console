@@ -4,13 +4,13 @@
 
 ## Configuration file
 
-`deploy.sh` copies [config.example.sh](../config.example.sh) to `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh` on the first installation. This Bash file is private to your user and remains outside Git. Edit it in your text editor; do not edit the launch script for normal configuration.
+`scripts/deploy.sh` copies [config/config.example.sh](../config/config.example.sh) to `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh` on the first installation. This Bash file is private to your user and remains outside Git. Edit it in your text editor; do not edit the launch script for normal configuration.
 
 Both entry scripts use `CONSOLE_CONFIG` to select another **absolute** configuration path:
 
 ```bash
-CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./deploy.sh --skip-deps
-CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./console.sh doctor
+CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./scripts/deploy.sh --skip-deps
+CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./desktop/console.sh doctor
 ```
 
 Create the custom file first or let the installer create it. An explicitly selected missing file is an error in `console.sh`. When no default file exists, `console.sh` uses built-in defaults.
@@ -20,7 +20,7 @@ Configuration assignments take precedence over environment variables; environmen
 After edits, check and restart:
 
 ```bash
-./console.sh doctor
+./desktop/console.sh doctor
 systemctl --user restart codex-console.service
 ```
 
@@ -129,7 +129,7 @@ openssl verify -CAfile "$tls/ca.crt" -verify_ip "$public_ip" "$tls/server.crt"
 openssl x509 -in "$tls/ca.crt" -noout -sha256 -fingerprint
 ```
 
-Set `CONSOLE_PORT=15443`, `CONSOLE_TLS_CERT` to this directory's `fullchain.pem` and `CONSOLE_TLS_KEY` to `server-key.pem` in the private configuration, then run `./console.sh doctor` and restart the user service. Verify `https://YOUR_PUBLIC_IP:15443/` with `curl --noproxy '*' --cacert "$tls/ca.crt"`; do not disable certificate verification. Certificate directories remain `700` and private keys `600`.
+Set `CONSOLE_PORT=15443`, `CONSOLE_TLS_CERT` to this directory's `fullchain.pem` and `CONSOLE_TLS_KEY` to `server-key.pem` in the private configuration, then run `./desktop/console.sh doctor` and restart the user service. Verify `https://YOUR_PUBLIC_IP:15443/` with `curl --noproxy '*' --cacert "$tls/ca.crt"`; do not disable certificate verification. Certificate directories remain `700` and private keys `600`.
 
 Transfer only `console-ca.cer` or `ca.crt` to the phone and check its SHA-256 fingerprint against the server's output. On iPhone/iPad, install the certificate profile, then enable it under Settings → General → About → Certificate Trust Settings, as described by [Apple](https://support.apple.com/en-us/102390). On Android, import it as a **CA certificate** under the device's certificate/credential settings; menu names vary by manufacturer. Reopen the HTTPS address after trusting the CA. A browser certificate-warning bypass alone is insufficient to confirm the secure context required by the video decoder. Never publish or transfer either private key.
 
@@ -139,10 +139,10 @@ The server certificate lasts 365 days; the CA lasts ten years. Renew the server 
 
 ## Access password
 
-View it with `./console.sh password`. To rotate it, stop the session and write a fresh random value into the existing file:
+View it with `./desktop/console.sh password`. To rotate it, stop the session and write a fresh random value into the existing file:
 
 ```bash
-source ./lib/config.sh
+source ./desktop/lib/config.sh
 console_load_config
 console_validate_config
 systemctl --user stop codex-console.service

@@ -8,7 +8,7 @@ case "${1:-}" in
   --live) ;;
   *) printf 'Usage: %s [--live]\n' "$0" >&2; exit 2 ;;
 esac
-bash -n console.sh app-watch.sh deploy.sh lib/config.sh config.example.sh scripts/check.sh
+bash -n desktop/console.sh desktop/app-watch.sh scripts/deploy.sh desktop/lib/config.sh config/config.example.sh scripts/check.sh
 python3 tests/test_startup.py
 python3 tests/test_deploy.py
 python3 tests/test_app_watch.py
@@ -18,7 +18,7 @@ node tests/test_audio.cjs
 node tests/test_network.cjs
 python3 tests/test_network.py
 if [[ ${1:-} == --live ]]; then
-  source "$root/lib/config.sh"
+  source "$root/desktop/lib/config.sh"
   console_load_config
   console_validate_config
   export CONSOLE_STATE_DIR CONSOLE_HOST CONSOLE_PORT CONSOLE_DISPLAY CONSOLE_TLS_CERT

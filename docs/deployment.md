@@ -23,13 +23,13 @@ The desktop app must already be installed from a source you trust. This reposito
 ```bash
 git clone https://github.com/shenmuegit/codex-console.git
 cd codex-console
-./deploy.sh
+./scripts/deploy.sh
 ```
 
 For a different installation path:
 
 ```bash
-./deploy.sh --app /absolute/path/to/chatgpt
+./scripts/deploy.sh --app /absolute/path/to/chatgpt
 ```
 
 Do not run the whole script with sudo: the service and profile belong to your normal user. The script invokes sudo for APT packages when needed. If the app is missing, it stops with an actionable error before package installation.
@@ -51,20 +51,20 @@ An existing incompatible Xpra repository is not overwritten. Review that source 
 
 | Command / option | Result |
 | --- | --- |
-| `./deploy.sh` or `./deploy.sh install` | Full installation and startup |
+| `./scripts/deploy.sh` or `./scripts/deploy.sh install` | Full installation and startup |
 | `--app PATH` | Save the compatible app's executable path |
 | `--skip-deps` | Skip APT operations; runtime checks still run |
 | `--no-service` | Prepare/start manually without writing a service or changing lingering |
 | `--no-start` | Prepare files without starting or restarting; a generated service is still enabled |
-| `./deploy.sh uninstall` | Disable, stop, and remove the generated user service; retain data |
+| `./scripts/deploy.sh uninstall` | Disable, stop, and remove the generated user service; retain data |
 | `--help` | Show syntax |
 
 Options can be combined. A preparation-only installation:
 
 ```bash
-./deploy.sh --skip-deps --no-service --no-start
-./console.sh doctor
-./console.sh start
+./scripts/deploy.sh --skip-deps --no-service --no-start
+./desktop/console.sh doctor
+./desktop/console.sh start
 ```
 
 Preparation regenerates browser assets. If a session is already running, `--no-start` leaves its processes running; restart later to apply launch settings.
@@ -76,10 +76,10 @@ On an unsupported host, install Xpra and its HTML5 client through the [official 
 Then:
 
 ```bash
-./deploy.sh --skip-deps --no-service --no-start --app /absolute/path/to/chatgpt
-./console.sh doctor
-./console.sh start
-./console.sh status
+./scripts/deploy.sh --skip-deps --no-service --no-start --app /absolute/path/to/chatgpt
+./desktop/console.sh doctor
+./desktop/console.sh start
+./desktop/console.sh status
 ```
 
 `start` daemonizes; `run` stays in the foreground for troubleshooting or an external supervisor. `stop` terminates the configured Xpra session and its children. Manage a systemd installation with `systemctl --user`; starting it manually while the service manages the same display creates a conflict.
@@ -117,10 +117,12 @@ Back up data first. From a clean checkout:
 
 ```bash
 git pull --ff-only
-./deploy.sh --skip-deps
+./scripts/deploy.sh --skip-deps
 ```
 
-Use `./deploy.sh` without `--skip-deps` when runtime dependencies also need installation. If Git reports local changes or diverged history, resolve those before updating; the script does not reset your repository. For reproducible operation, keep the tested Xpra/HTML5 versions until you have run the upgrade checks in [Development](development.md).
+Use `./scripts/deploy.sh` without `--skip-deps` when runtime dependencies also need installation. If Git reports local changes or diverged history, resolve those before updating; the script does not reset your repository. For reproducible operation, keep the tested Xpra/HTML5 versions until you have run the upgrade checks in [Development](development.md).
+
+When updating from the former root-level layout, rerun `./scripts/deploy.sh --skip-deps` to refresh the service's `ExecStart` to `desktop/console.sh` and rebuild the browser asset links. Existing configuration, credentials and application data are preserved.
 
 Before moving the checkout, stop the service. Move the directory, then rerun deployment from its new location. The installer refreshes service paths and asset symlinks without replacing the profile. To roll back, stop the service, check out a previously tested commit or tag from a clean repository, and rerun deployment.
 
@@ -130,7 +132,7 @@ Backups contain credentials and account data. Store them privately. To capture a
 
 ```bash
 systemctl --user stop codex-console.service
-source ./lib/config.sh
+source ./desktop/lib/config.sh
 console_load_config
 console_validate_config
 backup_dir="$HOME/codex-console-backup-$(date +%Y%m%d-%H%M%S)"
@@ -141,16 +143,16 @@ tar -C "$CONSOLE_STATE_DIR" --exclude='./pulse-runtime' -czf "$backup_dir/state.
 systemctl --user start codex-console.service
 ```
 
-For a manual session, substitute `./console.sh stop` and `./console.sh start`. To restore on a prepared host, set `backup_dir` to your saved directory, copy its config to the configuration location, adjust machine-specific app/data paths, load the config as above, and extract `state.tar.gz` into `CONSOLE_STATE_DIR` while the service is stopped. Restore only your own trusted archive. Set the state directory to `700`, the password to `600`, and rerun `./deploy.sh --skip-deps` to rebuild browser assets and the service.
+For a manual session, substitute `./desktop/console.sh stop` and `./desktop/console.sh start`. To restore on a prepared host, set `backup_dir` to your saved directory, copy its config to the configuration location, adjust machine-specific app/data paths, load the config as above, and extract `state.tar.gz` into `CONSOLE_STATE_DIR` while the service is stopped. Restore only your own trusted archive. Set the state directory to `700`, the password to `600`, and rerun `./scripts/deploy.sh --skip-deps` to rebuild browser assets and the service.
 
 The complete state includes `profile/` and `password`. Back up configured TLS certificates, private keys, and renewal settings separately when stored outside this directory. Generated `www/`, lock files, audio runtime files, and logs can be rebuilt and do not need to be restored.
 
 ## Uninstall
 
 ```bash
-./deploy.sh uninstall
+./scripts/deploy.sh uninstall
 ```
 
-Use the same `XDG_CONFIG_HOME` as installation. This removes the generated user service and its registration links. Configuration, application data, the checkout, system packages, the Xpra APT source, and lingering are retained. A manually started session must be stopped with `./console.sh stop`.
+Use the same `XDG_CONFIG_HOME` as installation. This removes the generated user service and its registration links. Configuration, application data, the checkout, system packages, the Xpra APT source, and lingering are retained. A manually started session must be stopped with `./desktop/console.sh stop`.
 
 After backing up anything you need, you may remove your configuration/state directories and checkout yourself. Do not disable lingering if other user services rely on it. System packages are shared with other applications; remove them through your package manager only if no longer needed.

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'HELP'
-Usage: ./deploy.sh [install|uninstall] [options]
+Usage: ./scripts/deploy.sh [install|uninstall] [options]
 
 Install is the default. Run as your regular desktop user.
   --app PATH       Set the installed desktop app executable
@@ -40,12 +40,13 @@ while (( $# )); do
   esac
 done
 if (( EUID == 0 )); then
-  printf 'Error: run ./deploy.sh as your desktop user, without sudo. It uses sudo only for system dependencies.\n' >&2
+  printf 'Error: run ./scripts/deploy.sh as your desktop user, without sudo. It uses sudo only for system dependencies.\n' >&2
   exit 1
 fi
 
 script_dir=$(dirname "$(readlink -f "$0")")
-source "$script_dir/lib/config.sh"
+repo_dir=$(dirname "$script_dir")
+source "$repo_dir/desktop/lib/config.sh"
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 state_home=${XDG_STATE_HOME:-$HOME/.local/state}
 CONSOLE_CONFIG=${CONSOLE_CONFIG:-$config_home/codex-console/config.sh}
@@ -61,14 +62,14 @@ if [[ $action == uninstall ]]; then
     systemctl --user daemon-reload
   fi
   printf 'User service removed. Configuration and application data are preserved.\n'
-  printf 'Manually launched sessions can be stopped with ./console.sh stop.\n'
+  printf 'Manually launched sessions can be stopped with ./desktop/console.sh stop.\n'
   exit 0
 fi
 
 umask 077
 mkdir -p "$(dirname "$CONSOLE_CONFIG")"
 if [[ ! -e "$CONSOLE_CONFIG" ]]; then
-  cp "$script_dir/config.example.sh" "$CONSOLE_CONFIG"
+  cp "$repo_dir/config/config.example.sh" "$CONSOLE_CONFIG"
   printf 'Created configuration: %s\n' "$CONSOLE_CONFIG"
 fi
 chmod 600 "$CONSOLE_CONFIG"
@@ -81,7 +82,7 @@ console_load_config
 console_validate_config
 export CONSOLE_CONFIG
 if ! command -v "$CONSOLE_APP_BIN" >/dev/null || [[ ! -x $(command -v "$CONSOLE_APP_BIN") ]]; then
-  console_error "Install the desktop app first, then run ./deploy.sh --app /absolute/path/to/app. Current CONSOLE_APP_BIN: $CONSOLE_APP_BIN"
+  console_error "Install the desktop app first, then run ./scripts/deploy.sh --app /absolute/path/to/app. Current CONSOLE_APP_BIN: $CONSOLE_APP_BIN"
   exit 1
 fi
 
@@ -117,17 +118,17 @@ if [[ $skip_deps == false ]] && ! console_check_dependencies >/dev/null 2>&1; th
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
     fonts-dejavu-core fonts-noto-cjk
 fi
-"$script_dir/console.sh" doctor
+"$repo_dir/desktop/console.sh" doctor
 
 if [[ $use_service == true ]]; then
   command -v systemctl >/dev/null || { console_error 'systemd is unavailable. Use --no-service.'; exit 1; }
   systemctl --user show-environment >/dev/null || { console_error 'No systemd user session. Run from a normal user login, or use --no-service.'; exit 1; }
 fi
-"$script_dir/console.sh" prepare
+"$repo_dir/desktop/console.sh" prepare
 
 if [[ $use_service == true ]]; then
   mkdir -p "$(dirname "$unit")"
-  python3 - "$script_dir" "$CONSOLE_CONFIG" "$state_home" "$unit" <<'UNIT'
+  python3 - "$repo_dir" "$CONSOLE_CONFIG" "$state_home" "$unit" <<'UNIT'
 from pathlib import Path
 import sys
 repo, config, state, output = sys.argv[1:]
@@ -135,7 +136,7 @@ def quote(value):
     if '\n' in value or '\r' in value:
         raise SystemExit('Service paths must contain no line breaks')
     return value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%')
-text = (Path(repo) / 'codex-console.service').read_text()
+text = (Path(repo) / 'config/codex-console.service').read_text()
 for token, value in {
     '@REPO_DIR@': repo.replace('%', '%%'), '@EXEC_DIR@': quote(repo).replace('$', '$$'),
     '@CONFIG_FILE@': quote(config), '@STATE_HOME@': quote(state),
@@ -165,7 +166,7 @@ UNIT
     systemctl --user enable "$unit"
   fi
 elif [[ $start == true ]]; then
-  "$script_dir/console.sh" start
+  "$repo_dir/desktop/console.sh" start
 fi
 
 scheme=http
@@ -210,7 +211,7 @@ if [[ $CONSOLE_HOST == 0.0.0.0 ]]; then
 else
   printf 'Browser address: %s://%s:%s/\n' "$scheme" "$CONSOLE_HOST" "$CONSOLE_PORT"
 fi
-printf 'Access password: %q password\n' "$script_dir/console.sh"
+printf 'Access password: %q password\n' "$repo_dir/desktop/console.sh"
 printf 'Configuration: %s\n' "$CONSOLE_CONFIG"
 if [[ $start == false ]]; then
   printf 'The console was prepared without starting or restarting.\n'

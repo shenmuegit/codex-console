@@ -8,9 +8,9 @@ const { spawnSync } = require('node:child_process');
 const root = process.env.CONSOLE_TEST_ROOT || path.dirname(__dirname);
 const web = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-console-audio-'));
 try {
-  const builder = fs.readFileSync(path.join(root, 'console.sh'), 'utf8')
+  const builder = fs.readFileSync(path.join(root, 'desktop', 'console.sh'), 'utf8')
     .split(" <<'PY'\n")[1].split('\nPY\n')[0];
-  const built = spawnSync('python3', ['-', web, path.join(root, 'mobile.js')], { input: builder, encoding: 'utf8' });
+  const built = spawnSync('python3', ['-', web, path.join(root, 'desktop', 'public', 'mobile.js')], { input: builder, encoding: 'utf8' });
   assert.equal(built.status, 0, built.stderr);
   const timers = [];
   const context = vm.createContext({ window: {}, document: { getElementById: () => ({ addEventListener() {} }), querySelector: () => ({ addEventListener() {} }) }, navigator: {}, default_settings: {},

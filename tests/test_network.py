@@ -15,7 +15,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 root = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(root))
+sys.path.insert(0, str(root / "desktop"))
 from network import collect, read_reports, journal_pid
 
 
@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory() as directory:
     config.write_text(f'CONSOLE_STATE_DIR={shlex.quote(str(state))}\n'
                       'CONSOLE_TLS_CERT=/missing-cert\nCONSOLE_TLS_KEY=/missing-key\n')
     env = {name: value for name, value in os.environ.items() if not name.startswith('CONSOLE_')}
-    checked = subprocess.run([str(root / 'console.sh'), 'network'],
+    checked = subprocess.run([str(root / 'desktop/console.sh'), 'network'],
         env=dict(env, CONSOLE_CONFIG=str(config)), capture_output=True, text=True, timeout=15)
     assert checked.returncode == 0 and json.loads(checked.stdout) == {'clients': []}, checked.stderr
 
@@ -88,7 +88,7 @@ def live():
                           f'CONSOLE_TLS_CERT={certificate}\nCONSOLE_TLS_KEY={key}\n')
         env = {name: value for name, value in os.environ.items() if not name.startswith('CONSOLE_')}
         env.update(CONSOLE_CONFIG=str(config))
-        prepared = subprocess.run([str(root / 'console.sh'), 'prepare'], env=env,
+        prepared = subprocess.run([str(root / 'desktop/console.sh'), 'prepare'], env=env,
                                   capture_output=True, text=True, timeout=30)
         assert prepared.returncode == 0, prepared.stdout + prepared.stderr
         report_file = work / 'report.txt'
@@ -119,7 +119,7 @@ def live():
             assert page.status == 200 and b'network.js?v=' in page.read()
             connection.request('GET', '/network.js')
             asset = connection.getresponse()
-            assert asset.status == 200 and asset.read() == (root / 'network.js').read_bytes()
+            assert asset.status == 200 and asset.read() == (root / 'desktop/public/network.js').read_bytes()
             connection.request('GET', '/Info')
             info = connection.getresponse()
             assert info.status == 404, 'Network diagnostics must not enable public session metadata'
@@ -159,7 +159,7 @@ def live():
             deadline = time.monotonic() + 5
             reports = []
             while not reports and time.monotonic() < deadline:
-                checked = subprocess.run([str(root / 'console.sh'), 'network'], env=env,
+                checked = subprocess.run([str(root / 'desktop/console.sh'), 'network'], env=env,
                                          capture_output=True, text=True, timeout=15)
                 assert checked.returncode == 0, checked.stderr
                 reports = json.loads(checked.stdout)['clients']

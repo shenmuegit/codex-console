@@ -1,4 +1,4 @@
-# Copy to ~/.config/codex-console/config.sh (deploy.sh does this automatically).
+# Copy to ~/.config/codex-console/config.sh (scripts/deploy.sh does this automatically).
 # This is a Bash file. Quote paths; use an array for application arguments.
 
 CONSOLE_APP_BIN=/usr/bin/chatgpt

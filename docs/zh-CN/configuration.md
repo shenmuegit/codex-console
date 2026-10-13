@@ -4,13 +4,13 @@
 
 ## 配置文件
 
-首次部署会将 [config.example.sh](../../config.example.sh) 复制到 `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh`。配置文件属于你的用户，保存在 Git 仓库之外。使用文本编辑器修改它即可，日常配置无需改动启动脚本。
+首次部署会将 [config/config.example.sh](../../config/config.example.sh) 复制到 `${XDG_CONFIG_HOME:-$HOME/.config}/codex-console/config.sh`。配置文件属于你的用户，保存在 Git 仓库之外。使用文本编辑器修改它即可，日常配置无需改动启动脚本。
 
 可用 `CONSOLE_CONFIG` 环境变量选择其他配置文件，路径必须为**绝对路径**：
 
 ```bash
-CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./deploy.sh --skip-deps
-CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./console.sh doctor
+CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./scripts/deploy.sh --skip-deps
+CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./desktop/console.sh doctor
 ```
 
 可以提前创建自定义配置，也可以让部署脚本创建。`console.sh` 显式选择的配置不存在时会报错；未指定路径且默认配置不存在时，则使用内置默认值。
@@ -20,7 +20,7 @@ CONSOLE_CONFIG="$HOME/.config/codex-console/lab.sh" ./console.sh doctor
 修改后先检查，再重启：
 
 ```bash
-./console.sh doctor
+./desktop/console.sh doctor
 systemctl --user restart codex-console.service
 ```
 
@@ -129,7 +129,7 @@ openssl verify -CAfile "$tls/ca.crt" -verify_ip "$public_ip" "$tls/server.crt"
 openssl x509 -in "$tls/ca.crt" -noout -sha256 -fingerprint
 ```
 
-在私有配置中设置 `CONSOLE_PORT=15443`，将 `CONSOLE_TLS_CERT` 设为该目录的 `fullchain.pem`，`CONSOLE_TLS_KEY` 设为 `server-key.pem`，再执行 `./console.sh doctor` 并重启用户服务。使用 `curl --noproxy '*' --cacert "$tls/ca.crt"` 检查 `https://YOUR_PUBLIC_IP:15443/`，不要关闭证书验证。证书目录保持 `700`，私钥保持 `600`。
+在私有配置中设置 `CONSOLE_PORT=15443`，将 `CONSOLE_TLS_CERT` 设为该目录的 `fullchain.pem`，`CONSOLE_TLS_KEY` 设为 `server-key.pem`，再执行 `./desktop/console.sh doctor` 并重启用户服务。使用 `curl --noproxy '*' --cacert "$tls/ca.crt"` 检查 `https://YOUR_PUBLIC_IP:15443/`，不要关闭证书验证。证书目录保持 `700`，私钥保持 `600`。
 
 仅将 `console-ca.cer` 或 `ca.crt` 传到手机，并与服务器输出核对 SHA-256 指纹。iPhone/iPad 安装证书描述文件后，按 [Apple 的说明](https://support.apple.com/en-us/102390)，在“设置 → 通用 → 关于本机 → 证书信任设置”中开启完全信任。Android 在设备的证书/凭据设置中按 **CA 证书**导入，菜单名称因厂商而异。完成信任后重新打开 HTTPS 地址。仅绕过浏览器证书警告，不能证明视频解码器所需的安全上下文已启用。不要公开或传输任何私钥。
 
@@ -139,10 +139,10 @@ openssl x509 -in "$tls/ca.crt" -noout -sha256 -fingerprint
 
 ## 访问密码
 
-执行 `./console.sh password` 查看。更换密码时，停止会话并写入新的随机值：
+执行 `./desktop/console.sh password` 查看。更换密码时，停止会话并写入新的随机值：
 
 ```bash
-source ./lib/config.sh
+source ./desktop/lib/config.sh
 console_load_config
 console_validate_config
 systemctl --user stop codex-console.service

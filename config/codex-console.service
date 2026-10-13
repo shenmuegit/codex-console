@@ -4,7 +4,7 @@ Description=Codex Console browser access
 [Service]
 Type=simple
 WorkingDirectory=@REPO_DIR@
-ExecStart="@EXEC_DIR@/console.sh" run
+ExecStart="@EXEC_DIR@/desktop/console.sh" run
 Environment="CONSOLE_CONFIG=@CONFIG_FILE@"
 Environment="XDG_STATE_HOME=@STATE_HOME@"
 Restart=always

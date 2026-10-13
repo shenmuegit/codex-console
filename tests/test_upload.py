@@ -24,8 +24,8 @@ with tempfile.TemporaryDirectory(prefix="console upload '") as directory:
     xpra.chmod(0o755)
     env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}",
                XPRA_DOWNLOAD_DIR=str(inbox), UPLOAD_TEST_RECORD=str(record), DISPLAY=":12345")
-    command = ["python3", str(root / "upload.py"), str(inbox)]
-    assert (root / "upload.py").is_file(), "Uploads need a completion handler before selecting them in Codex"
+    command = ["python3", str(root / "desktop/upload.py"), str(inbox)]
+    assert (root / "desktop/upload.py").is_file(), "Uploads need a completion handler before selecting them in Codex"
     os.environ.update(env)
     transfer = FileTransferHandler()
     transfer.init_attributes('yes', '1M', 'no', 'yes', 'no', shlex.join(command), False)

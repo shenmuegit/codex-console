@@ -71,7 +71,7 @@ console_check_dependencies() {
   local executable missing=0
   for executable in xpra python3 openssl Xvfb pulseaudio pactl gst-launch-1.0 xprop flock xauth dbus-launch readlink; do
     if ! command -v "$executable" >/dev/null; then
-      console_error "Missing dependency: $executable. Run ./deploy.sh or see docs/deployment.md."
+      console_error "Missing dependency: $executable. Run ./scripts/deploy.sh or see docs/deployment.md."
       missing=1
     fi
   done

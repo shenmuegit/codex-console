@@ -23,7 +23,7 @@ prototype._process_hello = function () { this.connected = true; };
 prototype._process_draw = function (packet) { this.lastDraw = packet; };
 prototype.close = function () { this.connected = false; };
 prototype._process_close = function () { this.connected = false; this.reconnect_in_progress = true; };
-vm.runInContext(fs.readFileSync(`${__dirname}/../network.js`, 'utf8'), context);
+vm.runInContext(fs.readFileSync(`${__dirname}/../desktop/public/network.js`, 'utf8'), context);
 const client = Object.assign(Object.create(prototype), {
   uuid: 'a'.repeat(32), connected: false, _render_density: 1, scale: 1.25,
   container: { clientWidth: 480, clientHeight: 1040 },

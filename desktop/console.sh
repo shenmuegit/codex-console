@@ -27,7 +27,7 @@ case "${1:-start}" in
   status) exec xpra info "$CONSOLE_DISPLAY" windows ;;
   network) exec python3 "$script_dir/network.py" "$state" ;;
   password)
-    [[ -s "$state/password" ]] || { console_error 'No access password yet. Run ./deploy.sh or ./console.sh prepare.'; exit 1; }
+    [[ -s "$state/password" ]] || { console_error 'No access password yet. Run ./scripts/deploy.sh or ./desktop/console.sh prepare.'; exit 1; }
     cat "$state/password"
     printf '\n'
     exit 0 ;;
@@ -54,7 +54,7 @@ mkdir -p "$XPRA_DOWNLOAD_DIR"
 chmod 700 "$XPRA_DOWNLOAD_DIR"
 
 web="$state/www"
-python3 - "$web" "$script_dir/mobile.js" "$XPRA_HTML_DIR" <<'PY'
+python3 - "$web" "$script_dir/public/mobile.js" "$XPRA_HTML_DIR" <<'PY'
 from pathlib import Path
 from html import escape
 import hashlib
@@ -76,7 +76,7 @@ for asset in assets.iterdir():
         target.unlink()
     if not target.exists():
         target.symlink_to(asset, target_is_directory=asset.is_dir())
-for source in (mobile, mobile.with_name('network.js'), mobile.with_name('console.css'), mobile.parent / 'assets/codex-console-icon.png'):
+for source in (mobile, mobile.with_name('network.js'), mobile.with_name('console.css'), mobile.parents[2] / 'assets/codex-console-icon.png'):
     target = web / source.name
     if target.is_symlink():
         target.unlink()

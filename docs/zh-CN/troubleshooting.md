@@ -5,12 +5,12 @@
 ## 先检查配置和日志
 
 ```bash
-./console.sh doctor
+./desktop/console.sh doctor
 systemctl --user status codex-console.service --no-pager
 journalctl --user -u codex-console.service -n 100 --no-pager
 ```
 
-`doctor` 只读检查，显示当前配置、应用路径、监听地址、显示号和数据目录。手动会话使用 `./console.sh status` 并检查数据目录下的 `xpra.log`。请关注命令退出状态；登录页面生成成功，并不意味着桌面应用已经启动。
+`doctor` 只读检查，显示当前配置、应用路径、监听地址、显示号和数据目录。手动会话使用 `./desktop/console.sh status` 并检查数据目录下的 `xpra.log`。请关注命令退出状态；登录页面生成成功，并不意味着桌面应用已经启动。
 
 ## 安装问题
 
@@ -36,7 +36,7 @@ journalctl --user -u codex-console.service -n 100 --no-pager
 
 ```bash
 xpra list
-./console.sh status
+./desktop/console.sh status
 ```
 
 启用服务前，使用原配置停止之前手动启动的会话。不要停止无关会话；也可选择未占用的 `CONSOLE_DISPLAY` 和端口。
@@ -54,7 +54,7 @@ xpra list
 
 ## 密码验证失败
 
-在主机上使用与服务相同的配置，执行 `./console.sh password`。不要输入桌面应用的账号密码。使用多份配置时，可通过 `systemctl --user cat codex-console.service` 核对实际配置路径。
+在主机上使用与服务相同的配置，执行 `./desktop/console.sh password`。不要输入桌面应用的账号密码。使用多份配置时，可通过 `systemctl --user cat codex-console.service` 核对实际配置路径。
 
 修改密码文件后重启服务并刷新页面。访问密码不会持久保存在浏览器中；验证失败会清除当前页面缓存的密码，以便重新输入。
 
@@ -91,14 +91,14 @@ xpra list
 
 ## 客户端网络监控
 
-运行 `./console.sh prepare` 后刷新浏览器。密码验证成功后，客户端每五秒通过现有 WS/WSS 连接上报一次网络数据。HTTPS/WSS 继续使用配置的端口（默认 15443），无需单独监听端口或开放 HTTP 收集接口。
+运行 `./desktop/console.sh prepare` 后刷新浏览器。密码验证成功后，客户端每五秒通过现有 WS/WSS 连接上报一次网络数据。HTTPS/WSS 继续使用配置的端口（默认 15443），无需单独监听端口或开放 HTTP 收集接口。
 
 在服务器读取每个客户端最近的一份报告：
 
 ```bash
-./console.sh network | python3 -m json.tool
+./desktop/console.sh network | python3 -m json.tool
 # 其他实例使用其原来的配置：
-CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
+CONSOLE_CONFIG=/absolute/path/config.sh ./desktop/console.sh network
 ```
 
 命令读取与该实例匹配的服务日志（最近十分钟，最多 1,000 条报告），或手动会话 `xpra.log` 的最后 1 MiB，只输出允许的诊断字段。`clients: []` 表示没有找到有效报告。`age_seconds` 从服务器收到报告时计算；`stale: true` 表示已超过 30 秒，不能据此认定客户端仍在线。在浏览器控制台运行 `window.codexConsoleNetwork.snapshot()` 可读取当前本地指标。
@@ -117,7 +117,7 @@ CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
 
 ## 音频问题
 
-在工具栏开启音频，并点击页面以满足浏览器播放权限。检查设备音量，以及主机 PulseAudio、GStreamer 编解码器。`./console.sh status` 应能显示会话信息；完整的 `xpra info <显示号>` 可以辅助检查音频，但可能包含私人窗口元数据。
+在工具栏开启音频，并点击页面以满足浏览器播放权限。检查设备音量，以及主机 PulseAudio、GStreamer 编解码器。`./desktop/console.sh status` 应能显示会话信息；完整的 `xpra info <显示号>` 可以辅助检查音频，但可能包含私人窗口元数据。
 
 需要真实验证时，选择允许额外连接和短暂测试音的会话运行 `./scripts/check.sh --live`。此检查要求 Opus/WebM、AAC/MP4 支持。启动脚本默认禁用麦克风转发。
 

@@ -45,7 +45,7 @@ with (work / 'launches').open('a') as output: output.write(str(os.getpid()) + '\
 (work / 'visible').touch()
 while True: time.sleep(0.1)
 """)
-    command = ["bash", str(Path(__file__).resolve().parents[1] / "app-watch.sh"), sys.executable, str(app)]
+    command = ["bash", str(Path(__file__).resolve().parents[1] / "desktop/app-watch.sh"), sys.executable, str(app)]
     env = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}",
                XDG_STATE_HOME=str(work / "state"), CONSOLE_STATE_DIR=str(work / "custom state"),
                WATCH_TEST_DIR=str(work))

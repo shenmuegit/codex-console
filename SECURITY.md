@@ -8,7 +8,7 @@ An authenticated user can control the app and access the files, projects, accoun
 
 Remote shell, starting new commands, printing, webcam, opening URLs through Xpra, and microphone forwarding are disabled in the launcher. Authenticated file upload is enabled into the private state directory's `uploads/`. Xpra's open-file hook runs only `upload.py`, which validates the completed path and request, preserves the original filename, and notifies the originating browser; it does not execute or open uploaded contents. Files are retained for the app to read. These restrictions do not limit what the authenticated desktop app itself can do.
 
-Window filtering uses XRes process ownership: only windows belonging to the app processes launched directly by `app-watch.sh` are forwarded. This includes their native GTK file pickers, which lack the dedicated profile's window class. Other application processes remain excluded.
+Window filtering uses XRes process ownership: only windows belonging to the app processes launched directly by `desktop/app-watch.sh` are forwarded. This includes their native GTK file pickers, which lack the dedicated profile's window class. Other application processes remain excluded.
 
 ## Sensitive data
 

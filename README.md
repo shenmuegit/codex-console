@@ -59,13 +59,13 @@ Install your desktop app and Git first, then run as your regular user:
 ```bash
 git clone https://github.com/shenmuegit/codex-console.git
 cd codex-console
-./deploy.sh
+./scripts/deploy.sh
 ```
 
 If your app is installed elsewhere:
 
 ```bash
-./deploy.sh --app /absolute/path/to/chatgpt
+./scripts/deploy.sh --app /absolute/path/to/chatgpt
 ```
 
 The installer reuses an existing compatible runtime or installs the missing packages through the official Xpra APT repository. It creates a private configuration file, generates a random browser access password, installs a service with your actual checkout path, enables it, and waits for the HTTP page to respond. Review [what installation changes](docs/deployment.md#what-the-installer-changes).
@@ -73,7 +73,7 @@ The installer reuses an existing compatible runtime or installs the missing pack
 Read the password on the host:
 
 ```bash
-./console.sh password
+./desktop/console.sh password
 ```
 
 Open `http://HOST_IP:15443/` in your browser and replace `HOST_IP` with the Linux host's address. Enter the access password, then sign in to the remote desktop app on first use. These are separate authentication steps. The dedicated profile may require a new app sign-in.
@@ -85,15 +85,15 @@ The console defaults to HTTP/WS without transport encryption. Configure a browse
 ## Everyday commands
 
 ```bash
-./console.sh doctor                                # Check runtime and configuration
-./console.sh status                                # Inspect the Xpra session
+./desktop/console.sh doctor                                # Check runtime and configuration
+./desktop/console.sh status                                # Inspect the Xpra session
 systemctl --user status codex-console.service      # Inspect the user service
 systemctl --user restart codex-console.service     # Apply configuration changes
 systemctl --user stop codex-console.service        # Stop the managed console
 journalctl --user -u codex-console.service -n 100   # Read service logs
 ```
 
-For manual operation, use `./deploy.sh --no-service --no-start`, then `./console.sh start` and `./console.sh stop`. Repeated installation retains existing configuration, credentials, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
+For manual operation, use `./scripts/deploy.sh --no-service --no-start`, then `./desktop/console.sh start` and `./desktop/console.sh stop`. Repeated installation retains existing configuration, credentials, and application data. A normal reinstall restarts the managed service; `--no-start` prepares changes without starting or restarting it.
 
 Only the custom Codex Console page is published. Upstream connection and diagnostic pages such as `connect.html`, including their compressed copies, return 404. Preparing assets also removes copies left by earlier deployments.
 
@@ -131,6 +131,20 @@ Uploads accept one file at a time, up to 32 MiB or the server limit, whichever i
 Local configuration is stored at `~/.config/codex-console/config.sh`; application data defaults to `~/.local/state/codex-console`. Both follow the corresponding XDG environment variables. Keep passwords, private keys, profile data, and personal configuration outside the repository.
 
 ## Development
+
+Source and support files are grouped by module and purpose:
+
+```text
+assets/           Shared artwork
+config/           Configuration examples and systemd templates
+desktop/          Xpra launcher, supervisor and Python helpers
+  lib/            Desktop configuration and preflight checks
+  public/         Xpra browser scripts and styles
+scripts/          Deployment and verification entry points
+web/              Native app-server browser client
+tests/            All tests and fixtures
+docs/             English and Chinese guides
+```
 
 All tests and fixtures are in `tests/`; native Web client tests are in `tests/web/`. With Node.js 24+, run `npm --prefix web ci` and `npm --prefix web test` from the repository root.
 

@@ -54,13 +54,13 @@
 ```bash
 git clone https://github.com/shenmuegit/codex-console.git
 cd codex-console
-./deploy.sh
+./scripts/deploy.sh
 ```
 
 如果应用没有安装在默认位置：
 
 ```bash
-./deploy.sh --app /absolute/path/to/chatgpt
+./scripts/deploy.sh --app /absolute/path/to/chatgpt
 ```
 
 脚本会复用已有的兼容依赖，必要时通过 Xpra 官方 APT 软件源安装系统包，然后创建私有配置、生成随机访问密码、按实际克隆位置生成用户服务、启用服务并等待 HTTP 页面就绪。详见[部署脚本修改的内容](docs/zh-CN/deployment.md#脚本修改哪些内容)。
@@ -68,7 +68,7 @@ cd codex-console
 在主机终端查看访问密码：
 
 ```bash
-./console.sh password
+./desktop/console.sh password
 ```
 
 手机打开 `http://HOST_IP:15443/`，将 `HOST_IP` 替换为 Linux 主机地址。输入访问密码后，首次使用需要在远端桌面应用中登录账号。浏览器访问密码与应用账号登录是两个独立步骤；独立应用数据目录可能需要重新登录。
@@ -80,15 +80,15 @@ cd codex-console
 ## 日常操作
 
 ```bash
-./console.sh doctor                                # 检查配置与依赖
-./console.sh status                                # 查看 Xpra 会话
+./desktop/console.sh doctor                                # 检查配置与依赖
+./desktop/console.sh status                                # 查看 Xpra 会话
 systemctl --user status codex-console.service      # 查看用户服务
 systemctl --user restart codex-console.service     # 应用配置修改
 systemctl --user stop codex-console.service        # 停止托管会话
 journalctl --user -u codex-console.service -n 100   # 查看服务日志
 ```
 
-手动运行可先执行 `./deploy.sh --no-service --no-start`，再使用 `./console.sh start` 和 `./console.sh stop`。重复部署保留已有配置、密码与应用数据；普通重复部署会重启托管服务，`--no-start` 只准备改动，不启动或重启。
+手动运行可先执行 `./scripts/deploy.sh --no-service --no-start`，再使用 `./desktop/console.sh start` 和 `./desktop/console.sh stop`。重复部署保留已有配置、密码与应用数据；普通重复部署会重启托管服务，`--no-start` 只准备改动，不启动或重启。
 
 网页只发布定制的 Codex Console 主页面。`connect.html` 等上游连接、诊断页面及其压缩版本均返回 404；准备资源时也会清理旧部署遗留的这些页面。
 
@@ -126,6 +126,20 @@ journalctl --user -u codex-console.service -n 100   # 查看服务日志
 配置默认保存在 `~/.config/codex-console/config.sh`，应用数据默认保存在 `~/.local/state/codex-console`，分别遵循对应的 XDG 环境变量。个人配置、访问密码、私钥和登录数据保存在仓库之外。
 
 ## 开发验证
+
+源码和支持文件按模块及用途集中存放：
+
+```text
+assets/           共用图片资源
+config/           配置示例及 systemd 模板
+desktop/          Xpra 启动器、进程守护和 Python 辅助模块
+  lib/            桌面配置加载及运行依赖检查
+  public/         Xpra 浏览器脚本和样式
+scripts/          部署及验证入口
+web/              原生 app-server 浏览器客户端
+tests/            全部测试和测试夹具
+docs/             中英文文档
+```
 
 测试和测试夹具统一放在 `tests/`，原生 Web 客户端测试位于 `tests/web/`。使用 Node.js 24+，在仓库根目录执行 `npm --prefix web ci` 和 `npm --prefix web test`。
 

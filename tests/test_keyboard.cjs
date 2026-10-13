@@ -112,7 +112,7 @@ else:
   const xpra = path.join(work, 'xpra');
   const notices = path.join(work, 'notices');
   fs.writeFileSync(xpra, '#!/usr/bin/env python3\nimport json, os, sys\nfrom pathlib import Path\nassert sys.argv[1:6] == ["control", os.environ["DISPLAY"], "send-notification", "7272", "codex-console-keyboard"]\nassert sys.argv[7] == "*"\nwith Path(os.environ["CONSOLE_STATE_DIR"]).joinpath("notices").open("a") as output: output.write(sys.argv[6] + "\\n")\n', { mode: 0o755 });
-  start('python3', [path.join(__dirname, '..', 'keyboard.py'), profile], { ...env, PATH: `${work}:${env.PATH}` });
+  start('python3', [path.join(__dirname, '..', 'desktop', 'keyboard.py'), profile], { ...env, PATH: `${work}:${env.PATH}` });
   const snapshots = () => fs.existsSync(notices) ? fs.readFileSync(notices, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   const contains = (map, x, y) => map.rects.some(([left, top, width, height]) =>
     x >= left && y >= top && x < left + width && y < top + height);
@@ -157,7 +157,7 @@ else:
     'Unrelated streaming output must not starve editable-region updates');
   const count = snapshots().length;
   await until(() => snapshots().length > count, 'A late-joining Web client must receive a fresh heartbeat');
-  const mobile = fs.readFileSync(path.join(__dirname, '..', 'mobile.js'), 'utf8');
+  const mobile = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'public', 'mobile.js'), 'utf8');
   const keyboard = mobile.slice(mobile.indexOf('  window.init_mobile_keyboard ='), mobile.lastIndexOf('})();'));
   await evaluate(`window.__client = { _screen_resized() {} }; ${keyboard}
     const button = document.createElement('a'); button.id='keyboard_button'; button.href='#'; button.textContent='Keyboard';

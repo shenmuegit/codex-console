@@ -10,7 +10,7 @@ X11 显示会话，KDE 锁屏不会阻断控制台。
 
 ```bash
 mkdir -p ~/.config/systemd/user/codex-console.service.d
-cp codex-console-shared-data.conf ~/.config/systemd/user/codex-console.service.d/shared-data.conf
+cp config/codex-console-shared-data.conf ~/.config/systemd/user/codex-console.service.d/shared-data.conf
 systemctl --user daemon-reload
 systemctl --user restart codex-console.service
 ```

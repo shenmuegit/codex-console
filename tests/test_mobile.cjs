@@ -175,12 +175,12 @@ vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/lz4.js', 'utf8'), co
 for (const file of ['Utilities', 'Constants', 'Keycodes', 'Window']) {
   vm.runInContext(fs.readFileSync(`/usr/share/xpra/www/js/${file}.js`, 'utf8'), context);
 }
-const mobile = path.join(__dirname, '..', 'mobile.js');
+const mobile = path.join(__dirname, '..', 'desktop', 'public', 'mobile.js');
 // Load the same adapted client that console.sh serves, without starting a session.
 const web = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-console-test-'));
 let menuContext;
 try {
-  const builder = fs.readFileSync(path.join(__dirname, '..', 'console.sh'), 'utf8')
+  const builder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'console.sh'), 'utf8')
     .split(" <<'PY'\n")[1].split('\nPY\n')[0];
   const built = spawnSync('python3', ['-', web, mobile], { input: builder, encoding: 'utf8' });
   assert.equal(built.status, 0, built.stderr);

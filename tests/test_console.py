@@ -1,4 +1,4 @@
-"""Run after ./console.sh start; verifies the real remote-control endpoint."""
+"""Run after ./desktop/console.sh start; verifies the real remote-control endpoint."""
 import http.client
 import array
 import cmath
@@ -49,11 +49,11 @@ for path in ('/connect.html?ssl=true', '/%63onnect.html', '/index.html.gz', '/in
 connection.request("GET", "/mobile.js")
 response = connection.getresponse()
 assert response.status == 200, "The touch and browser-size script is unavailable"
-assert response.read() == (Path(__file__).resolve().parents[1] / "mobile.js").read_bytes(), "The server is serving an old fix"
+assert response.read() == (Path(__file__).resolve().parents[1] / "desktop/public/mobile.js").read_bytes(), "The server is serving an old fix"
 connection.request("GET", "/console.css")
 response = connection.getresponse()
 assert response.status == 200, "The client stylesheet is unavailable"
-assert response.read() == (Path(__file__).resolve().parents[1] / "console.css").read_bytes(), "The server is serving an old theme"
+assert response.read() == (Path(__file__).resolve().parents[1] / "desktop/public/console.css").read_bytes(), "The server is serving an old theme"
 connection.request("GET", "/Info")
 response = connection.getresponse()
 assert response.status == 404, "Session metadata is exposed without authentication"

@@ -18,17 +18,21 @@ flowchart LR
 
 | File | Responsibility |
 | --- | --- |
-| `deploy.sh` | Dependency installation, user config, service generation, readiness check, uninstall |
-| `lib/config.sh` | Configuration defaults, validation, read-only preflight |
-| `console.sh` | Credentials, HTML5 adaptation, Xpra launch and session commands |
-| `app-watch.sh` | Single supervisor lock, dedicated-window filter, app recovery and cleanup |
-| `mobile.js` | Touch, native IME, scaling, quality, authentication/reconnect behavior |
-| `upload.py` | Completed-upload validation, original filename and targeted browser callback |
-| `keyboard.py` | Loopback CDP DOM hit regions and focus, delivered through Xpra notifications |
-| `console.css` | Login, connection, and toolbar layout |
-| `codex-console.service` | User-service template rendered by deployment |
+| `scripts/deploy.sh` | Dependency installation, user config, service generation, readiness check, uninstall |
+| `desktop/lib/config.sh` | Configuration defaults, validation, read-only preflight |
+| `desktop/console.sh` | Credentials, HTML5 adaptation, Xpra launch and session commands |
+| `desktop/app-watch.sh` | Single supervisor lock, dedicated-window filter, app recovery and cleanup |
+| `desktop/public/mobile.js` | Touch, native IME, scaling, quality, authentication/reconnect behavior |
+| `desktop/public/network.js` | Browser network and render telemetry |
+| `desktop/network.py` | Bounded network reports from the selected session |
+| `desktop/upload.py` | Completed-upload validation, original filename and targeted browser callback |
+| `desktop/keyboard.py` | Loopback CDP DOM hit regions and focus, delivered through Xpra notifications |
+| `desktop/public/console.css` | Login, connection, and toolbar layout |
+| `config/` | Configuration example, user-service template and shared-data drop-in |
 | `scripts/check.sh` | Standard isolated checks and optional live endpoint verification |
 | `tests/` | Desktop transport tests, with native Web client tests and fixtures in `tests/web/` |
+
+Keep runtime code within its module (`desktop/` for Xpra, `web/` for the native client), shared artwork in `assets/`, deployment and verification entry points in `scripts/`, and reusable configuration templates in `config/`. The root contains standard project documentation; private configuration and application data remain outside the checkout.
 
 There is no Node build or package installation for the frontend. The browser runs `mobile.js` directly against the system Xpra HTML5 client. The adapted HTML/Client.js are generated in the private state directory. Only the adapted index page is published; upstream HTML pages and their compressed copies are excluded and cleaned up on upgrades. Host-installed upstream assets remain untouched. The launcher includes a content-derived cache version in the page.
 
