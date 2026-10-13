@@ -60,7 +60,6 @@ qaConnections.refresh();"""
                 page.locator('#host-picker').select_option('host-a')
                 page.wait_for_url('**/?host=host-a')
                 expect(page.locator('#host-picker option:checked')).to_have_text('办公电脑')
-                expect(page.locator('#recovery-host-picker option:checked')).to_have_text('办公电脑')
                 prefix = f'{width}x{height}-{scheme}'
                 page.screenshot(path=str(output / f'{prefix}-host-switch.png'))
                 failing = False
@@ -94,10 +93,38 @@ qaConnections.refresh();"""
                 expect(page.locator('#settings-dialog')).not_to_be_visible()
                 expect(page.locator('#show-settings')).to_be_focused()
                 context.close()
+            for width, height, scheme in [(1280, 850, 'light'), (375, 812, 'dark')]:
+                for code, status, reason, expected in [
+                    ('NATIVE_DISCONNECTED', 503, 'The native backend is offline.', '未能建立到所选设备的 Codex 连接。'),
+                    ('REMOTE_REQUEST_FAILED', 502, 'Official remote-control request failed (403).', 'Official remote-control request failed (403).'),
+                    ('REMOTE_HOST_NOT_PAIRED', 404, '设备尚未配对或已经移除。', '设备尚未配对或已经移除。'),
+                ]:
+                    context = browser.new_context(viewport=dict(width=width, height=height), color_scheme=scheme)
+                    page = context.new_page()
+
+                    def fail_selected_host(route):
+                        url = urlsplit(route.request.url)
+                        if url.path == '/api/status' and url.query:
+                            route.fulfill(status=status, json=dict(error=dict(code=code, message=reason)))
+                        elif url.path == '/api/status':
+                            route.fulfill(json=dict(online=True, uploadLimitBytes=32000000, generation=1))
+                        else:
+                            route_api(route)
+
+                    page.route('**/api/**', fail_selected_host)
+                    page.route('**/favicon.ico', lambda route: route.fulfill(status=204))
+                    page.goto(origin + '/?host=host-a')
+                    expect(page.locator('#workspace-error-message')).to_have_text(expected + f'（{code}）')
+                    expect(page.locator('#workspace-error button, #workspace-error select, #workspace-error label')).to_have_count(0)
+                    expect(page.locator('#workspace-error > *')).to_have_count(1)
+                    expect(page.locator('#login-panel')).not_to_be_visible()
+                    assert page.locator('#workspace-error').bounding_box()['height'] < 100
+                    page.screenshot(path=str(output / f'{width}x{height}-{scheme}-{code}.png'))
+                    context.close()
             browser.close()
     finally:
         server.shutdown(); server.server_close()
-    print('Device names, system settings, usage, Escape and focus return passed on desktop/mobile in light/dark Chromium.')
+    print('Navigation, settings, focus return and compact connection failure reasons passed in Chromium.')
 
 
 if __name__ == '__main__':

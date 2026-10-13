@@ -38,7 +38,10 @@ function connectionError(error) {
   if (leaving || error.status === 401) return;
   if (!connections) showWorkspace();
   chat?.connection(false);
-  $('#workspace-error-message').textContent = error.message; $('#workspace-error').hidden = false;
+  const message = error.code === 'NATIVE_DISCONNECTED' && error.message === 'The native backend is offline.' ?
+    '未能建立到所选设备的 Codex 连接。' : error.message || '设备连接失败。';
+  $('#workspace-error-message').textContent = message + (error.code != null ? `（${error.code}）` : '');
+  $('#workspace-error').hidden = false;
 }
 async function connected() {
   const version = ++initialization;
@@ -67,5 +70,4 @@ $('#login-form').addEventListener('submit', async event => {
   catch (e) { $('#login-error').textContent = e.message; }
   finally { button.disabled = false; }
 });
-$('#recover-connections').addEventListener('click', () => $('#show-connections').click());
 connected();

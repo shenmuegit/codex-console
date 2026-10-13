@@ -987,6 +987,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         INVALID_CALLBACK: 400, INVALID_PAIRING_CODE: 400, CALLBACK_USED: 409, AUTH_NOT_STARTED: 409, AUTH_IN_PROGRESS: 409,
         CONTROLLER_EXISTS: 409, CONTROLLER_NOT_ENROLLED: 409, ACCOUNT_CHANGED: 409, DEVICE_KEY_UNAVAILABLE: 503, CLEANUP_REQUIRED: 503, CLEANUP_RECORD_FAILED: 503, AUTH_REQUIRED: 503, AUTH_REFRESH_FAILED: 503,
         REMOTE_HOST_NOT_PAIRED: 404,
+        REMOTE_REQUEST_FAILED: 502,
       }[e.code] ?? (typeof e.code === 'number' ? 422 : 500));
       reply(res, status, { error: { code: e.code ?? 'INTERNAL', message: status === 500 ? '操作失败，请查看服务状态。' : e.message, ...(e.outcome ? { outcome: e.outcome } : {}), ...(e.queueRecovery ? { queueRecovery: e.queueRecovery } : {}) } }, [400, 401, 403, 408, 413, 415, 507].includes(status) ? { Connection: 'close' } : {});
     }

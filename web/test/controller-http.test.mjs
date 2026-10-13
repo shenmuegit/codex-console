@@ -80,6 +80,21 @@ test('an unconfigured controller reports its setup state without breaking existi
   assert.equal((await f.request('/api/controller/authorize', { method: 'POST', cookie, body: {} })).status, 503);
 });
 
+test('known upstream failures expose their reason while unknown internal exception details remain private', async t => {
+  const controller = controllerFixture(); let known = true;
+  controller.listHosts = async () => {
+    if (known) throw Object.assign(new Error('Official remote-control request failed (403).'), { code: 'REMOTE_REQUEST_FAILED' });
+    throw new Error('private runtime or credential details');
+  };
+  const f = await httpsFixture({ controller }); t.after(() => f.close()); const cookie = await f.login();
+  const failed = await f.request('/api/controller/hosts', { cookie });
+  assert.equal(failed.status, 502);
+  assert.equal(failed.json.error.message, 'Official remote-control request failed (403).');
+  known = false;
+  const unknown = await f.request('/api/controller/hosts', { cookie });
+  assert.equal(unknown.status, 500); assert.equal(unknown.text.includes('private runtime'), false);
+});
+
 test('recoverable controller account state is public while native renewal and token export stay private', async t => {
   const controller = controllerFixture();
   controller.status = async () => ({ enrolled: false, enrollmentPreserved: true, phase: 'authenticationRequired',

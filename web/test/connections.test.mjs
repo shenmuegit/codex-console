@@ -52,10 +52,8 @@ test('switching devices preserves their names during slow or failed inventory re
   t.after(() => { connections.dispose(); dom.restore(); });
   await connections.refresh(); connections.dispose(); fail = true;
   connections = mountConnections({ api, selectedHost: 'host-a', selectHost(id) { selected = id; } });
-  for (const id of ['host-picker', 'recovery-host-picker']) {
-    assert.equal(dom.get(id).value, 'host-a');
-    assert.equal(dom.get(id).children[1].textContent, '办公电脑');
-  }
+  assert.equal(dom.get('host-picker').value, 'host-a');
+  assert.equal(dom.get('host-picker').children[1].textContent, '办公电脑');
   await connections.refresh();
   assert.equal(dom.get('host-picker').children[1].textContent, '办公电脑');
   dom.event('host-picker', 'change'); assert.equal(selected, 'host-a');

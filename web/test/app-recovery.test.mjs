@@ -16,7 +16,7 @@ async function fixture(t, { host = 'removed-host', ownerStatus = 200, controller
     if (url.pathname === '/api/login') activeOwnerStatus = 200;
     const status = signedOut ? 401 : url.pathname === '/api/status' && !url.searchParams.has('host') ? activeOwnerStatus : url.pathname === '/api/controller/status' ? controllerStatus :
       failure && url.searchParams.get('host') === host && url.pathname === failure.path ? failure.status : 200;
-    const data = status !== 200 ? { error: { code: signedOut || status === 401 ? 'UNAUTHORIZED' : failure?.code, message: status === 401 ? 'Owner login required' : 'Selected host unavailable' } } :
+    const data = status !== 200 ? { error: { code: signedOut || status === 401 ? 'UNAUTHORIZED' : failure?.code, message: status === 401 ? 'Owner login required' : failure?.message ?? 'Selected host unavailable' } } :
       url.pathname === '/api/status' ? { online: true, uploadLimitBytes: 32, generation: url.searchParams.has('host') ? 7 : 99 } :
       url.pathname === '/api/controller/status' ? { available: true, enrolled, phase: enrolled ? 'ready' : 'authenticationUnavailable', enrollmentPreserved: !enrolled } :
       url.pathname === '/api/controller/hosts' ? { hosts: [{ id: 'host-b', name: 'Other device', online: true }, ...(host === 'host-a' ? [{ id: host, name: 'Selected device', online: true }] : [])] } :
@@ -41,21 +41,22 @@ for (const failure of [
   { path: '/api/status', status: 503, code: 'AUTH_UNAVAILABLE' },
   { path: '/api/view', status: 503, code: 'NATIVE_DISCONNECTED' },
   { path: '/api/rpc', status: 503, code: 'NATIVE_DISCONNECTED' },
-]) test('authenticated startup preserves device recovery for ' + failure.code + ' at ' + failure.path, async t => {
+]) test('authenticated startup shows a compact, specific error for ' + failure.code + ' at ' + failure.path, async t => {
   const { dom, calls } = await fixture(t, { failure, enrolled: failure.status !== 409 && failure.code !== 'AUTH_UNAVAILABLE' });
   assert.equal(calls[0], '/api/status', 'Owner authentication must not inherit the saved host');
   assert.equal(dom.get('login-panel').hidden, true); assert.equal(dom.get('workspace').hidden, false);
   assert.ok(calls.includes('/api/controller/status'));
   assert.equal(dom.get('workspace-error').hidden, false);
   assert.match(dom.get('workspace-error-message').textContent, /Selected host unavailable/);
-  for (const id of ['host-picker', 'recovery-host-picker']) {
-    assert.equal(dom.get(id).value, 'removed-host', 'Unavailable host identity stays selected');
-    assert.ok(dom.get(id).children.some(option => option.value === 'local'));
-  }
+  assert.ok(dom.get('workspace-error-message').textContent.includes(failure.code));
+  assert.equal(dom.get('recovery-host-picker'), null); assert.equal(dom.get('recover-connections'), null);
+  assert.equal(dom.get('host-picker').value, 'removed-host', 'Unavailable host identity stays selected');
+  assert.ok(dom.get('host-picker').children.some(option => option.value === 'local'));
   assert.equal(calls.some(path => path !== '/api/status' && new URL(path, dom.location.href).pathname.startsWith('/api/') &&
     !new URL(path, dom.location.href).pathname.startsWith('/api/controller/') && !new URL(path, dom.location.href).searchParams.has('host')), false, 'No remote operation silently falls back to local');
-  dom.get('recover-connections').click(); assert.equal(dom.get('connections-dialog').open, true);
-  dom.get('recovery-host-picker').value = 'local'; dom.event('recovery-host-picker', 'change');
+  dom.get('show-settings').click(); dom.get('show-connections').click(); assert.equal(dom.get('connections-dialog').open, true);
+  dom.get('close-connections').click(); dom.get('close-settings').click();
+  dom.get('host-picker').value = 'local'; dom.event('host-picker', 'change');
   assert.equal(new URL(dom.location.href).searchParams.has('host'), false);
   assert.equal(new URL(dom.location.href).searchParams.has('thread'), false);
 });
@@ -91,13 +92,21 @@ test('a selected-host owner 401 closes the partially initialized workspace', asy
   assert.equal(streams[0].closed, true);
 });
 
-test('side-chat recovery can explicitly select another paired host without the sidebar', async t => {
-  const { dom } = await fixture(t, { side: true, failure: { path: '/api/status', status: 404 } });
+test('side-chat failures show the error without additional device controls', async t => {
+  const { dom } = await fixture(t, { side: true, failure: { path: '/api/status', status: 404, code: 'REMOTE_HOST_NOT_PAIRED' } });
   assert.equal(dom.document.body.dataset.sideChat, 'true');
-  assert.ok(dom.get('recovery-host-picker').children.some(option => option.value === 'host-b'));
-  dom.get('recovery-host-picker').value = 'host-b'; dom.event('recovery-host-picker', 'change');
-  assert.equal(new URL(dom.location.href).searchParams.get('host'), 'host-b');
-  assert.equal(new URL(dom.location.href).searchParams.get('side'), '1');
+  assert.ok(dom.get('workspace-error-message').textContent.includes('REMOTE_HOST_NOT_PAIRED'));
+  assert.equal(dom.get('recovery-host-picker'), null); assert.equal(dom.get('recover-connections'), null);
+});
+
+test('the standard offline error is readable in Chinese while specific backend reasons remain intact', async t => {
+  const { dom } = await fixture(t, { failure: { path: '/api/rpc', status: 503, code: 'NATIVE_DISCONNECTED', message: 'The native backend is offline.' } });
+  assert.equal(dom.get('workspace-error-message').textContent, '未能建立到所选设备的 Codex 连接。（NATIVE_DISCONNECTED）');
+});
+
+test('a gateway connection error preserves the reported upstream status and error code as text', async t => {
+  const { dom } = await fixture(t, { failure: { path: '/api/status', status: 502, code: 'REMOTE_REQUEST_FAILED', message: 'Official remote-control request failed (403).' } });
+  assert.equal(dom.get('workspace-error-message').textContent, 'Official remote-control request failed (403).（REMOTE_REQUEST_FAILED）');
 });
 
 test('choosing another host closes its partial stream and ignores late initialization failures', async t => {

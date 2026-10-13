@@ -141,8 +141,8 @@ deauthorization clears these hints.
 
 System settings also contains **7-day usage**. Closing either child dialog with
 its close button or Escape returns to settings and focuses the entry used;
-closing settings returns to the sidebar. Direct connection recovery and the
-usage slash command retain their existing entry paths.
+closing settings returns to the sidebar. The usage slash command retains its
+existing entry path.
 
 Optional private configuration enables the controller:
 
@@ -171,12 +171,12 @@ remain mandatory completion gates.
 
 Startup checks the owner login with an unscoped status request before initializing
 the selected device. A removed/unknown host, unavailable controller enrollment or
-account, or native startup failure stays in the workspace with its device error.
-Both device pickers retain the selected host, including an unavailable placeholder;
-choose **server 本机** (server local) explicitly to return to this server, or another listed
-device. The startup recovery controls also appear inside the chat pane, where
-mobile and side-chat users can reach them without the sidebar. **恢复设备连接** (Recover device connection) opens the existing setup/status dialog; after restoring the controller
-or host, reload the page to retry that same device. Only an actual HTTP 401 opens
+account, or native startup failure stays in the workspace with a compact error
+reason and code. The error area contains no device picker or recovery button.
+The sidebar device picker retains the selected host, including an unavailable
+placeholder; device management stays under **System settings → Connect devices**.
+Known upstream connection failures return HTTP 502 with their reported reason;
+unexpected internal exception details remain masked. Only an actual HTTP 401 opens
 the owner login screen. Failed remote requests never fall back to local, and
 switching devices closes the old view/stream without carrying its model or cursor
 to the new device.

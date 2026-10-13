@@ -8,17 +8,15 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
     if (Array.isArray(saved)) savedNames = saved.filter(host => host && typeof host.id === 'string' && typeof host.name === 'string')
       .map(({ id, name }) => ({ id, name }));
   } catch { /* Storage may be unavailable; the authoritative inventory still loads. */ }
-  const pickers = [$('host-picker'), $('recovery-host-picker')];
+  const picker = $('host-picker');
   function updateHosts(hosts = []) {
-    for (const picker of pickers) {
-      const items = [{ id: 'local', name: 'server 本机' }, ...hosts];
-      if (!items.some(host => host.id === selectedHost)) items.push({ id: selectedHost, name: '远程设备 · 暂不可用' });
-      picker.replaceChildren(...items.map(host => {
-        const option = document.createElement('option'); option.value = host.id;
-        option.textContent = host.name + (host.online === false ? ' · 未连接' : host.online === true ? ' · 已连接' : ''); return option;
-      }));
-      picker.value = selectedHost;
-    }
+    const items = [{ id: 'local', name: 'server 本机' }, ...hosts];
+    if (!items.some(host => host.id === selectedHost)) items.push({ id: selectedHost, name: '远程设备 · 暂不可用' });
+    picker.replaceChildren(...items.map(host => {
+      const option = document.createElement('option'); option.value = host.id;
+      option.textContent = host.name + (host.online === false ? ' · 未连接' : host.online === true ? ' · 已连接' : ''); return option;
+    }));
+    picker.value = selectedHost;
   }
   updateHosts(savedNames);
   const states = { ready: 'server 已就绪，输入被控端连接码即可添加设备。', unconfigured: 'server 尚未完成首次授权。',
@@ -74,7 +72,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   $('show-connections').addEventListener('click', () => { $('connections-dialog').showModal(); refresh(); }, options);
   $('close-connections').addEventListener('click', () => $('connections-dialog').close(), options);
   $('refresh-connections').addEventListener('click', refresh, options);
-  for (const picker of pickers) picker.addEventListener('change', () => selectHost(picker.value), options);
+  picker.addEventListener('change', () => selectHost(picker.value), options);
   $('controller-authorize').addEventListener('click', () => action($('controller-authorize'), async () => {
     const started = await api('/api/controller/authorize', {}), url = new URL(started.url);
     if (url.origin !== 'https://auth.openai.com' || url.pathname !== '/oauth/authorize') throw new Error('官方授权地址无效。');
