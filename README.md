@@ -78,6 +78,8 @@ Read the password on the host:
 
 Open `http://HOST_IP:15443/` in your browser and replace `HOST_IP` with the Linux host's address. Enter the access password, then sign in to the remote desktop app on first use. These are separate authentication steps. The dedicated profile may require a new app sign-in.
 
+The login field masks the password and accepts Enter or the phone keyboard's Go action. Confirming an IME candidate keeps the field open; pasted line breaks are removed.
+
 The console defaults to HTTP/WS without transport encryption. Configure a browser-trusted certificate and key for [native HTTPS/WSS](docs/configuration.md#http-and-https-access). Keep access limited to a trusted network or VPN: anyone with the password can control the app with your host account's permissions.
 
 ## Everyday commands

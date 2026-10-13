@@ -21,6 +21,7 @@
 - Clipboard requests for IME and upload pastes use the advertised text even when HTTPS exposes a different device clipboard.
 - New mobile sessions default to Smooth while preserving saved or URL-selected quality profiles.
 - The last selected quality preset is remembered in the browser and restored on later visits.
+- The login keeps ordinary keyboard input and password masking while avoiding Chrome's keyboard autofill toolbar.
 
 - Startup uses the user's configuration and has no machine-specific application network arguments.
 - Systemd service paths are generated from the actual checkout location.

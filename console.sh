@@ -164,6 +164,7 @@ for icon in ('kitchen', 'info'):
     pattern = rf'<li class="-hasSubmenu">\s*<a href="#" data-icon="{icon}">[^<]+</a>\s*(<ul>.*?</ul>)\s*</li>'
     html = re.sub(pattern, '', html, flags=re.S)
 html = html.replace('>Reload</a>', '>重新加载</a>').replace('>Disconnect</a>', '>断开连接</a>')
+# Chrome hides its keyboard autofill accessory on textarea controls.
 start, end = html.index('    <div id="progress"'), html.index('    <div id="float_menu"')
 html = html[:start] + '''    <div id="progress" class="overlay" style="display: none" role="status" aria-live="polite">
       <div class="connection-panel">
@@ -186,7 +187,9 @@ html = html[:start] + '''    <div id="progress" class="overlay" style="display: 
             <input type="text" name="username" id="username" value="" autocomplete="username" style="display: none">
             <label for="password">访问密码</label>
             <div id="password-box">
-              <input type="password" id="password" autocomplete="current-password" placeholder="输入访问密码" maxlength="256" required>
+              <textarea id="password" rows="1" wrap="off" inputmode="text" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入访问密码" maxlength="256" required
+                oninput="this.value = this.value.replace(/[\\r\\n]/g, '')"
+                onbeforeinput="if (!event.isComposing && (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph')) { event.preventDefault(); window.login_connect(); }"></textarea>
             </div>
             <div id="login-buttons">
               <button class="login-button" type="button" id="login_cancel" onclick="window.login_cancel()">取消</button>
@@ -201,6 +204,7 @@ html = html[:start] + '''    <div id="progress" class="overlay" style="display: 
 # Native buttons handle Enter; retain Escape and the password field's shortcuts.
 html = html.replace('document.querySelector("#login_connect").addEventListener("keyup", password_special_keys);', '')
 html = html.replace('if (event.keyCode == 27 || event.keyCode == 13) {', 'if (event.keyCode == 27) {')
+html = html.replace('function password_special_keys(e) {', 'function password_special_keys(e) {\n        if (e.isComposing || e.keyCode == 229) return;')
 html = html.replace('function login_connect() {', 'function login_connect() {\n        if (!password_input.reportValidity()) return;')
 html = html.replace('$("#login-header").text(heading);', '$("#login-header").text(window.location.host);')
 extra = f'<link rel="stylesheet" href="console.css?v={version}">\n'
