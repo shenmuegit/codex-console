@@ -261,7 +261,8 @@ function appendRenderedText(body, text) {
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
 export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local' }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
-  const states = new Map(), messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
+  const states = new Map(), cachedViews = new Map();
+  let messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
   let selected, project, projectCursor, online = false, alive = true, receivedStatus = false;
   let opening = 0, projectLoad = 0, refreshTimer, drawing = false, lastScrollTop = 0;
   let presentationPending = false, presentationAgain = false;
@@ -540,20 +541,49 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     } else await loadProjects();
   });
   function select(state) {
-    if (selected) save(selected);
-    selected = state; setLevel('chat'); messageNodes.clear(); activityNodes.clear(); formNodes.clear();
+    let top;
+    if (selected !== state) {
+      if (selected) {
+        save(selected);
+        if (!selected.deleted && !selected.archived) cachedViews.set(selected.threadId, { messageNodes, activityNodes, formNodes, messages: [...$('#messages').childNodes], top: feed.scrollTop });
+      }
+      const cached = cachedViews.get(state.threadId); selected = state;
+      messageNodes = cached?.messageNodes ?? new Map(); activityNodes = cached?.activityNodes ?? new Map(); formNodes = cached?.formNodes ?? new Map(); top = cached?.top;
+      $('#messages').replaceChildren(...cached?.messages ?? []); $('#native-requests').replaceChildren(...formNodes.values());
+    }
+    setLevel('chat');
     completions.close(); if (menuTarget) closeThreadMenu();
-    $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = state.draft; draw();
+    draft.value = state.draft; if (top !== undefined) feed.scrollTop = top; draw();
+    if (top !== undefined) feed.scrollTop = top; lastScrollTop = feed.scrollTop;
     if (narrow.matches) $('#thread-title').focus();
     const url = new URL(location.href); url.searchParams.set('thread', state.threadId); history.replaceState(null, '', url);
   }
   async function open(threadId) {
-    const version = ++opening, state = stateFor(threadId); select(state); state.ready = false; draw();
+    const version = ++opening, state = stateFor(threadId);
+    const cached = state.thread && !state.resync ? { turns: state.turns, generation: state.generation, historyCursor: state.historyCursor, historyKind: state.historyKind } : null;
+    state.ready = false; select(state);
     let result;
     try { result = await api('/api/thread/open', { viewId, threadId }); }
     catch (e) { if (version === opening) throw e; return; }
     if (!alive || version !== opening) return;
-    installSnapshot(state, result); save(state); draw();
+    installSnapshot(state, result);
+    const page = result.snapshot.initialTurnsPage;
+    if (cached && cached.generation === state.generation && cached.historyKind === state.historyKind && page?.nextCursor != null) {
+      const anchor = page.data.findLast(turn => turn.items?.length)?.items[0]?.id, prefix = []; let found = false;
+      for (const turn of cached.turns) {
+        const index = turn.items.findIndex(item => item.id === anchor), items = index < 0 ? turn.items : turn.items.slice(0, index);
+        if (items.some(item => item._incomplete || item.status === 'inProgress')) break;
+        if (items.length) prefix.push({ ...turn, items, status: turn.status === 'inProgress' ? 'completed' : turn.status });
+        if (index >= 0) { found = true; break; }
+      }
+      // Keep only completed, contiguous history before the authoritative tail.
+      if (found) {
+        const latest = new Map(state.turns.map(turn => [turn.id, turn]));
+        state.turns = [...prefix.map(older => { const newer = latest.get(older.id); if (!newer) return older; latest.delete(older.id); return { ...newer, items: [...older.items, ...newer.items] }; }), ...latest.values()];
+        state.historyCursor = cached.historyCursor;
+      }
+    }
+    save(state); draw();
     goals.load(state, true);
     followups.load(state).catch(showError);
     if (state.presentationNeeded) { state.presentationNeeded = false; loadPresentation().catch(showError); }
@@ -715,7 +745,8 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     for (const [id, entry] of activityNodes) if (!currentActivities.has(id)) { entry.node.remove(); activityNodes.delete(id); }
     for (const [id, entry] of messageNodes) if (!currentIds.has(id)) { entry.node.remove(); messageNodes.delete(id); }
     for (const [key, native] of state?.requests ?? []) if (!formNodes.has(key)) {
-      const form = createRequestCard({ api, viewId, state, key, native, signal: abort.signal, onResolved(node) { if (formNodes.get(key) === node) formNodes.delete(key); if (selected === state) draw(); } });
+      const nodes = formNodes;
+      const form = createRequestCard({ api, viewId, state, key, native, signal: abort.signal, onResolved(node) { if (nodes.get(key) === node) nodes.delete(key); if (selected === state) draw(); } });
       formNodes.set(key, form); $('#native-requests').append(form);
     }
     for (const [key, form] of formNodes) if (!state?.requests.has(key)) { form.remove(); formNodes.delete(key); }
@@ -795,8 +826,9 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     if (command === 'export') { const link = element('a'); link.href = scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
   function clearSelectedThread(threadId) {
+    cachedViews.delete(threadId);
     if (selected?.threadId !== threadId) return;
-    ++opening; save(selected); selected = undefined; messageNodes.clear(); formNodes.clear();
+    ++opening; save(selected); selected = undefined; messageNodes.clear(); activityNodes.clear(); formNodes.clear();
     $('#messages').replaceChildren(); $('#native-requests').replaceChildren(); draft.value = '';
     const url = new URL(location.href); url.searchParams.delete('thread'); history.replaceState(null, '', url);
     layout.dataset.sidebarCollapsed = 'false'; setLevel('threads'); draw(); $('#new-thread').focus();
@@ -904,6 +936,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       }
       if (event.native?.method?.startsWith('project/')) loadProjects().catch(showError);
       const threadId = event.kind === 'snapshot' ? event.native.thread.id : event.native?.threadId ?? event.native?.params?.threadId;
+      if (['thread/deleted', 'thread/archived'].includes(event.native?.method)) cachedViews.delete(threadId);
       if (event.kind === 'snapshot' || (threadId && states.has(threadId))) applyNativeEvent(stateFor(threadId), event);
       if (threadId && states.has(threadId) && (event.kind === 'snapshot' || event.native?.method === 'thread/queue/changed')) followups.load(stateFor(threadId)).catch(showError);
       if (['status', 'resync'].includes(event.kind)) {
@@ -919,6 +952,6 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); cachedViews.clear(); attachments.dispose(); usage.dispose(); completions.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
   };
 }

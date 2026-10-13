@@ -106,6 +106,14 @@ Markdown changes update the affected subtree. Authoritative text corrections rep
 only the differing character range; formatted corrections wait for the next safe
 HTML update. Native chunks display immediately without an artificial typing delay.
 User messages render without a colored background in both light and dark themes.
+Loaded conversations keep their message/image nodes, expanded activities, native
+answer drafts and reading position in this page's memory. Switching immediately
+restores that view while the gateway binds the selected thread and checks its
+latest history; sends and native answers wait for that confirmation. A completed prefix
+keeps previously loaded pages and their paging boundary. History gaps, removed
+records and connection changes use the authoritative native snapshot instead.
+The cache is scoped to this mounted host and page, and is cleared on disposal;
+reloading the page reads history again without persisting transcripts to storage.
 Their plain text inherits the same font and size as assistant prose, preserving
 line breaks; code and tool output use monospace fonts.
 Ordinary sends and steers immediately insert a local user bubble labelled Sending
