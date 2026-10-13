@@ -63,7 +63,7 @@ export function createFiles({ stateDir, uploadLimitBytes = 33_554_432, generated
     let handle;
     try {
       if ((await lstat(path)).isSymbolicLink()) throw new Error();
-      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const actual = await realpath(`/proc/self/fd/${handle.fd}`), stat = await handle.stat({ bigint: true });
       if (!stat.isFile() || !roots.some(root => within(actual, root)) ||
           (pin && (String(stat.dev) !== pin.dev || String(stat.ino) !== pin.ino))) throw new Error();

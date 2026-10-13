@@ -644,6 +644,8 @@ roots. Canonical paths, no-follow opens and opened descriptor/inode checks stop
 symlink replacement. Links contain opaque IDs; arbitrary path/URL downloads are
 not exposed. UTF-8 filenames use Content-Disposition and downloads stream the
 opened file's bytes. Linux `/proc/self/fd` is required for this validation.
+File opens are nonblocking and admit regular files only, so named pipes cannot
+stall file references, downloads or the filesystem workers used by owner login.
 
 SSE keeps its 1 MiB queue bound. Large snapshots and presentations use authenticated
 HTTPS with small SSE checkpoint signals; late file/HTML enrichment cannot replace

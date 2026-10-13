@@ -4,6 +4,8 @@ import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, open, unlink, symlink
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { constants } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createFiles } from '../files.mjs';
 import { formatNativePath, displayNativeText } from '../public/composer.js';
@@ -20,6 +22,20 @@ async function openThread(f, cookie, viewId) {
   for (let i = 0; i < 100 && !f.peer.sent.some(m => m.method === 'thread/resume'); i++) await delay(5);
   f.peer.replyTo('thread/resume', resumeFixture('t')); assert.equal((await pending).status, 200);
 }
+
+test('named-pipe references are rejected without waiting for a writer', async t => {
+  const { files, dir } = await fixture(t), path = join(dir, 'pipe');
+  execFileSync('mkfifo', [path]);
+  const pending = files.issueTranscriptRefs({ cwd: dir }, [{ items: [{ id: 'fifo', type: 'fileChange', changes: [{ path }] }] }]);
+  const result = await Promise.race([pending, delay(1000, null)]);
+  if (result === null) {
+    // Unblock the pre-fix open so a failing regression cannot strand a filesystem worker.
+    const writer = await open(path, constants.O_RDWR | constants.O_NONBLOCK);
+    try { await pending; } finally { await writer.close(); }
+  }
+  assert.notEqual(result, null, 'A named-pipe reference must not wait for a writer.');
+  assert.deepEqual(result.get('fifo'), []);
+});
 
 test('native generated images resolve outside the project without admitting the rest of Codex home', async t => {
   const dir = await workspace(t), home = join(dir, 'home'), cwd = join(dir, 'project'), generated = join(home, 'generated_images');
