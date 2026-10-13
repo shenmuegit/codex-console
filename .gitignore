@@ -11,3 +11,5 @@ __pycache__/
 /dist/
 /web/node_modules/
 /.tools/
+/AGENT.md
+/AGENTS.md
