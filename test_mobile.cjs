@@ -69,7 +69,7 @@ browser.innerHeight = 680;
 browser.visualViewport = new Surface();
 browser.visualViewport.width = 360;
 browser.visualViewport.height = 680;
-browser.location = { href: 'https://localhost:15443/?sound=true', search: '?sound=true' };
+browser.location = { href: 'http://localhost:15443/?sound=true', search: '?sound=true' };
 browser.history = { replaceState: (_state, _title, url) => {
   browser.location.href = String(url);
   browser.location.search = new URL(url).search;
@@ -117,7 +117,8 @@ const context = vm.createContext({ window: browser, document,
     return id;
   }, clearInterval: id => timers.delete(id), AbortController, jQuery: jquery, $: jquery,
   default_settings: {}, navigator: browser.navigator, screen: {}, URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
-  crypto: require('node:crypto').webcrypto,
+  // Public HTTP origins expose getRandomValues, but not randomUUID or subtle.
+  crypto: { getRandomValues: array => require('node:crypto').webcrypto.getRandomValues(array) },
   MediaSourceUtil: { getMediaSourceClass: () => null }, AudioContext: class {} });
 vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/rencode.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('/usr/share/xpra/www/js/lib/lz4.js', 'utf8'), context);

@@ -16,6 +16,10 @@
 ### Changed
 
 - Browser access defaults to HTTP/WS; startup removes legacy certificates only without configured TLS and never creates an identity automatically.
+- Single taps click immediately; two-finger taps right-click and two-finger slides scroll, without a double-tap recognition delay.
+- IME commits paste without the extra 100 ms pre-paste wait while retaining the guard between clipboard replacements.
+- Clipboard requests for IME and upload pastes use the advertised text even when HTTPS exposes a different device clipboard.
+
 - Startup uses the user's configuration and has no machine-specific application network arguments.
 - Systemd service paths are generated from the actual checkout location.
 - Audio runtime files are isolated from the host desktop and other console sessions.

@@ -7,10 +7,10 @@
 ```mermaid
 flowchart LR
     Browser["Browser<br/>Xpra HTML5 + mobile.js + console.css"]
-    Server["Linux host<br/>Xpra HTTP(S) / WS(S) session"]
+    Server["Linux host<br/>Xpra HTTP / WS session"]
     Watch["app-watch.sh"]
     App["Dedicated desktop app profile"]
-    Browser <-->|"Password-authenticated WS/WSS"| Server
+    Browser <-->|"Password-authenticated WS"| Server
     Server -->|"Starts on Xvfb"| Watch
     Watch -->|"Reopens missing main window"| App
     Server <-->|"X11 window / input / audio"| App
@@ -58,7 +58,7 @@ python3 test_integration.py
 CONSOLE_TEST_TLS=1 python3 test_integration.py
 ```
 
-This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity and a native file picker without a profile class or transient parent. It verifies HTTP, correct and rejected passwords, window isolation, decoded WS audio, and upload completion followed by Unicode clipboard/key packets that make the original picker accept the file. It then stops the session. It uses no desktop-app account and does not change your service; compatibility with a particular app build still needs that app. The TLS variant generates a temporary identity, explicitly trusts it for the test, and checks HTTPS/WSS on the same paths.
+This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity, text field, and native file picker without a profile class or transient parent. It verifies HTTP, correct and rejected passwords, window isolation, decoded WS audio, uploads, immediate Unicode clipboard/key packets, and sequential text commits followed by Enter. The TLS variant generates a temporary identity, explicitly trusts it for the test, and checks HTTPS/WSS. Both stop their sessions and use no desktop-app account or service; compatibility with a particular app build still needs that app.
 
 ## Existing-app live check
 

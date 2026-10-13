@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix="console integration ") as directory, \
     app = work / "test app"
     fixture = work / "app.py"
     selection = work / "selection.json"
-    submitted = work / "submitted.json"
+    submitted = work / 'submitted.json'
     ready = work / 'fixture.ready'
     fixture.write_text('''import gi, json, os, warnings
 from pathlib import Path
@@ -80,7 +80,7 @@ Gtk.main()
             output.write(f'CONSOLE_TLS_CERT={shlex.quote(str(certificate))}\n'
                          f'CONSOLE_TLS_KEY={shlex.quote(str(private_key))}\n')
     inherited = {name: value for name, value in os.environ.items()
-                 if not name.startswith("CONSOLE_")}
+                 if not name.startswith("CONSOLE_") and name not in ('PULSE_SERVER', 'PULSE_RUNTIME_PATH')}
     env = dict(inherited, CONSOLE_CONFIG=str(config), XDG_RUNTIME_DIR=runtime,
                UPLOAD_TEST_SELECTION=str(selection), INPUT_TEST_SUBMITTED=str(submitted), TEST_APP_READY=str(ready),
                XDG_CONFIG_HOME=str(work / 'desktop-config'),
@@ -181,23 +181,22 @@ Gtk.main()
                 assert Path(self.path).read_bytes() == contents
                 self.send('focus', self.wid, [])
                 self.control('l', 108, 76)
-                self.send('clipboard-token', 'CLIPBOARD', ['text/plain', 'UTF8_STRING'],
-                          'UTF8_STRING', 'UTF8_STRING', 8, 'bytes', self.path.encode(), True, True, True)
-                GLib.timeout_add(100, self.paste)
+                # Let Ctrl+L create/focus the chooser's location entry first.
+                GLib.timeout_add(100, self.paste_path)
+
+            def paste_path(self):
+                self.paste_text(self.path)
+                GLib.timeout_add(500, self.confirm)
+                return False
 
             def paste_text(self, text):
-                self.path = text
+                self.text = text
                 self.send('clipboard-token', 'CLIPBOARD', ['text/plain', 'UTF8_STRING'],
                           'UTF8_STRING', 'UTF8_STRING', 8, 'bytes', text.encode(), True, True, True)
                 self.control('v', 118, 86)
 
             def clipboard_request(self, packet):
-                self.send('clipboard-contents', packet[1], 'CLIPBOARD', 'UTF8_STRING', 8, 'bytes', self.path.encode())
-
-            def paste(self):
-                self.control('v', 118, 86)
-                GLib.timeout_add(500, self.confirm)
-                return False
+                self.send('clipboard-contents', packet[1], 'CLIPBOARD', 'UTF8_STRING', 8, 'bytes', self.text.encode())
 
             def confirm(self):
                 self.send('key-action', self.wid, 'Alt_L', True, [], 0xffe9, '', 18, 0)
@@ -254,7 +253,7 @@ Gtk.main()
         code = client.run()
         if code or not completed:
             print('Server log:', '\n'.join((state / 'xpra.log').read_text().splitlines()[-40:]))
-        assert code == 0 and completed, f'Upload did not reach its native chooser: {windows!r}, completions={completed!r}'
+        assert code == 0 and completed, f'Input/upload failed: windows={windows!r}, completions={completed!r}, selection={selection.read_text() if selection.exists() else None}, submitted={submitted.read_text() if submitted.exists() else None}'
         selected = json.loads(selection.read_text())
         assert selected == {'response': -3, 'path': completed[0]['path']}, selected
         chooser = next(metadata for metadata in windows.values() if metadata.get('role') == 'GtkFileChooserDialog')
@@ -264,8 +263,8 @@ Gtk.main()
             capture_output=True, text=True, timeout=60)
         assert browser_check.returncode == 0, browser_check.stdout + browser_check.stderr
         print('PASS: browser hello → real server upload capabilities → browser native file input')
-        print('PASS: two immediate Unicode pastes with 100 ms protection → Enter → GTK receives 中文😀第二段')
-        print(f'PASS: real {transport.upper()} upload → targeted completion → Unicode clipboard → original native chooser accepts file')
+        print(f'PASS: real {transport.upper()} upload → targeted completion → immediate Unicode paste → original native chooser accepts file')
+        print('PASS: two immediate Unicode pastes with 100 ms clipboard guard → Enter → GTK receives 中文😀第二段')
     finally:
         stopped = subprocess.run([str(root / "console.sh"), "stop"], env=env,
                                  capture_output=True, text=True, timeout=30)

@@ -217,9 +217,11 @@
     return Math.round(getDPI.call(this) * (this._effective_density || this._render_density || 1));
   };
   const hello = XpraClient.prototype._make_hello;
+  const randomId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    value => value.toString(16).padStart(2, '0')).join('');
   XpraClient.prototype._make_hello = function () {
     // A short, stable client ID also routes upload completions after reconnects.
-    this.uuid = this._upload_uuid ||= crypto.randomUUID().replaceAll('-', '');
+    this.uuid = this._upload_uuid ||= randomId();
     hello.call(this);
     this.capabilities.uuid = this.uuid;
     // Xpra 6.5 applies Xsettings only when DPI changes: set it after connection.
@@ -411,7 +413,7 @@
         event.preventDefault();
         return;
       }
-      pending = { id: crypto.randomUUID().replaceAll('-', ''), wid: chooser.wid, window: chooser };
+      pending = { id: randomId(), wid: chooser.wid, window: chooser };
       event.target.value = '';
     };
     input.oncancel = files.oncancel = () => finish('已取消选择文件。');
