@@ -33,7 +33,7 @@
 
 ### Task 1: Independent browser authorization
 
-**Files:** Create `web/remote-auth.mjs`, `web/test/remote-auth.test.mjs`, `docs/controller.md`, `docs/zh-CN/controller.md`.
+**Files:** Create `web/remote-auth.mjs`, `tests/web/remote-auth.test.mjs`, `docs/controller.md`, `docs/zh-CN/controller.md`.
 
 **Interfaces:** `startRemoteAuthorization({accountId, fetchToken = fetch, timeoutMs = 600000, signal})` returns `{url, redirectUri, completion, submitCallback(url), cancel()}`. `completion` resolves to a step-up access token; it never launches an application or writes credentials.
 
@@ -45,7 +45,7 @@
 
 ### Task 2: Protected enrollment and code claiming
 
-**Files:** Create `web/remote-controller.mjs`, `web/test/remote-controller.test.mjs`; update both controller documents.
+**Files:** Create `web/remote-controller.mjs`, `tests/web/remote-controller.test.mjs`; update both controller documents.
 
 **Interfaces:** `createRemoteController({authFile, stateDir, deviceKey, fetch = globalThis.fetch})` returns controller methods `status()`, `startAuthorization()`, `submitCallback(url)`, `pair(code)`, `listHosts()`, `session()`, `close()`. Authorization uses Task 1; deviceKey implements create/get/sign/delete against the native component. `session()` returns the server enrollment and validated relay session for Task 3, never for browser serialization.
 
@@ -56,7 +56,7 @@
 
 ### Task 3: Relay streams and native RPC
 
-**Files:** Create `web/remote-relay.mjs`, `web/test/remote-relay.test.mjs`; modify `web/codex.mjs`, `web/test/codex.test.mjs`, and both controller documents.
+**Files:** Create `web/remote-relay.mjs`, `tests/web/remote-relay.test.mjs`; modify `web/codex.mjs`, `tests/web/codex.test.mjs`, and both controller documents.
 
 **Interfaces:** `createRemoteRelay({controller, openWebSocket})` returns `openHost(envId)` as a WebSocket-compatible host stream and `close()`. Extend `createCodexClient` with an internal socket factory while keeping existing loopback URL validation. One native client belongs to one host.
 

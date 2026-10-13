@@ -318,7 +318,7 @@ install -m 700 "$HOME/.cache/codex-console-web-build/dev-small/codex-app-server"
 
 ```bash
 npm --prefix web test
-node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
+node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 \
   --workspace "$HOME/.local/state/codex-console-web/integration/workspace" \
   --exercise-files
 ```
@@ -359,7 +359,7 @@ node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
 `https://127.0.0.1:8443`。临时集成配置及私有访问密码位于
 `~/.config/codex-console-web/integration/`，TLS 证书为回环地址的自签名证书。
 持久主机 IP 部署见上文。
-运行 `node --test web/test/auth-server.test.mjs` 可执行隔离 HTTPS/认证检查。
+运行 `node --test tests/web/auth-server.test.mjs` 可执行隔离 HTTPS/认证检查。
 九项检查通过，包含真实 TLS/SSE 慢速页面暂停读取时，另一页面继续接收事件。
 连接源码后端的 HTTPS 实测也通过：未登录 401、其他来源 403、读取四个原生模型、
 SSE 要求获取快照、退出登录；没有输出密码内容。
@@ -390,7 +390,7 @@ SSE 要求获取快照、退出登录；没有输出密码内容。
 执行。成功转移或恢复后删除备份；状态未知的备份可在核对消息后自行清理。
 
 交互参考[官方引导与排队说明](https://learn.chatgpt.com/docs/prompting#steering-and-queuing)。
-回归检查：`node --test web/test/followups.test.mjs web/test/queue-http.test.mjs`。
+回归检查：`node --test tests/web/followups.test.mjs tests/web/queue-http.test.mjs`。
 
 打开/切换页面使用原子恢复及有序游标。原生完成摘要不会删除已经流式展示的工具记录。
 较早的完整历史向前追加，不覆盖最新内容；延迟的安全 HTML 不会替换更新的文本。
@@ -412,7 +412,7 @@ SSE 要求获取快照、退出登录；没有输出密码内容。
 手动运行真实联调探针，读取私有访问密码而不输出它：
 
 ```bash
-node web/test/web-probe.mjs \
+node tests/web/web-probe.mjs \
   --config "$HOME/.config/codex-console-web/integration/config.json" \
   --password-file "$HOME/.config/codex-console-web/integration/owner-password" \
   --exercise-chat
@@ -491,7 +491,7 @@ SSE 排队仍限制为 1 MiB；大快照及展示内容改由认证 HTTPS 获取
 延迟的文件/HTML 展示不会覆盖更新的原生文本。JSON 请求限时 30 秒；上传请求限时
 10 分钟，连续空闲上限 30 秒。
 
-`web/test/files.test.mjs` 覆盖精确上限、分块/虚假长度、中断/磁盘满清理、Unicode 文件名、
+`tests/web/files.test.mjs` 覆盖精确上限、分块/虚假长度、中断/磁盘满清理、Unicode 文件名、
 无效照片、伪造 ID、符号链接竞态、项目重绑、鉴权及大历史。真实探针增加
 `--exercise-attachments` 可验证文本/照片原生输入和模型生成文件的准确字节。
 源码后端实测通过，删除一次性会话后上传文件仍可下载。浏览器选择器和预览交互仍按

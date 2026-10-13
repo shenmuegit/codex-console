@@ -83,7 +83,7 @@ flowchart LR
 | `web/files.mjs` | 流式上传、原生附件编码、经过验证的引用下载。 |
 | `web/public/index.html`、`app.js`、`styles.css` | 项目/会话/聊天，模型/用量/状态；接近原生 Codex 的简洁平面布局。 |
 | `web/public/composer.js` | 草稿、附件、`@`/`$`/`/`、原生范围和输入法。 |
-| `web/test/*.test.mjs` | 内置 `node:test`，协议样本及 HTTPS/SSE/文件/输入检查。 |
+| `tests/web/*.test.mjs` | 内置 `node:test`，协议样本及 HTTPS/SSE/文件/输入检查。 |
 
 桌面可并排三栏；手机按项目 → 会话 → 聊天逐级显示。使用系统字体、原生
 对话框/选择器和剪贴板，保留可见焦点与控件标签。分阶段开发时仅显示已实现动作。
@@ -149,7 +149,7 @@ flowchart LR
 代码/邮箱原文；上传限额/中断/磁盘满；下载伪造/逃逸/竞态；模型/强度/额度/
 窗口缺失或变化；原生限制与待输入；未登录/跨来源访问、Markdown XSS。
 
-代码存在后执行 `node --test web/test/*.test.mjs`，再对真实独立桌面/后端及手机
+代码存在后执行 `node --test tests/web/*.test.mjs`，再对真实独立桌面/后端及手机
 浏览器验收。纯设计改动检查需求覆盖、一致性、链接与差异，本次不声称客户端运行。
 
 ## 依据与审核交接

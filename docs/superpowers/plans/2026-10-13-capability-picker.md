@@ -31,8 +31,8 @@
 
 **Files:**
 - Modify: `web/server.mjs`, `web/public/composer.js`, `web/public/chat.js`, `web/public/index.html`, `web/public/styles.css`.
-- Create: `web/public/capabilities.js`, `web/test/capabilities.test.mjs`.
-- Modify: `web/test/dom.mjs`, `docs/native-web-client.md`, `docs/zh-CN/native-web-client.md`.
+- Create: `web/public/capabilities.js`, `tests/web/capabilities.test.mjs`.
+- Modify: `tests/web/dom.mjs`, `docs/native-web-client.md`, `docs/zh-CN/native-web-client.md`.
 
 **Interfaces:**
 - `POST /api/capabilities { viewId, threadId }` returns `{ items, unavailable }`, restricted to the opened thread's actual working directory.

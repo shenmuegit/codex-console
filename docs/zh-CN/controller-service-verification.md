@@ -136,7 +136,7 @@ Windows 文件；任务完成后的助手回复和渲染记录均含文件内的
 Windows 回归检查实际运行 PowerShell：允许祖先拥有 CreateDirectories，
 拒绝七种修改/删除/改变 ACL 的权限，拒绝共享存储和 junction。在 Windows
 执行 `node --test --test-name-pattern="^Windows native ACL"
-web/test/remote-upload-storage.test.mjs` 可复现。Linux 完整检查 443 个通过、
+tests/web/remote-upload-storage.test.mjs` 可复现。Linux 完整检查 443 个通过、
 零失败，八个 Windows 专用检查跳过。Windows 主机通过原生 command/exec
 执行同一个测试文件，八个检查全部通过；原有实现未通过正向检查。
 机器重启仍未验证。

@@ -11,7 +11,7 @@ states, touch targets and responsive layout. It adds no production dependency.
 ## Automated checks
 
 ```bash
-node --test web/test/capabilities.test.mjs web/test/composer.test.mjs web/test/completion-interactions.test.mjs
+node --test tests/web/capabilities.test.mjs tests/web/composer.test.mjs tests/web/completion-interactions.test.mjs
 cd web
 npm test
 ```
@@ -55,9 +55,9 @@ not an application dependency. The runner uses fixture catalogs and a temporary
 localhost server; it never connects to an owner session or invokes a model.
 
 ```bash
-uv run --with playwright python web/test/capabilities-browser.py
+uv run --with playwright python tests/web/capabilities-browser.py
 # Alternatively, use an already installed Chromium:
-uv run --offline --with playwright python web/test/capabilities-browser.py \
+uv run --offline --with playwright python tests/web/capabilities-browser.py \
   --chromium /absolute/path/to/chrome --output /tmp/codex-console-capability-qa
 ```
 

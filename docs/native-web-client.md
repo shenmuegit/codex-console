@@ -423,7 +423,7 @@ The corrected build returns the same seven visible models as the desktop, includ
 
 ```bash
 npm --prefix web test
-node web/test/native-probe.mjs --url ws://127.0.0.1:4500 \
+node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 \
   --workspace "$HOME/.local/state/codex-console-web/integration/workspace" \
   --exercise-files
 ```
@@ -473,7 +473,7 @@ The isolated HTTPS test unit is `codex-console-native-web-test`, listening only
 on `https://127.0.0.1:8443`. Its temporary integration configuration and private
 owner password are in `~/.config/codex-console-web/integration/`; generated TLS
 files are self-signed for loopback. The durable host-IP deployment is described above.
-Run `node --test web/test/auth-server.test.mjs` for the isolated HTTPS/auth suite.
+Run `node --test tests/web/auth-server.test.mjs` for the isolated HTTPS/auth suite.
 Nine checks passed, including a paused real TLS/SSE reader while another page
 continued receiving events. A live HTTPS smoke against the source backend also
 passed: unauthenticated 401, foreign Origin 403, four native catalog models,
@@ -519,7 +519,7 @@ transfers/recoveries remove their backup files; retained uncertain backups can
 be cleaned up after their corresponding messages have been checked.
 
 This follows the [official steering and queueing behavior](https://learn.chatgpt.com/docs/prompting#steering-and-queuing).
-Regression checks: `node --test web/test/followups.test.mjs web/test/queue-http.test.mjs`.
+Regression checks: `node --test tests/web/followups.test.mjs tests/web/queue-http.test.mjs`.
 
 Opening/switching pages uses native atomic resume and ordered cursors. Native
 completion summaries preserve previously streamed tool items. Older full history
@@ -550,7 +550,7 @@ desktop Enter sends, and the Send button is available on all devices.
 Opt-in live acceptance (uses the private owner password without printing it):
 
 ```bash
-node web/test/web-probe.mjs \
+node tests/web/web-probe.mjs \
   --config "$HOME/.config/codex-console-web/integration/config.json" \
   --password-file "$HOME/.config/codex-console-web/integration/owner-password" \
   --exercise-chat
@@ -654,7 +654,7 @@ HTTPS with small SSE checkpoint signals; late file/HTML enrichment cannot replac
 newer native text. JSON requests have a 30-second deadline; uploads have a
 10-minute request deadline and a 30-second idle limit.
 
-`web/test/files.test.mjs` verifies exact caps, chunked/dishonest lengths,
+`tests/web/files.test.mjs` verifies exact caps, chunked/dishonest lengths,
 interruption/ENOSPC cleanup, Unicode names, invalid photos, forged IDs, symlink
 races, project rebinding, authentication and large histories. Run the live probe
 with `--exercise-attachments` to verify the native text/photo inputs and exact

@@ -129,4 +129,4 @@ CONSOLE_CONFIG=/absolute/path/config.sh ./console.sh network
 
 Xpra HTML5 19 自动重连时会重置音频开关、所选编码器和解码器列表。新连接因此不声明音频解码器，即使 Codex 正在向 `Xpra-Speaker` 播放，服务器也无法转发声音。启动脚本现已在重连时保留这些浏览器偏好和编码器列表。
 
-更新后刷新一次网页以加载修复。如果浏览器阻止自动播放，请点击扬声器按钮。执行 `node test_audio.cjs` 可使用已安装的 Xpra 客户端验证连续重连，不会启动额外的桌面客户端。
+更新后刷新一次网页以加载修复。如果浏览器阻止自动播放，请点击扬声器按钮。执行 `node tests/test_audio.cjs` 可使用已安装的 Xpra 客户端验证连续重连，不会启动额外的桌面客户端。

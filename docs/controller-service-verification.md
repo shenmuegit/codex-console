@@ -171,7 +171,7 @@ transfer. Private test evidence and application data stay outside Git.
 The Windows regression executes actual PowerShell ACL checks: allow an ancestor
 with CreateDirectories, reject seven mutation/deletion/ACL rights, reject shared
 storage, and reject a junction. Run it on Windows with `node --test
---test-name-pattern="^Windows native ACL" web/test/remote-upload-storage.test.mjs`.
+--test-name-pattern="^Windows native ACL" tests/web/remote-upload-storage.test.mjs`.
 The full Linux suite has 443 passes, zero failures and eight Windows-only skips.
 The Windows host ran the same test file through native command/exec: all eight
 checks passed; the previous helper failed the positive case. Machine reboot

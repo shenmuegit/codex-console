@@ -6,7 +6,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test ../tests/web/*.test.mjs",
     "start": "node server.mjs"
   },
   "dependencies": {

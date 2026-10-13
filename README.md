@@ -132,6 +132,8 @@ Local configuration is stored at `~/.config/codex-console/config.sh`; applicatio
 
 ## Development
 
+All tests and fixtures are in `tests/`; native Web client tests are in `tests/web/`. With Node.js 24+, run `npm --prefix web ci` and `npm --prefix web test` from the repository root.
+
 With the runtime installed and Node.js 20+ available:
 
 ```bash

@@ -28,6 +28,7 @@ flowchart LR
 | `console.css` | Login, connection, and toolbar layout |
 | `codex-console.service` | User-service template rendered by deployment |
 | `scripts/check.sh` | Standard isolated checks and optional live endpoint verification |
+| `tests/` | Desktop transport tests, with native Web client tests and fixtures in `tests/web/` |
 
 There is no Node build or package installation for the frontend. The browser runs `mobile.js` directly against the system Xpra HTML5 client. The adapted HTML/Client.js are generated in the private state directory. Only the adapted index page is published; upstream HTML pages and their compressed copies are excluded and cleaned up on upgrades. Host-installed upstream assets remain untouched. The launcher includes a content-derived cache version in the page.
 
@@ -39,14 +40,16 @@ Install the normal runtime and Node.js 20+; Python must be able to import the in
 ./scripts/check.sh
 ```
 
+All tests and fixtures live under `tests/`. For the native Web client suite, use Node.js 24+ and run `npm --prefix web ci` followed by `npm --prefix web test` from the repository root. Individual Web tests use `node --test tests/web/<name>.test.mjs`.
+
 | Check | Coverage |
 | --- | --- |
 | Bash syntax | All shell entry points and config example |
-| `test_startup.py` | Foreground service launch vs daemonized manual launch |
-| `test_deploy.py` | Config validation, argument quoting, alternate state/port/display, HTTP startup, configured TLS and certificate preservation, service rendering, repeat install, dependency installation boundary, relocation, uninstall |
-| `test_app_watch.py` | Reopening closed/exited app, avoiding duplicates, excluding foreign profiles, cleaning up children |
-| `test_mobile.cjs` | Browser authentication, retry/reconnect, gestures, scaling, quality, IME and UTF-8 clipboard behavior |
-| `test_upload.py` | Real Xpra save completion, private original filenames, request and client isolation |
+| `tests/test_startup.py` | Foreground service launch vs daemonized manual launch |
+| `tests/test_deploy.py` | Config validation, argument quoting, alternate state/port/display, HTTP startup, configured TLS and certificate preservation, service rendering, repeat install, dependency installation boundary, relocation, uninstall |
+| `tests/test_app_watch.py` | Reopening closed/exited app, avoiding duplicates, excluding foreign profiles, cleaning up children |
+| `tests/test_mobile.cjs` | Browser authentication, retry/reconnect, gestures, scaling, quality, IME and UTF-8 clipboard behavior |
+| `tests/test_upload.py` | Real Xpra save completion, private original filenames, request and client isolation |
 
 Isolated tests use temporary directories and controlled command boundaries. They do not install packages or modify your user service, and they do not start your desktop app. They still load the real installed Xpra client code and selected server modules. The watcher test takes roughly 20 seconds because it exercises the actual recovery intervals.
 
@@ -55,13 +58,13 @@ Isolated tests use temporary directories and controlled command boundaries. They
 Use the runtime's GTK 3 Python bindings, then run:
 
 ```bash
-python3 test_integration.py
-CONSOLE_TEST_TLS=1 python3 test_integration.py
+python3 tests/test_integration.py
+CONSOLE_TEST_TLS=1 python3 tests/test_integration.py
 ```
 
 This runs the real one-command deployment in manual mode with a temporary config, state directory, local port, and unused X11 display. A GTK fixture supplies the app identity, text field, and native file picker without a profile class or transient parent. It verifies HTTP, correct and rejected passwords, window isolation, decoded WS audio, uploads, immediate Unicode clipboard/key packets, and sequential text commits followed by Enter. The TLS variant generates a temporary identity, explicitly trusts it for the test, and checks HTTPS/WSS. Both stop their sessions and use no desktop-app account or service; compatibility with a particular app build still needs that app.
 
-With the installed Electron app and Node.js 22+, run `node test_keyboard.cjs` to check the DOM keyboard bridge in a disposable Xvfb/profile. It covers editable fields, readonly/disabled controls, noneditable children, composer padding/buttons, clipping, overlays, focus and streaming updates without using an account. `CONSOLE_TEST_DPR=1.5 node test_keyboard.cjs` also checks fractional-DPI native coordinates and scrollbars. `CONSOLE_TEST_APP_BIN` overrides the test executable.
+With the installed Electron app and Node.js 22+, run `node tests/test_keyboard.cjs` to check the DOM keyboard bridge in a disposable Xvfb/profile. It covers editable fields, readonly/disabled controls, noneditable children, composer padding/buttons, clipping, overlays, focus and streaming updates without using an account. `CONSOLE_TEST_DPR=1.5 node tests/test_keyboard.cjs` also checks fractional-DPI native coordinates and scrollbars. `CONSOLE_TEST_APP_BIN` overrides the test executable.
 
 The supervisor starts `keyboard.py` beside the app. Electron's `--remote-debugging-port=0` publishes an ephemeral port in the private profile's `DevToolsActivePort`; the endpoint stays on `127.0.0.1` and must not be exposed publicly. The probe uses native mouse-pixel `elementFromPoint` tests, sends geometry/focus only, and resynchronizes after navigation or reconnect. Web clients focus the existing IME receiver synchronously in the editable tap gesture. Stale or mismatched window geometry is ignored; the manual keyboard button remains available for unsupported/custom editors and large regions above the one-million-pixel scan limit. Restart the console and reload the Web page after installing this change. A real phone is still needed to verify its OS keyboard and input method.
 

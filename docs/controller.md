@@ -37,7 +37,7 @@ callback origins/paths, and replay. Token exchange refuses redirects, uses a
 cancellation, denial, or timeout. Authorization expires after ten minutes.
 Returned credentials are only available to the server caller.
 
-Verify from `web/` with `node --test test/remote-auth.test.mjs` and `npm test`.
+Verify from the repository root with `node --test tests/web/remote-auth.test.mjs` and `npm --prefix web test`.
 The checks use real local callback listeners and a controlled token endpoint.
 They establish the server flow's guards, not successful live OpenAI enrollment.
 The public native OAuth client and enrollment scope were observed in installed
@@ -85,7 +85,7 @@ It requires the working Linux TPM resource manager. This server uses encrypted
 software vTPM: its component reports `hardware_tpm`, but that is not evidence of
 physical hardware protection. Reboot startup is not configured yet.
 
-Verify from `web/` with `node --test test/remote-controller.test.mjs` and `npm test`.
+Verify from the repository root with `node --test tests/web/remote-controller.test.mjs` and `npm --prefix web test`.
 The current checks cover 13 controller scenarios and 342 Web tests. Enrollment
 fixtures use independent ECDSA verification; they do not prove acceptance by the
 live official service. Owner authorization, live enrollment/pairing, relay/RPC
@@ -257,8 +257,8 @@ and pending recovery are stored under a host-specific browser key even when
 thread IDs collide. Existing local draft keys remain readable. Unknown IDs on
 another host fail closed; a remote path cannot authorize reading server files.
 
-Run `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
-and `npm test` from `web/`. The Unix/Windows filesystem and browser tests use
+Run `node --test tests/web/remote-filesystem.test.mjs tests/web/remote-upload-storage.test.mjs tests/web/host-scope-browser.test.mjs tests/web/codex.test.mjs`
+and `npm --prefix web test` from the repository root. The Unix/Windows filesystem and browser tests use
 fixtures, not paired official clients. Live read/write/event, concurrent-host,
 and reconnect verification remains an owner-authorized gate.
 

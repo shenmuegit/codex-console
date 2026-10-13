@@ -10,7 +10,7 @@ UI/UX Pro Max 检查现有字体、灰阶主题、焦点、触摸目标和响应
 ## 自动化检查
 
 ```bash
-node --test web/test/capabilities.test.mjs web/test/composer.test.mjs web/test/completion-interactions.test.mjs
+node --test tests/web/capabilities.test.mjs tests/web/composer.test.mjs tests/web/completion-interactions.test.mjs
 cd web
 npm test
 ```
@@ -45,9 +45,9 @@ npm test
 脚本使用测试目录数据和临时 localhost 服务，不连接用户会话，也不会调用模型。
 
 ```bash
-uv run --with playwright python web/test/capabilities-browser.py
+uv run --with playwright python tests/web/capabilities-browser.py
 # 也可以指定已安装的 Chromium：
-uv run --offline --with playwright python web/test/capabilities-browser.py \
+uv run --offline --with playwright python tests/web/capabilities-browser.py \
   --chromium /absolute/path/to/chrome --output /tmp/codex-console-capability-qa
 ```
 

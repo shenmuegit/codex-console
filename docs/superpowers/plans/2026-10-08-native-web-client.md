@@ -45,7 +45,7 @@ Status: approved for Native execution by the user’s continuation on 2026-10-08
 | `web/public/index.html`, `styles.css`, `app.js` | Login/navigation, projects, settings and page bootstrap. |
 | `web/public/chat.js`, `composer.js`, `usage.js` | Chat/cursor state; input/attachments/completions; pure native usage calculations. |
 | `web/service.mjs` | Generate/install the two owner user-service units and TLS/config initialization. |
-| `web/test/helpers.mjs`, `*.test.mjs` | Built-in Node tests, synthetic WebSocket events and private temporary HTTPS/filesystem fixtures. Never implement a WebSocket frame parser for tests. |
+| `tests/web/helpers.mjs`, `*.test.mjs` | Built-in Node tests, synthetic WebSocket events and private temporary HTTPS/filesystem fixtures. Never implement a WebSocket frame parser for tests. |
 | `docs/native-web-client.md`, `docs/zh-CN/native-web-client.md` | Incremental usage/configuration/verification instructions. |
 
 Shared types: `Cursor = {generation:number, seq:number}`; `RpcResult = {result:JSON, cursor:Cursor}`.
@@ -79,7 +79,7 @@ Source authority is commit `ff9ab4a`: `app-server-protocol/src/protocol/{common.
 
 ## Task 1: A resilient native client with ordered subscriptions
 
-**Files:** Create `web/package.json`, `web/codex.mjs`, `web/test/helpers.mjs`, `web/test/codex.test.mjs`, `web/test/native-probe.mjs`; create the two operator docs.
+**Files:** Create `web/package.json`, `web/codex.mjs`, `tests/web/helpers.mjs`, `tests/web/codex.test.mjs`, `tests/web/native-probe.mjs`; create the two operator docs.
 **Interfaces:** Produce `createCodexClient` and `RpcResult` above. Test helper `connectedFixture()` returns `{client,peer,flush}`; `peer` can `replyTo(method,result)`, `notify(method,params)`, `request(id,method,params)`, `disconnect()`, and exposes sent JSON objects. It mocks the native WebSocket API with EventTarget, not wire frames. The opt-in `native-probe.mjs --url URL --workspace PATH [--exercise-files]` waits up to 10 s for online status, emits safe read counts and exits nonzero on failure; its file flag creates/deletes only a disposable native thread, checks a private file’s exact bytes and allows at most 180 s for that turn. It is not part of the automatic test glob.
 
 - [x] **1. Write failing tests** for out-of-order responses, notifications versus server requests, native errors/timeouts, reconnect without replay, and generation-scoped answers. Example assertion contract:
@@ -92,14 +92,14 @@ Source authority is commit `ff9ab4a`: `app-server-protocol/src/protocol/{common.
   assert.deepEqual((await account).result, {account:null});
   ```
   Add `resume_checkpoint_orders_snapshot_and_deltas`, `active_thread_survives_last_view_close`, `idle_thread_unsubscribes`, and `stale_answer_after_reconnect_is_rejected` with exact sent-message assertions.
-- [x] **2. Verify RED:** `node --test web/test/codex.test.mjs`; initially fail with the missing native-client module/export.
+- [x] **2. Verify RED:** `node --test tests/web/codex.test.mjs`; initially fail with the missing native-client module/export.
 - [x] **3. Implement** one persistent connection; `initialize`/`initialized` with `experimentalApi:true`, no attestation capability. RPC timeout 30 s; opening/initialize timeout 10 s; reconnect backoff 0.5–10 s with jitter. Stamp each response with its frame cursor synchronously. Publish a resume snapshot event synchronously before resolving RPC awaiters or processing later frames; async rendering/file enrichment cannot replace newer native text. Every retain obtains native atomic resume; release unsubscribes only with zero watchers and no active turn. Preserve original native errors and never replay mutations.
-- [x] **4. Verify GREEN and real reads:** run the test file. Preflight the source commit and binary; if missing, use Rust 1.95.0 and the documented locked dev-small build. Install the verified binary at `~/.local/lib/codex-console-web/bin/codex-app-server` (outside Git), and create `~/.local/state/codex-console-web/integration/{codex-home,desktop-profile,workspace}`. Only copy an existing login snapshot privately (0600), never a chat/account database. Restore only the isolated backend and extra desktop through named transient user units `codex-console-native-backend-test` and `codex-console-native-desktop-test`, using the existing binary/home/profile and loopback port. Pass GUI/proxy/TLS environment only by explicit variable names; secrets stay out of command arguments and tracked files. Run `node web/test/native-probe.mjs --url ws://127.0.0.1:4500 --workspace "$HOME/.local/state/codex-console-web/integration/workspace" --exercise-files`; expect exit 0, initialized read counts and matching private-file bytes, followed by deletion of the probe thread. Record safe results, not account values or logs, in the operator docs.
+- [x] **4. Verify GREEN and real reads:** run the test file. Preflight the source commit and binary; if missing, use Rust 1.95.0 and the documented locked dev-small build. Install the verified binary at `~/.local/lib/codex-console-web/bin/codex-app-server` (outside Git), and create `~/.local/state/codex-console-web/integration/{codex-home,desktop-profile,workspace}`. Only copy an existing login snapshot privately (0600), never a chat/account database. Restore only the isolated backend and extra desktop through named transient user units `codex-console-native-backend-test` and `codex-console-native-desktop-test`, using the existing binary/home/profile and loopback port. Pass GUI/proxy/TLS environment only by explicit variable names; secrets stay out of command arguments and tracked files. Run `node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 --workspace "$HOME/.local/state/codex-console-web/integration/workspace" --exercise-files`; expect exit 0, initialized read counts and matching private-file bytes, followed by deletion of the probe thread. Record safe results, not account values or logs, in the operator docs.
 - [x] **5. Commit/push:** `feat: connect the web client to the shared native app server`; stage Task 1 files and both docs only, push current branch immediately and verify its remote commit before Task 2.
 
 ## Task 2: HTTPS owner login and bounded event delivery
 
-**Files:** Create `web/auth.mjs`, `web/server.mjs`, `web/test/auth-server.test.mjs`; extend `web/test/helpers.mjs`; initial `web/public/index.html`, `app.js`, `styles.css` show only login, safe connection status and logout.
+**Files:** Create `web/auth.mjs`, `web/server.mjs`, `tests/web/auth-server.test.mjs`; extend `tests/web/helpers.mjs`; initial `web/public/index.html`, `app.js`, `styles.css` show only login, safe connection status and logout.
 **Interfaces:** Consume Task 1. Produce `createWebServer`, `checkOrigin(actual,expected):void`, `hashPassword(password):Promise<string>`, `createAuth({passwordHash,now?})` with `login(password,ip):Promise<{token,expiresAt}>`, `verifySession(token):object|null`, `revoke(token):void`; private `preferences.json = {archivedProjectIds:[],ui:{}}`. Test helper `httpsFixture()` supplies temporary cert/config/server/request helpers without real credentials.
 
 - [x] **1. Write failing tests** for missing/expired cookies, cross-Origin login and mutations, exact cookie flags, session-bound view IDs, unknown RPCs, response-token filtering and slow SSE readers. Assertions include:
@@ -108,14 +108,14 @@ Source authority is commit `ff9ab4a`: `app-server-protocol/src/protocol/{common.
   assert.doesNotThrow(() => checkOrigin('https://127.0.0.1:8443','https://127.0.0.1:8443'));
   ```
   Include `two_pages_cannot_answer_one_request_twice` and `logout_closes_only_that_sessions_streams` using Task 1's fake peer.
-- [x] **2. Verify RED:** `node --test web/test/auth-server.test.mjs`; fail on missing auth/server behavior.
+- [x] **2. Verify RED:** `node --test tests/web/auth-server.test.mjs`; fail on missing auth/server behavior.
 - [x] **3. Implement** async native scrypt password hashes (`scrypt:<saltBase64>:<keyBase64>`, 16-byte salt, 64-byte key, N=16384/r=8/p=1), maximum password length 256, and random 32-byte session tokens. Absolute session TTL 12 h; login limit five failures/IP/minute with bounded expiry state; JSON body cap 1 MiB. Cookies are HttpOnly/Secure/SameSite=Strict/Path=/; no CORS wildcard. SSE heartbeat 15 s, per-stream queued-byte cap 1 MiB; overflow closes and demands resync. New/reconnected streams require a snapshot. Routes validate method-specific fields; log neither bodies nor tokens.
 - [x] **4. Verify GREEN and HTTPS smoke:** run auth/server and native-client tests; confirm unauthenticated API/SSE 401, foreign Origin 403, authenticated fixed status/RPC reads succeed, and a full/stalled reader cannot stall other pages. Only show safe native request schemas; auth refresh/attestation/dynamic-tool requests receive an explicit unsupported-client response, never fabricated credentials.
 - [x] **5. Commit/push:** `feat: protect browser access and stream native events`; include both operator docs and verify remote containment before Task 3.
 
 ## Task 3: A working browser conversation loop
 
-**Files:** Create `web/transcript.mjs`, `web/public/chat.js`, `web/test/chat.test.mjs`; update server/public files, `web/package.json`, create `web/package-lock.json`.
+**Files:** Create `web/transcript.mjs`, `web/public/chat.js`, `tests/web/chat.test.mjs`; update server/public files, `web/package.json`, create `web/package-lock.json`.
 **Interfaces:** `createChatState(threadId)`, `applyNativeEvent(state,envelope):state`, `installSnapshot(state,{snapshot,cursor}):state`, `buildTurnParams({threadId,input,model?,effort?,clientUserMessageId}):object`; `renderTranscript(thread,turns):{items,html}`. UI state uses item IDs and frame cursors, never text equality for delta deduplication.
 
 - [x] **1. Write failing tests** for duplicated SSE IDs, identical text in distinct deltas, atomic mid-turn joining, history pagination, unknown write outcomes, effective permission display and draft preservation. Example:
@@ -125,7 +125,7 @@ Source authority is commit `ff9ab4a`: `app-server-protocol/src/protocol/{common.
   assert.equal(p.approvalPolicy,'never'); assert.equal('permissions' in p,false);
   ```
   Also assert two distinct sequenced `哈` deltas render `哈哈`, a repeated cursor does not append again, and full completed items replace partial text.
-- [x] **2. Verify RED:** `node --test web/test/chat.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/chat.test.mjs`.
 - [x] **3. Implement** project/thread lists and new/open/send/stop/copy ID. Create native threads with full defaults; open uses ordered resume, not a racy read-plus-subscribe. Buffer events until the snapshot cursor, drop older cursors and apply newer ones; generation changes force resync. Page size 20, prepend older pages while retaining scroll anchor. Send accepts the validated draft payload above and builds native input with a stable message UUID; explicit active-turn choices are steer or queue, not automatic replay. Synchronous submit guards and a 10-minute recent-write record capped at 1024 entries (reject excess unresolved writes rather than evicting them) prevent duplicate requests; unknown results remain locked for reconciliation/manual choice.
 - [x] **4. Add the sole dependency** with `npm --prefix web install --save-exact markdown-it@15.0.2`. Render Markdown on the server with HTML disabled and URL rules; stream text immediately and coalesce safe-HTML updates to 100 ms. Add CSP, nosniff, safe external-link attributes and XSS assertions. Native approval/input forms follow `v2/item.rs`/`permissions.rs`; decline/unsupported states remain visible, with one generation-scoped responder.
 - [x] **5. Verify GREEN and browser/desktop acceptance:** run all current tests; in an isolated real thread send a short reply from the browser, observe it in the extra desktop, send from desktop and observe browser updates, interrupt a disposable turn, copy the exact ID, close/reopen the page during work, and disconnect after an accepted send without an automatic duplicate. Verify the original desktop remains running.
@@ -135,7 +135,7 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 
 ## Task 4: Native workspace lifecycle and safe conversation deletion
 
-**Files:** Update server/public files; create `web/test/projects.test.mjs`.
+**Files:** Update server/public files; create `tests/web/projects.test.mjs`.
 **Interfaces:** `saveProject(codex,{projectId?,name,rootPath,idempotencyKey}):Promise<Project>`, `setProjectArchived(projectId,archived):Promise<void>`, `deleteThread(codex,{threadId,confirmed}):Promise<void>`; these are dedicated handlers, not unrestricted browser RPC forwarding.
 
 - [x] **1. Write failing tests** for host directory picking/creation, project pagination, preserve-secondary-roots editing, idempotency keys, archive/restore without native deletion, old-thread `cwd` after rebinding, and active-thread deletion. Example:
@@ -144,14 +144,14 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
   assert.deepEqual(await fixtureUnarchive('p'), {archivedProjectIds:[],nativeCalls:[]});
   ```
   `fixtureArchive`/`fixtureUnarchive` are test-only HTTP helpers in this test file. Assert native delete is not sent before the matching interruption completion or after a timeout/refusal.
-- [x] **2. Verify RED:** `node --test web/test/projects.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/projects.test.mjs`.
 - [x] **3. Implement** native project CRUD/list and FS directory APIs. Editing the primary root preserves additional native roots and metadata; existing thread paths are never rewritten. Serialize atomic preference-file writes. Archive affects only web visibility, with explicit UI wording. Confirm thread deletion once, read actual active state, interrupt/wait up to 30 s, then call native `thread/delete`; preserve files and uploads on every path. Do not expose native project deletion.
 - [x] **4. Verify GREEN and disposable native lifecycle:** create a private directory/project, create a member thread, rebind the project, verify the old thread path, archive/restore the web list and delete only the disposable thread. Run all current tests and update both docs with the desktop-archive limitation.
 - [x] **5. Commit/push:** `feat: manage native projects and delete conversations safely`; verify remote containment.
 
 ## Task 5: Files, photos and authenticated transcript downloads
 
-**Files:** Create `web/files.mjs`, `web/public/composer.js`, `web/test/files.test.mjs`; update server/transcript/public modules.
+**Files:** Create `web/files.mjs`, `web/public/composer.js`, `tests/web/files.test.mjs`; update server/transcript/public modules.
 **Interfaces:** `createFiles({stateDir,uploadLimitBytes,generatedRoots})` produces `beginUpload({threadId,name,size,mime})`, `receiveUpload(uploadId,readable)`, `attachmentInputs(ids,threadId)`, `issueTranscriptRefs(thread,turns)`, `openReference(refId)`. Completed descriptors retain original names and stored paths privately; browsers submit IDs, not host upload paths.
 
 - [x] **1. Write failing tests** for exact 33,554,432-byte cap, one-byte excess, false Content-Length/chunked excess, interruption/ENOSPC cleanup, Unicode names, invalid images, forged IDs and symlink replacement after validation. Assertions include:
@@ -161,7 +161,7 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
   assert.equal(await fixtureDownload('../auth.json'), 404);
   ```
   The file's HTTP fixtures allocate streaming chunks, not a disk-filling file. Add `rebound_project_keeps_old_thread_reference` and exact downloaded-byte/name assertions.
-- [x] **2. Verify RED:** `node --test web/test/files.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/files.test.mjs`.
 - [x] **3. Implement** metadata then raw-byte upload, exclusive partial files, streamed size checks and cleanup. Mark complete atomically; removing a completed attachment from the draft does not delete historical bytes. Native photo input is `{type:'localImage',path}`; ordinary files are native text paths, quoted using the native composer's path rule. No binary UserInput variant. Preview only validated raster MIME types; active formats download as octet-stream.
 - [x] **4. Implement reference downloads** derived only from native transcript targets/known uploads. Allowed roots are actual thread `cwd`, upload storage and configured generated roots; never use the project's later binding. Realpath, no-follow open and opened-fd/stat checks reject traversal and symlink races. Only issued opaque references reach GET routes; no arbitrary path/URL endpoint. Preserve UTF-8 filenames with Content-Disposition and exact bytes.
 - [x] **5. Verify GREEN and native attachment round trip:** all tests; upload a Unicode-named text file and photo from the browser, verify native thread inputs, generate a small file inside the private test workspace and download it byte-for-byte. Interrupted upload retains the draft/previous completed files. Update both docs.
@@ -169,7 +169,7 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 
 ## Task 6: Native model, context and weekly-usage controls
 
-**Files:** Create `web/public/usage.js`, `web/test/usage.test.mjs`; update server/public modules.
+**Files:** Create `web/public/usage.js`, `tests/web/usage.test.mjs`; update server/public modules.
 **Interfaces:** `contextUsage(tokenUsage):{tokens,window,remainingPercent,usedPercent}` with nullable values; `weeklyUsage(response):Array<{limitId,usedPercent,remainingPercent,resetsAt}>`. Model options come from native `model/list`, including supported/default effort.
 
 - [x] **1. Write failing tests** for the fixed native baseline, accumulated-token confusion, null windows, multiple quota buckets, primary-only weekly windows, unsupported efforts, and superseded account reads. Example:
@@ -179,14 +179,14 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
   assert.equal(contextUsage({last:{totalTokens:5},modelContextWindow:null}).remainingPercent,null);
   ```
   Assert stale account-generation results never repopulate the cleared cache.
-- [x] **2. Verify RED:** `node --test web/test/usage.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/usage.test.mjs`.
 - [x] **3. Implement** next-turn-only model/effort overrides and actual native-policy/model display. A steer inherits the active turn; do not send model/sandbox fields unsupported by `turn/steer`. Before queueing, apply future defaults with native `thread/settings/update` and await its matching settings notification; queued items use those shared future defaults, not invented per-item settings. Display that subsequent setting changes can affect queued work, and never use running-turn `turn/settings/update` for this selector. Context formula: window ≤ 12000 → remaining 0; otherwise round/clamp `100 * max(0,(window-12000)-max(0,last.totalTokens-12000))/(window-12000)`. Unknown window remains null. Merge native quota notifications or refetch; select duration 10080 in either window, separate buckets, compute remaining `max(0,100-usedPercent)`, and convert reset seconds correctly. Account changes invalidate older requests/caches.
 - [x] **4. Verify GREEN and native settings/usage:** all tests; select two supported efforts, verify the next native turn settings while preserving drafts, trigger compaction in a disposable thread, verify context refresh, and read real weekly metadata without committing its values. UI missing-data tests use explicit null fixtures. Update both docs.
 - [x] **5. Commit/push:** `feat: expose native models context and weekly usage`; verify remote containment.
 
 ## Task 7: Native references, skills and slash actions
 
-**Files:** Update composer/server/transcript/public modules; create `web/test/composer.test.mjs`.
+**Files:** Update composer/server/transcript/public modules; create `tests/web/composer.test.mjs`.
 **Interfaces:** `encodeComposer({text,selections,uploads,threadId,mode}):{input,additionalContext?}`, `utf8Range(text,start,end):{start,end}`, `commandAction(text):{command,args}|null`. These functions use native encodings, not a generic mention or command RPC.
 
 - [x] **1. Write failing tests** for Chinese/emoji offsets, composition confirmation, literal code/email/`$HOME`, paths with spaces, typed skill/plugin/app inputs, self/duplicate thread references, invalid split-surrogate ranges, and slash mappings. Example:
@@ -195,7 +195,7 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
   assert.equal(commandAction('mail/a@b /new'),null);
   ```
   Also pin `text_elements` (snake case) containing `{byteRange:{start,end},placeholder}` (camel case inside), not `textElements`.
-- [x] **2. Verify RED:** `node --test web/test/composer.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/composer.test.mjs`.
 - [x] **3. Implement** skill discovery (`skills/list`, workspace scoped), native `{type:'skill',name,path}`, app/plugin catalogs and `{type:'mention',name,path:'app://…'|'plugin://…'}`. Files/directories insert native quoted text paths. Thread references use escaped `[@title](thread://id)` and UTF-8 TextElements; exclude self/duplicates, max 16 references and 768 ID bytes, native title cap 160 characters.
 - [x] **4. Add bounded read-only referenced context:** read only selected native threads at send time; max 8 KiB UTF-8 per thread and 32 KiB total, mark truncation. Start/steer use native `additionalContext` entries `{kind:'untrusted',value:quotedSnapshot}`. Queue/add has no such field: use a separate native text item with a JSON-quoted `<untrusted_text>` snapshot and label this as a send-time snapshot. Do not inject a nonexistent `read_thread` tool/instruction or send messages to referenced threads.
 - [x] **5. Implement the exact slash catalog** from the spec: new/model/permissions/status/usage/skills UI actions; compact/name-set/archive/delete native actions and dedicated `/api/thread/fork` with full defaults; `/export` streams a paginated Markdown export. Use existing confirmation rules, no `commands/list`. IME Enter never submits/selects; Enter sends, Shift+Enter inserts newline; changing model/menu retains drafts.
@@ -204,13 +204,13 @@ Acceptance ruling: no browser/native UI surface is enabled in this environment; 
 
 ## Task 8: Durable startup, mobile acceptance and release review
 
-**Files:** Create `web/service.mjs`, `web/test/service.test.mjs`; finish public layout and the two operator docs. Installed units/config/certs/data are generated outside Git.
+**Files:** Create `web/service.mjs`, `tests/web/service.test.mjs`; finish public layout and the two operator docs. Installed units/config/certs/data are generated outside Git.
 **Interfaces:** `renderUserUnits({repoDir,nodePath,backendExecutable,backendHome,workspace,configPath,environmentFile}):{backend,web}`; CLI `node web/service.mjs init|install|start|stop|status` manages only `codex-console-native-backend.service` and `codex-console-native-web.service` for this owner. `init --origin URL --backend-bin PATH --backend-home PATH --workspace PATH [--cert PATH --key PATH]` writes private config; all commands accept `--config PATH` with an XDG default.
 
 - [x] **1. Write failing tests** for spaces/Unicode/percent signs in unit paths, missing binary/cert, config ownership, refusal to replace the original desktop/backend, offline status and redacted status output. Assertions include no reference to `console.sh`/Xpra, exact explicit backend/home and correct systemd escaping; stopping these units never stops the original app.
-- [x] **2. Verify RED:** `node --test web/test/service.test.mjs`.
+- [x] **2. Verify RED:** `node --test tests/web/service.test.mjs`.
 - [x] **3. Implement** native user units with Restart=on-failure, private umask and the configured source binary/home. Web startup does not spawn a fallback engine. Units use the verified persistent binary installed in Task 1, not a cache target. Initialize owner password/hash and TLS material privately using Node crypto and installed OpenSSL; SAN matches the configured host/IP. Default preview is loopback HTTPS port 8443 (choose another configured free port on conflict); non-loopback access requires configured HTTPS origin/cert. Never overwrite existing credentials or print secrets in status/logs. Retain only required proxy/TLS variables in a private EnvironmentFile, excluding API-key/task-runtime overrides. Before permanent startup, stop only Task 1’s recorded transient test units; never kill an unidentified process holding the port.
-- [x] **4. Run complete checks:** `node --test web/test/*.test.mjs`, `npm --prefix web audit --omit=dev`, changed-file syntax/diff checks. Repair failures before claiming success. Use the browser tool for login, project/thread lifecycle, sending/steering/stopping, native forms, model/usage, copy ID, file/photo/download, mentions/skills/commands, reconnect/unknown outcomes and logout. Inspect responsive layouts at 390×844 and 1280×820; exercise a real mobile IME/picker/clipboard/download when available and explicitly record any unavailable hardware check.
+- [x] **4. Run complete checks:** `node --test tests/web/*.test.mjs`, `npm --prefix web audit --omit=dev`, changed-file syntax/diff checks. Repair failures before claiming success. Use the browser tool for login, project/thread lifecycle, sending/steering/stopping, native forms, model/usage, copy ID, file/photo/download, mentions/skills/commands, reconnect/unknown outcomes and logout. Inspect responsive layouts at 390×844 and 1280×820; exercise a real mobile IME/picker/clipboard/download when available and explicitly record any unavailable hardware check.
 - [x] **5. Verify durable operation and documentation:** start only the test units, end the launching shell/session, verify readiness and desktop/client state again. Restart the web/backend separately and confirm authoritative resync with no automatic write replay. Document exact start/stop/status, private paths, archive scope, trust/cert setup, active-work limitations and rollback. Keep an implementation worktree while a unit references its code path; do not archive it until deployment paths are moved and reverified. Save runtime proofs/screenshots outside Git.
 Native execution review gate completed: one fresh whole-branch review, nine fixes individually verified/committed/pushed, final suite 80/80. One older-history presentation minor is deferred in the operator guide. Browser/hardware checks remain explicitly unavailable.
 - [x] **7. Commit/push:** `feat: package the native browser client for durable owner access`; stage only owned files, push immediately and verify remote containment. Deliver the authenticated client URL, verified scope/limits, commit/push status and screenshots without credentials.

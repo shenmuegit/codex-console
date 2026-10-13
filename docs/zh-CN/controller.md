@@ -31,7 +31,7 @@ URL，不访问该 URL，也无需 SSH 隧道。Web 设置入口和控制端注�
 拒绝跳转，请求限时 20 秒；成功、取消、拒绝或超时后均关闭回调监听。授权等待
 最多十分钟，返回凭据只交给 server 调用方。
 
-在 `web/` 中执行 `node --test test/remote-auth.test.mjs` 和 `npm test` 验证。
+在仓库根目录执行 `node --test tests/web/remote-auth.test.mjs` 和 `npm --prefix web test` 验证。
 检查使用真实本机回调监听及受控令牌接口，证明 server 流程的保护措施，不等于
 OpenAI 实际注册成功。原生公开 OAuth client 和注册 scope 来自已安装版本
 26.928.21956，独立控制端的官方兼容性仍待验证。
@@ -68,7 +68,7 @@ server 身份和中继会话一起写入私人 `enrollment.json`，以 600 权�
 可用。当前 server 使用加密的软件 vTPM；组件报告 `hardware_tpm`，但不能
 据此宣称存在物理硬件保护，重启后自动启动仍待配置。
 
-在 `web/` 执行 `node --test test/remote-controller.test.mjs` 和 `npm test`。
+在仓库根目录执行 `node --test tests/web/remote-controller.test.mjs` 和 `npm --prefix web test`。
 当前验证覆盖 13 个控制端场景及 342 项 Web 测试。注册夹具使用独立 ECDSA
 签名校验，不能证明官方服务实际接受注册。所有者授权、实际注册/配对、中继
 RPC 控制和 Web 设置入口仍待完成及验证。
@@ -200,8 +200,8 @@ Windows ACL 尚未在真实用户设备上验证，夹具检查不能替代实�
 会话 ID 相同也不会混用；已有本地草稿键继续可读。其他设备上的未知 ID 被拒绝，
 远端路径不能授权读取服务器本地文件。
 
-在 `web/` 中运行 `node --test test/remote-filesystem.test.mjs test/remote-upload-storage.test.mjs test/host-scope-browser.test.mjs test/codex.test.mjs`
-和 `npm test`。Unix/Windows 文件系统与浏览器检查使用测试夹具，不代表真实官方客户端配对成功。
+在仓库根目录运行 `node --test tests/web/remote-filesystem.test.mjs tests/web/remote-upload-storage.test.mjs tests/web/host-scope-browser.test.mjs tests/web/codex.test.mjs`
+和 `npm --prefix web test`。Unix/Windows 文件系统与浏览器检查使用测试夹具，不代表真实官方客户端配对成功。
 真实设备的读写、事件、双设备并发和重连仍是需要用户授权完成的验证门槛。
 
 中继数据流不另存 RPC 待处理队列；原生调用超时会释放唯一的待处理调用表。

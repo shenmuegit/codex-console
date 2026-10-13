@@ -10,7 +10,7 @@ Contributions that improve mobile interaction, reliability, portability, or docu
 2. Prepare the supported Xpra runtime and Node.js 20+ as described in [Development](docs/development.md).
 3. Keep personal settings in the user configuration file and credentials/profile data outside the checkout.
 4. Add a behavioral regression check when changing launch, supervision, authentication, input, or rendering behavior.
-5. Run `./scripts/check.sh`. For deployment/transport changes, also run `python3 test_integration.py` with Xterm installed. For app-specific changes, verify a compatible app and real mobile browser.
+5. Run `./scripts/check.sh`. For deployment/transport changes, also run `python3 tests/test_integration.py` with Xterm installed. For app-specific changes, verify a compatible app and real mobile browser.
 6. Submit a pull request describing the problem, resulting behavior, verification performed, and any known limitations.
 
 Shell scripts use Bash with `set -euo pipefail`. Python checks use the standard library and installed Xpra modules. Frontend changes should keep working without a Node build step. Do not edit or copy generated state/HTML5 assets into the repository.
@@ -25,6 +25,6 @@ Security-sensitive reports should follow [SECURITY.md](SECURITY.md).
 
 ## 中文说明
 
-贡献前请先说明具体使用问题，保持改动集中。准备运行依赖和 Node.js 20+ 后执行 `./scripts/check.sh`；部署或传输链路改动还应安装 Xterm 并执行 `python3 test_integration.py`，应用相关改动需在兼容应用和真实手机浏览器中验证。
+贡献前请先说明具体使用问题，保持改动集中。准备运行依赖和 Node.js 20+ 后执行 `./scripts/check.sh`；部署或传输链路改动还应安装 Xterm 并执行 `python3 tests/test_integration.py`，应用相关改动需在兼容应用和真实手机浏览器中验证。
 
 配置、账号数据和密码保存在仓库之外。行为变化需要更新对应的中英文文档。提交 PR 时说明解决的问题、最终行为、验证结果和已知限制。反馈普通问题请使用 issue 模板，并删除私人信息；敏感漏洞按安全说明处理。

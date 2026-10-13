@@ -94,7 +94,7 @@ flowchart LR
 | `web/files.mjs` | Streaming uploads, native attachment encoding and validated file-reference downloads. |
 | `web/public/index.html`, `app.js`, `styles.css` | Project/thread/chat views, model/usage/status controls; flat, native-Codex-like presentation. |
 | `web/public/composer.js` | Drafts, attachments, `@`/`$`/`/`, native input ranges and IME. |
-| `web/test/*.test.mjs` | Built-in `node:test`; protocol fixtures and HTTPS/SSE/file/composer checks. |
+| `tests/web/*.test.mjs` | Built-in `node:test`; protocol fixtures and HTTPS/SSE/file/composer checks. |
 
 Desktop may show three columns; mobile shows project → thread → chat one level at
 a time. Use system fonts, native dialogs/pickers and clipboard APIs, visible focus
@@ -178,7 +178,7 @@ literal code/email; upload limits/interruption/disk-full; forged/escaped/raced
 file downloads; null/model/effort/quota changes; native restrictions and pending
 inputs; unauthenticated/cross-origin requests and Markdown XSS.
 
-Use `node --test web/test/*.test.mjs` once code exists, then test against the real
+Use `node --test tests/web/*.test.mjs` once code exists, then test against the real
 isolated desktop/backend and a mobile browser. Spec-only changes require
 coverage, consistency, link and diff checks; no client runtime is claimed here.
 
