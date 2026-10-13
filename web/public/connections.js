@@ -1,11 +1,18 @@
 export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   const $ = id => document.querySelector('#' + id), abort = new AbortController(), options = { signal: abort.signal };
   let alive = true, enrolled = false, timer, generation = 0;
+  const namesKey = 'codex-device-names';
+  let savedNames = [];
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(namesKey) ?? '[]');
+    if (Array.isArray(saved)) savedNames = saved.filter(host => host && typeof host.id === 'string' && typeof host.name === 'string')
+      .map(({ id, name }) => ({ id, name }));
+  } catch { /* Storage may be unavailable; the authoritative inventory still loads. */ }
   const pickers = [$('host-picker'), $('recovery-host-picker')];
   function updateHosts(hosts = []) {
     for (const picker of pickers) {
       const items = [{ id: 'local', name: 'server 本机' }, ...hosts];
-      if (!items.some(host => host.id === selectedHost)) items.push({ id: selectedHost, name: selectedHost + ' · 暂不可用' });
+      if (!items.some(host => host.id === selectedHost)) items.push({ id: selectedHost, name: '远程设备 · 暂不可用' });
       picker.replaceChildren(...items.map(host => {
         const option = document.createElement('option'); option.value = host.id;
         option.textContent = host.name + (host.online === false ? ' · 未连接' : host.online === true ? ' · 已连接' : ''); return option;
@@ -13,7 +20,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
       picker.value = selectedHost;
     }
   }
-  updateHosts();
+  updateHosts(savedNames);
   const states = { ready: 'server 已就绪，输入被控端连接码即可添加设备。', unconfigured: 'server 尚未完成首次授权。',
     starting: '正在准备官方账号确认…', authorizing: '等待完成官方账号确认。', enrolling: '正在登记 server 控制端…',
     authenticationRequired: 'server 官方账号登录已失效，请恢复官方账号登录后刷新；已有控制端身份保留。',
@@ -36,10 +43,18 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
         const { hosts } = await api('/api/controller/hosts');
         if (!alive || current !== generation) return;
         updateHosts(hosts);
+        try { sessionStorage.setItem(namesKey, JSON.stringify(hosts.map(({ id, name }) => ({ id, name })))); } catch { /* Names are optional tab-local hints. */ }
+        $('connections-error').textContent = '';
+      } else {
+        updateHosts();
+        try { sessionStorage.setItem(namesKey, '[]'); } catch { /* Optional browser storage. */ }
       }
       clearTimeout(timer);
       if (!enrolled && ['starting', 'authorizing', 'enrolling'].includes(status.phase)) timer = setTimeout(refresh, 2000);
-    } catch (e) { error(e); }
+    } catch (e) {
+      if (e.status === 401) { try { sessionStorage.setItem(namesKey, '[]'); } catch { /* Optional browser storage. */ } }
+      error(e);
+    }
   }
   async function action(button, operation) {
     button.disabled = true; $('connections-error').textContent = '';

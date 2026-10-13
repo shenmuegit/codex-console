@@ -132,6 +132,12 @@ device selector. Setup and code submission require the existing owner login and
 canonical origin. Only the authorization URL, expiration and public status are
 returned; controller credentials and signing interfaces remain server-side.
 
+Device names are remembered in the current browser tab so switching machines
+retains the known label while inventory loads or temporarily fails. Only IDs
+and display names are cached; connection state and authorization stay live.
+Unknown devices use a readable fallback, and sign-in loss or controller
+deauthorization clears these hints.
+
 Optional private configuration enables the controller:
 
 ```json
