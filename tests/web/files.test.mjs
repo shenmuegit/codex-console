@@ -175,6 +175,22 @@ test('HTTPS uploads stream the cap and downloads preserve bytes, UTF-8 names and
   stream.req.destroy();
 });
 
+test('HTTPS file downloads retain a safe ASCII fallback alongside the UTF-8 filename', async t => {
+  const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie);
+  await openThread(f, cookie, viewId);
+  for (const [name, fallback] of [['generated.txt', 'generated.txt'], ['报告.txt', '__.txt'], ['quotes";.txt', 'quotes_;.txt']]) {
+    const content = Buffer.from('exact download bytes');
+    const begin = await f.request('/api/uploads', { method: 'POST', cookie, body: { viewId, threadId: 't', name, size: content.length, mime: '' } });
+    assert.equal(begin.status, 201);
+    const uploaded = await f.putBytes(`/api/uploads/${begin.json.id}?viewId=${viewId}`, Readable.from([content]), { cookie });
+    assert.equal(uploaded.status, 201); assert.equal((await f.request(uploaded.json.href)).status, 401);
+    const download = await f.request(uploaded.json.href, { cookie });
+    assert.equal(download.status, 200); assert.equal(download.text, 'exact download bytes');
+    assert.equal(download.headers['content-disposition'], `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  }
+  for (const name of ['bad\r\nInjected: header.txt', 'bad\\name.txt']) assert.equal((await f.request('/api/uploads', { method: 'POST', cookie, body: { viewId, threadId: 't', name, size: 0, mime: '' } })).status, 400);
+});
+
 test('large native snapshots recover through HTTPS without repeatedly closing the SSE page', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login(), viewId = await f.view(cookie), stream = await f.events(cookie, viewId);
   const text = 'x'.repeat(1_048_700);

@@ -861,8 +861,9 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         const file = await files.openReference(download[2]);
         if (download[1] === 'images' && !file.imageMime) { await file.handle.close(); throw error(404, 'NOT_IMAGE', '此文件不能作为照片预览。'); }
         const name = encodeURIComponent(file.name).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+        const asciiName = file.name.replace(/[^\x20-\x7e]|["\\]/g, '_');
         res.writeHead(200, { 'Content-Type': download[1] === 'images' ? file.imageMime : 'application/octet-stream',
-          'Content-Length': file.size, 'Content-Disposition': `${download[1] === 'images' ? 'inline' : 'attachment'}; filename="download"; filename*=UTF-8''${name}` });
+          'Content-Length': file.size, 'Content-Disposition': `${download[1] === 'images' ? 'inline' : 'attachment'}; filename="${asciiName}"; filename*=UTF-8''${name}` });
         if (!file.size) { await file.handle.close(); res.end(); }
         else await pipeline(file.handle.createReadStream({ start: 0, end: file.size - 1, autoClose: true }), res);
         return;

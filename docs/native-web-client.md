@@ -628,12 +628,18 @@ retried, including timeouts with an unknown outcome.
 Pass the transport's `url` as `businessUrl` and its approved origin as
 `backendOrigin` when mounting chat. Uploads, validated image/file references and
 Markdown exports resolve against that backend after host scoping; view and
-thread fields remain in their existing requests. `pageEntryUrl` (or the
+thread fields remain in their existing requests. Both generated file download
+links and Markdown file references use a separate browsing context with
+`noopener`, preserving the plugin document and its event stream when browsers
+ignore cross-origin `download` attributes. `pageEntryUrl` (or the
 `pageUrl` mount option) maps only `/?...` navigation to the current entry
 pathname, so thread links and side chat retain `/plugins/<release>/dist/index.html`.
 Image previews accept approved backend image paths and blobs from the current
 page origin. The standalone server also publishes `/transport.js`. These are
 module integration interfaces reused by the plugin entry above.
+Downloads retain the UTF-8 filename and provide an ASCII fallback for browsers
+that do not use `filename*`. The fallback preserves ASCII names and extensions,
+replacing non-ASCII characters, quotes and backslashes with `_`.
 
 Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
 and raw thread creation are rejected. Native credentials are filtered from reads

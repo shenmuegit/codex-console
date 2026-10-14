@@ -668,7 +668,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       for (const link of template.content.querySelectorAll('a[href]')) {
         const href = link.getAttribute('href');
         if (/^\/\?thread=[A-Za-z0-9_-]+$/.test(href)) link.setAttribute('href', pageUrl(scopeHostPath(href, selectedHost)));
-        else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(href)) link.setAttribute('href', businessUrl(scopeHostPath(href, selectedHost)));
+        else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(href)) { link.setAttribute('href', businessUrl(scopeHostPath(href, selectedHost))); link.setAttribute('target', '_blank'); link.setAttribute('rel', 'noopener'); }
       }
       for (const image of template.content.querySelectorAll('img[src]')) {
         const src = image.getAttribute('src');
@@ -697,7 +697,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       for (const file of files) {
         if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.imageHref)) {
           if (!entry.html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = businessUrl(scopeHostPath(file.imageHref, selectedHost)); image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
-        } else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = businessUrl(scopeHostPath(file.href, selectedHost)); link.download = file.name; entry.downloads.append(link); }
+        } else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = businessUrl(scopeHostPath(file.href, selectedHost)); link.download = file.name; link.target = '_blank'; link.rel = 'noopener'; entry.downloads.append(link); }
       }
       entry.filesKey = filesKey;
     }

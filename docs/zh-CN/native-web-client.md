@@ -458,10 +458,14 @@ SDK 桥接由整个文档共享，在离开文档时关闭；组件卸载撤销�
 
 挂载聊天时，把 transport 的 `url` 作为 `businessUrl`，获准后端来源作为 `backendOrigin`。
 上传、经白名单验证的图片与文件引用、Markdown 导出先保留 host 范围，再解析到该后端；
-view 和 thread 字段保留在原有请求中。`pageEntryUrl`（或挂载参数 `pageUrl`）
+view 和 thread 字段保留在原有请求中。生成文件下载入口和 Markdown 文件引用均使用
+带 `noopener` 的独立浏览上下文，在浏览器忽略跨来源 `download` 属性时仍保留插件文档
+及其事件流。`pageEntryUrl`（或挂载参数 `pageUrl`）
 只把 `/?...` 导航映射到当前入口 pathname，因此会话链接和侧边聊天仍使用
 `/plugins/<release>/dist/index.html`。图片查看器只允许获准后端的图片路径和当前页面来源的 blob。
 独立服务器也提供 `/transport.js`；上述插件入口复用这些模块接入接口。
+下载保留 UTF-8 文件名，并为不使用 `filename*` 的浏览器提供 ASCII 回退名。
+回退名保留 ASCII 名称与扩展名，把非 ASCII 字符、引号及反斜杠替换为 `_`。
 
 浏览器只能调用固定读取接口；任意进程、配置、凭据接口及原始新建会话请求被拒绝。
 读取和事件中过滤原生凭据。暂不支持的登录刷新、证明或动态工具请求明确返回

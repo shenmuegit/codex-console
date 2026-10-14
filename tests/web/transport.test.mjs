@@ -33,6 +33,20 @@ test('page_entry_keeps_release_path', () => {
   assert.equal(pageEntryUrl('https://external.test/?thread=t', 'https://plugin.example.test/plugins/r/dist/index.html'), 'https://external.test/?thread=t');
 });
 
+for (const kind of ['Markdown reference', 'generated download']) test(`${kind} opens a scoped file outside the plugin frame`, async t => {
+  const dom = domFixture(), transport = createTransport('https://codex.example.test');
+  const snapshot = resumeFixture('t', [{ id: 'turn', status: 'completed', items: [{ id: 'reply', type: 'agentMessage', text: 'File' }] }]);
+  snapshot.transcript = { items: [{ id: 'reply', text: 'File', html: '<p><a href="/api/files/note?host=host-a">File</a></p>', files: [{ name: 'note.txt', href: '/api/files/note?host=host-a' }] }] };
+  const chat = mountChat({ api: async path => path === '/api/thread/open' ? { snapshot, cursor: { generation: 1, seq: 1 } } : { result: { data: [], nextCursor: null } }, viewId: 'v', selectedHost: 'host-a', businessUrl: transport.url });
+  t.after(() => { chat.dispose(); dom.restore(); }); chat.connection(true); await chat.open('t');
+  const message = dom.get('messages').children[0];
+  const link = kind === 'Markdown reference' ? message.children[1].children[0].children[0] : message.children[2].children[0];
+  assert.equal(link.href, 'https://codex.example.test/api/files/note?host=host-a');
+  assert.equal(kind === 'Markdown reference' ? link.getAttribute('target') : link.target, '_blank');
+  assert.equal(kind === 'Markdown reference' ? link.getAttribute('rel') : link.rel, 'noopener');
+  if (kind === 'generated download') assert.equal(link.download, 'note.txt');
+});
+
 test('all_resource_paths_use_business_origin and retain rendered node identity', async t => {
   const dom = domFixture(), transport = createTransport('https://codex.example.test');
   dom.location.href = 'https://plugin.example.test/plugins/r/dist/index.html?thread=t';
