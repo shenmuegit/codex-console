@@ -863,7 +863,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
     if (command === 'delete') return deleteConversation(selected.threadId);
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); goals.load(state, true); await loadThreads(); return; }
-    if (command === 'export') { const link = element('a'); link.href = businessUrl(scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost)); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
+    if (command === 'export') { const link = element('a'); link.href = businessUrl(scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost)); link.download = selected.threadId + '.md'; link.target = '_blank'; link.rel = 'noopener'; document.body.append(link); link.click(); link.remove(); }
   }
   function clearSelectedThread(threadId) {
     cachedViews.delete(threadId);

@@ -55,10 +55,10 @@ test('all_resource_paths_use_business_origin and retain rendered node identity',
   assert.equal(dom.get('attachments').children[0].children[0].tagName, 'SPAN');
   chat.onEvent({ kind: 'render', cursor: { generation: 1, seq: 1 }, native: { threadId: 't', items: [{ ...snapshot.transcript.items[0], cursor: { generation: 1, seq: 1 }, html: snapshot.transcript.items[0].html.replace('File</a>', 'Updated file</a>') }] } });
   await delay(0); assert.equal(message.children[1].children[0], paragraph); assert.equal(paragraph.children[0], image); assert.equal(file.textContent, 'Updated file');
-  const create = dom.document.createElement.bind(dom.document); let exportHref;
-  dom.document.createElement = tag => { const node = create(tag); if (tag === 'a') node.click = () => { exportHref = node.href; }; return node; };
+  const create = dom.document.createElement.bind(dom.document); let exported;
+  dom.document.createElement = tag => { const node = create(tag); if (tag === 'a') node.click = () => { exported = { href: node.href, target: node.target, rel: node.rel }; }; return node; };
   dom.get('draft').value = '/export'; dom.event('draft', 'input'); dom.event('composer', 'submit'); await delay(0);
-  assert.equal(exportHref, 'https://codex.example.test/api/thread/export?threadId=t&host=host-a');
+  assert.deepEqual(exported, { href: 'https://codex.example.test/api/thread/export?threadId=t&host=host-a', target: '_blank', rel: 'noopener' });
 });
 
 test('business uploads keep view and host, progress and cancellation without retry', async t => {

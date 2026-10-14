@@ -921,7 +921,9 @@ native actions; archive stops active work only after confirmation/interruption.
 Enable **Show archived conversations** and click one to restore it. Delete keeps
 its existing confirmation. Fork uses full defaults and defers automatic inherited
 goal continuation. Export downloads paginated native history as Markdown without
-writing a host file. There is no invented commands/list or read_thread tool.
+writing a host file. The download opens in a separate browsing context so
+cross-origin downloads cannot navigate the plugin away or close its event stream.
+There is no invented commands/list or read_thread tool.
 
 `/goal` selects goal mode in the existing chat composer: the goal chip appears,
 the placeholder asks for a measurable objective, and focus stays in the same input.
