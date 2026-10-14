@@ -347,6 +347,32 @@ events update the lists, and reconnection rereads both catalogs even when no
 conversation is selected. Running work stays subscribed until its matching turn completes.
 Reconnection restores subscriptions and snapshots, never submitted writes.
 
+While a page is connected, a read-only reconciliation checks recent native thread
+metadata every two seconds. Replies persisted by another Codex process, including
+scheduled-task replies, reach the same SSE stream as incremental history updates.
+Already loaded messages, drafts and pagination stay in place; unchanged records
+are silent and local live turns retain their native event stream. New history is
+read in 20-item pages only until the loaded tail is found. A gap exceeding 200
+items requests a fresh recent page instead of scanning a full archive. Reconciliation
+never starts, resumes or resubmits a turn, and stops when the page disconnects.
+Cross-process messages appear after native persistence; their timing is not the
+same as direct token notifications from the connected runtime.
+If another process owns the native writer, opening the conversation falls back
+to read-only history observation. Sending retries native ownership and preserves
+the draft if that writer is still occupied; it never forces a takeover.
+Missing persisted user prompts can be inserted during a live turn without
+replacing newer streamed output. A small turn-prefix read finds a prompt that
+has moved outside the recent tool tail. Paginated passive views read changed
+items even if native metadata has the same timestamp; legacy summaries use a
+15-second fallback when their metadata does not change.
+
+Passive-update verification passed the focused native-client/history/UI checks
+and the complete web suite. An authenticated HTTPS/SSE probe used two actual
+native app-server processes and a local fixed Responses fixture: one process
+owned the disposable conversation, while the other observed its persisted user
+message and reply. The probe deleted its conversation and stopped both temporary
+processes; the production native backend stayed running.
+
 A write interrupted after sending has an **unknown** outcome: inspect native
 history before deciding to retry. Calls made while offline are **not sent**.
 Native approval/input answers are consumed once and expire on native resolution

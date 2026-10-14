@@ -53,6 +53,23 @@ test('native errors preserve their code and data instead of becoming transport f
   assert.equal(client.status().online, true);
 });
 
+test('a thread owned by another native process opens through read-only history without taking its writer', async t => {
+  const { client, peer, flush } = await connectedFixture(); t.after(() => client.close());
+  const events = []; client.onEvent(e => events.push(e));
+  const opening = client.retainThread('t', 'view');
+  opening.catch(() => {});
+  peer.errorTo('thread/resume', { code: -32600, message: 'thread t already has an active writer' });
+  await flush();
+  assert.equal(peer.sent.at(-1).method, 'thread/read');
+  peer.replyTo('thread/read', { thread: resumeFixture('t').thread }); await flush();
+  assert.equal(peer.sent.at(-1).method, 'thread/turns/list');
+  peer.replyTo('thread/turns/list', { data: [], nextCursor: null });
+  const result = await opening;
+  assert.equal(result.result.passive, true); assert.equal(result.result.historyKind, 'items');
+  assert.equal(events.at(-1).kind, 'snapshot'); assert.equal(events.at(-1).native.passive, true);
+  const count = peer.sent.length; await client.releaseThread('t', 'view'); assert.equal(peer.sent.length, count);
+});
+
 test('notifications and numeric-zero server requests reach different handlers; answers consume once', async t => {
   const { client, peer } = await connectedFixture();
   t.after(() => client.close());

@@ -29,6 +29,7 @@ export function installSnapshot(state, { snapshot, cursor }) {
   const completedIds = new Set(buffered.filter(event => event.cursor.generation === cursor.generation && event.cursor.seq <= cursor.seq && event.native?.method === 'item/completed').map(event => event.native.params.item.id));
   const unfinished = state.turns.filter(turn => turn.status === 'inProgress').map(turn => ({ ...turn, items: turn.items.filter(item => item._incomplete && !completedIds.has(item.id)) }));
   state.thread = copy(snapshot.thread);
+  state.passive = snapshot.passive === true;
   state.settings = { model: snapshot.model, effort: snapshot.reasoningEffort, approvalPolicy: snapshot.approvalPolicy,
     sandbox: snapshot.sandbox, cwd: snapshot.cwd, activePermissionProfile: snapshot.activePermissionProfile };
   state.turns = stampItems(copy(snapshot.initialTurnsPage?.data ?? snapshot.thread.turns ?? []).reverse(), cursor, snapshot.transcript?.items);
@@ -130,6 +131,25 @@ export function applyNativeEvent(state, event) {
   state.cursor = cursor;
   if (kind === 'request') { state.requests.set(event.requestKey, native); return state; }
   const method = native.method;
+  if (method === 'thread/history/updated') {
+    Object.assign(state.thread, p.thread);
+    for (const incoming of p.turns) {
+      let turn = state.turns.find(t => t.id === incoming.id);
+      if (!turn) state.turns.push(turn = { id: incoming.id, items: [], _passive: true });
+      Object.assign(turn, copy(incoming));
+    }
+    for (const entry of p.entries) {
+      let turn = state.turns.find(t => t.id === entry.turnId);
+      if (!turn) state.turns.push(turn = { id: entry.turnId, status: 'inProgress', items: [], _passive: true });
+      const index = turn.items.findIndex(item => item.id === entry.item.id);
+      const item = { ...copy(entry.item), _cursor: cursor, _incomplete: entry.item.type !== 'userMessage' && turn.status === 'inProgress' && entry.completedAtMs == null };
+      if (index < 0) {
+        const before = turn.items.findIndex(i => i.id === entry.beforeId);
+        turn.items.splice(before < 0 ? turn.items.length : before, 0, item);
+      } else turn.items[index] = item;
+    }
+    reconcilePending(state); return state;
+  }
   const incomingTurnId = p.turn?.id ?? p.turnId;
   if (incomingTurnId && !state.turns.some(turn => turn.id === incomingTurnId)) {
     const sending = state.steers?.find(item => item._deliveryMode === 'start' && !item._turnId && item._deliveryGeneration === cursor.generation);
@@ -154,6 +174,7 @@ export function applyNativeEvent(state, event) {
     if (p.turn.error?.message) state.error = p.turn.error.message;
     let turn = state.turns.find(t => t.id === p.turn.id);
     if (!turn) state.turns.push(turn = { id: p.turn.id, items: [] });
+    delete turn._passive;
     const existing = turn.items;
     Object.assign(turn, copy(p.turn));
     if (p.turn.itemsView !== 'full') {
@@ -947,7 +968,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
         for (const state of states.values()) if (!event.native.threadId || event.native.threadId === state.threadId) applyNativeEvent(state, event);
         if (event.kind === 'resync' && selected && online && (!event.native.threadId || event.native.threadId === selected.threadId)) open(selected.threadId).catch(showError);
       }
-      if (['thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'turn/started', 'turn/completed'].includes(event.native?.method)) {
+      if (['thread/started', 'thread/name/updated', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'thread/list/updated', 'thread/history/updated', 'turn/started', 'turn/completed'].includes(event.native?.method)) {
         clearTimeout(refreshTimer); refreshTimer = setTimeout(() => loadThreads().catch(showError), 300);
       }
       if (!threadId || threadId === selected?.threadId) scheduleDraw();

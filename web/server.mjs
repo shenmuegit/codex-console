@@ -21,6 +21,7 @@ import { createRequire } from 'node:module';
 import { createRemoteController } from './remote-controller.mjs';
 import { createRemoteRelay } from './remote-relay.mjs';
 import { createRemoteHostPool } from './remote-hosts.mjs';
+import { createPassiveHistorySync } from './passive-history.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
@@ -436,7 +437,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       if (!state) return;
       applyNativeEvent(state, event); reconcileWrites(state);
       const p = event.native.params;
-      renderedLater(threadId, [p.itemId, p.item?.id, ...(p.turn?.items ?? []).map(i => i.id)]);
+      renderedLater(threadId, [p.itemId, p.item?.id, ...(p.turn?.items ?? []).map(i => i.id), ...(p.entries ?? []).map(entry => entry.item.id)]);
     }
   }
   async function setNextSettings(threadId, changes) {
@@ -493,6 +494,11 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
     const record = { state: 'pending', fingerprint, time: Date.now() }; writes.set(key, record);
     record.promise = (async () => {
       try {
+        if (state.passive) {
+          const lease = await codex.retainThread(body.threadId, body.viewId);
+          if (lease.result.passive) throw Object.assign(error(409, 'THREAD_OWNED_ELSEWHERE', '会话正在由原生客户端处理，请稍后再发送；草稿已保留。'), { outcome: 'not-sent' });
+          const history = initialHistory.get(lease.result); if (history) await history;
+        }
         if (body.mode === 'queue') {
           const changes = { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' },
             ...(body.model ? { model: body.model } : {}), ...(body.effort ? { effort: body.effort } : {}) };
@@ -622,6 +628,15 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
     })();
     return record.promise;
   }
+  const passiveHistory = createPassiveHistorySync({ codex, home: config.remoteHost ? null : config.backendHome,
+    active: () => [...views.values()].some(view => view.streams.size),
+    states: () => [...new Set([...views.values()].filter(view => view.streams.size).map(view => chats.get(view.threadId)).filter(Boolean))],
+    publish(event) {
+      if (event.cursor.generation !== checkpoint.generation) return;
+      if (event.cursor.seq > checkpoint.seq) checkpoint = event.cursor;
+      const native = safe(event.native); updateChat({ ...event, native }); broadcast({ ...event, native });
+    },
+  });
   const off = codex.onEvent(event => {
     checkpoint = event.cursor;
     if (event.kind === 'status' || event.native?.method === 'account/updated') ++accountEpoch;
@@ -645,7 +660,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       broadcast({ ...event, native });
     } else if (event.kind === 'snapshot') {
       updateChat(event);
-      const kind = event.native.thread.historyMode === 'legacy' ? 'turns' : event.native.itemsBackwardsCursor ? 'items' : null;
+      const kind = event.native.thread.historyMode === 'legacy' ? 'turns' : event.native.itemsBackwardsCursor || event.native.passive ? 'items' : null;
       if (kind && [...views.values()].some(view => view.threadId === event.native.thread.id)) {
         const history = codex.history(kind, { threadId: event.native.thread.id, limit: 20, sortDirection: 'desc', ...(kind === 'turns' ? { itemsView: 'summary' } : {}) });
         initialHistory.set(event.native, history); history.catch(() => {});
@@ -672,7 +687,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
       }
       const snapshot = { thread: structuredClone(state.thread), model: state.settings.model, reasoningEffort: state.settings.effort,
         cwd: state.settings.cwd, approvalPolicy: state.settings.approvalPolicy, sandbox: state.settings.sandbox, activePermissionProfile: state.settings.activePermissionProfile,
-        historyKind: event.historyKind, pendingRequests: [...state.requests], tokenUsage: state.tokenUsage, nativeError: state.error,
+        historyKind: event.historyKind, passive: state.passive, pendingRequests: [...state.requests], tokenUsage: state.tokenUsage, nativeError: state.error,
         initialTurnsPage: { data: [...turns.values()].reverse(), nextCursor: event.native.nextCursor } };
       if (event.initial) {
         const enriched = { kind: 'snapshot', cursor: event.cursor, threadId: event.threadId, native: snapshot };
@@ -1002,7 +1017,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   let disposed = false;
   server.dispose = () => {
     if (disposed) return;
-    disposed = true; off();
+    disposed = true; off(); passiveHistory.close();
     for (const [key, view] of views) releaseView(key, view);
     for (const value of renderTimers.values()) clearTimeout(value.timer);
   };

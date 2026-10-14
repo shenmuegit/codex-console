@@ -52,6 +52,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
   function unsubscribe(threadId, entry) {
     if (entry.views.size || entry.activeTurnId || entry.releasing) return entry.releasing;
     if (entry.resumes.size) return Promise.allSettled([...entry.resumes]).then(() => unsubscribe(threadId, entry));
+    if (entry.passive) { threads.delete(threadId); return; }
     if (!online) { threads.delete(threadId); return; }
     entry.releasing = send('thread/unsubscribe', { threadId }).finally(() => {
       entry.releasing = null;
@@ -68,6 +69,23 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
       .finally(() => entry?.resumes.delete(operation));
     entry?.resumes.add(operation);
     return operation;
+  }
+
+  async function resumeOrObserve(threadId) {
+    const entry = threads.get(threadId), expectedGeneration = generation;
+    try {
+      const result = await resume(threadId); if (entry) entry.passive = false; return result;
+    } catch (error) {
+      if (error.code !== -32600 || error.message !== `thread ${threadId} already has an active writer`) throw error;
+      entry.passive = true; entry.activeTurnId = null;
+      const { result: { thread } } = await send('thread/read', { threadId, includeTurns: false });
+      const history = await send('thread/turns/list', { threadId, limit: 20, sortDirection: 'desc', itemsView: 'notLoaded' });
+      if (closed || !online || generation !== expectedGeneration || threads.get(threadId) !== entry || !entry.views.size) throw fault('NATIVE_DISCONNECTED', 'The observed native conversation changed.');
+      const result = { thread: { ...thread, turns: [] }, model: thread.model, reasoningEffort: thread.reasoningEffort,
+        cwd: thread.cwd, initialTurnsPage: history.result, passive: true, historyKind: thread.historyMode === 'legacy' ? 'turns' : 'items' };
+      emit({ kind: 'snapshot', cursor: history.cursor, threadId, native: result });
+      return { result, cursor: history.cursor };
+    }
   }
 
   function receive(raw) {
@@ -131,7 +149,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
         clearTimeout(opening); online = true; backoff = 500;
         emit({ kind: 'status', cursor: cursor(), native: status() });
         for (const [threadId, entry] of threads) {
-          if (entry.views.size || entry.activeTurnId) resume(threadId).catch(() => {});
+          if (entry.views.size || entry.activeTurnId) resumeOrObserve(threadId).catch(() => {});
         }
       } catch { connection.close(); }
     });
@@ -169,7 +187,7 @@ export function createCodexClient({ url, expectedHome, socketFactory }) {
       let entry = threads.get(threadId);
       if (!entry) threads.set(threadId, entry = { views: new Set(), activeTurnId: null, releasing: null, resumes: new Set() });
       entry.views.add(viewId);
-      return entry.releasing ? entry.releasing.catch(() => {}).then(() => resume(threadId)) : resume(threadId);
+      return entry.releasing ? entry.releasing.catch(() => {}).then(() => resumeOrObserve(threadId)) : resumeOrObserve(threadId);
     },
     async releaseThread(threadId, viewId) {
       const entry = threads.get(threadId);
