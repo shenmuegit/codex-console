@@ -6,8 +6,21 @@ const TTL = 12 * 60 * 60 * 1000;
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const validPassword = password => typeof password === 'string' && password.length > 0 && password.length <= 256;
 
-export function checkOrigin(actual, expected) {
-  if (actual !== expected) throw fail('ORIGIN_DENIED', '页面来源不匹配，请使用配置中的地址。');
+export function browserAccess(config) {
+  const { allowedOrigins = [], cookieSameSite = 'strict' } = config;
+  const invalid = () => fail('INVALID_BROWSER_ACCESS', 'Use canonical HTTPS allowedOrigins and strict/none cookieSameSite.');
+  if (!Array.isArray(allowedOrigins) || !['strict', 'none'].includes(cookieSameSite)) throw invalid();
+  for (const origin of allowedOrigins) {
+    let url;
+    try { url = new URL(origin); } catch { throw invalid(); }
+    if (typeof origin !== 'string' || url.protocol !== 'https:' || url.origin !== origin || url.hostname.includes('*') ||
+        url.port && (!Number.isInteger(Number(url.port)) || Number(url.port) < 1 || Number(url.port) > 65535)) throw invalid();
+  }
+  return { allowedOrigins: [...new Set(allowedOrigins)], cookieSameSite };
+}
+
+export function checkOrigin(actual, expected, allowedOrigins = []) {
+  if (actual !== expected && !allowedOrigins.includes(actual)) throw fail('ORIGIN_DENIED', '页面来源不匹配，请使用配置中的地址。');
 }
 
 export async function hashPassword(password) {

@@ -4,7 +4,7 @@ import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { parseArgs, isDeepStrictEqual } from 'node:util';
-import { createAuth, checkOrigin } from './auth.mjs';
+import { createAuth, checkOrigin, browserAccess } from './auth.mjs';
 import { createCodexClient } from './codex.mjs';
 import { realpath, stat, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { createChatState, installSnapshot, applyNativeEvent, buildTurnParams, activeTurn } from './public/chat.js';
@@ -191,6 +191,7 @@ export function writeEvent(res, event) {
 }
 
 export function createWebServer({ config, codex, sharedAuth, controller, routeHost, onLogout }) {
+  const { allowedOrigins, cookieSameSite } = browserAccess(config);
   const origin = new URL(config.origin);
   if (origin.protocol !== 'https:' || origin.origin !== config.origin) throw error(500, 'INVALID_ORIGIN', '配置须包含完整 HTTPS 来源地址。');
   const auth = sharedAuth ?? createAuth({ passwordHash: config.passwordHash }), views = new Map(), pending = new Map();
@@ -385,7 +386,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   const publicStatus = () => ({ online: codex.status().online, generation: codex.status().generation,
     uploadLimitBytes: files.uploadLimitBytes });
   const cookieToken = req => (req.headers.cookie ?? '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
-  const cookie = (token, age) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
+  const cookie = (token, age) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=${cookieSameSite === 'none' ? 'None' : 'Strict'}; Path=/; Max-Age=${age}`;
   function requireView(viewId, session) {
     const view = views.get(viewId);
     if (!view || view.session !== session) throw error(403, 'VIEW_DENIED', '页面已失效，请重新打开。');
@@ -757,8 +758,26 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'");
     try {
       const url = new URL(req.url, config.origin), mutation = !['GET', 'HEAD'].includes(req.method);
+      const api = url.pathname.startsWith('/api/');
+      if (api) res.setHeader('Vary', 'Origin');
+      if (mutation || req.headers.origin) checkOrigin(req.headers.origin, config.origin, api ? allowedOrigins : []);
+      if (api && req.headers.origin && req.headers.origin !== config.origin) {
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
       if (req.headers.host !== new URL(config.origin).host) throw error(403, 'HOST_DENIED', '请使用配置中的地址。');
-      if (mutation || req.headers.origin) checkOrigin(req.headers.origin, config.origin);
+      if (api && req.method === 'OPTIONS') {
+        const method = req.headers['access-control-request-method'];
+        const headers = req.headers['access-control-request-headers'];
+        if (!['GET', 'POST', 'PUT'].includes(method) || headers !== undefined &&
+            headers.split(',').some(header => !['content-type', 'last-event-id'].includes(header.trim().toLowerCase()))) {
+          throw error(403, 'PREFLIGHT_DENIED', '请求方式或请求头未获准。');
+        }
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, PUT', 'Access-Control-Allow-Headers': 'Content-Type, Last-Event-ID' });
+        res.end(); return;
+      }
       if (!mutation && assets.has(url.pathname)) {
         const [file, type] = assets.get(url.pathname);
         res.writeHead(200, { 'Content-Type': type }); res.end(req.method === 'HEAD' ? undefined : readFileSync(join(publicDir, file))); return;

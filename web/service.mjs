@@ -9,7 +9,7 @@ import { parseArgs } from 'node:util';
 import { isIP } from 'node:net';
 import https from 'node:https';
 import { rootCertificates } from 'node:tls';
-import { hashPassword, createAuth } from './auth.mjs';
+import { hashPassword, createAuth, browserAccess } from './auth.mjs';
 import { backendEndpoint } from './codex.mjs';
 
 const BACKEND = 'codex-console-native-backend.service', WEB = 'codex-console-native-web.service', MARKER = '# codex-console managed unit\n';
@@ -61,6 +61,7 @@ async function requireExecutables(config) {
 }
 export async function validateConfig(config, configPath) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw fail('NODE_REQUIRED', 'Node.js 24 or newer is required.');
+  browserAccess(config);
   const url = new URL(config.origin);
   if (url.protocol !== 'https:' || url.origin !== config.origin || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535 || Number(url.port || 443) !== config.port) throw fail('INVALID_ORIGIN', 'Configure one canonical HTTPS origin and matching port.');
   backendEndpoint(config.backendUrl); createAuth({ passwordHash: config.passwordHash });

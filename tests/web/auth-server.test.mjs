@@ -118,6 +118,8 @@ test('logout_closes_only_that_sessions_streams and a new stream demands snapshot
   const s1 = await f.events(c1, await f.view(c1)), s2 = await f.events(c2, await f.view(c2));
   const r = await f.request('/api/logout', { method: 'POST', cookie: c1, body: {} });
   assert.equal(r.status, 200); assert.match(r.headers['set-cookie'][0], /Max-Age=0/);
+  assert.match(r.headers['set-cookie'][0], /^__Host-codex_console=/);
+  for (const flag of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/']) assert.ok(r.headers['set-cookie'][0].includes(flag));
   await s1.closed;
   assert.equal((await f.request('/api/status', { cookie: c1 })).status, 401);
   assert.equal(s2.res.destroyed, false);

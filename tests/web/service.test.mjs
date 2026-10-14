@@ -33,6 +33,16 @@ if (args.includes('show')) for (const name of ['codex-console-native-backend.ser
     { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: f.root, PATH: bin + ':' + process.env.PATH } }); } };
 }
 
+test('private config validates optional browser origins and cookie mode without requiring migration', async t => {
+  const f = await configFixture(t);
+  await validateConfig(f.config, f.configPath);
+  await validateConfig({ ...f.config, allowedOrigins: ['https://plugin.example.test'], cookieSameSite: 'none' }, f.configPath);
+  for (const config of [{ allowedOrigins: ['*'] }, { allowedOrigins: ['https://plugin.example.test:0'] },
+    { allowedOrigins: ['https://plugin.example.test/'] }, { allowedOrigins: null }, { cookieSameSite: 'lax' }, { cookieSameSite: null }]) {
+    await assert.rejects(validateConfig({ ...f.config, ...config }, f.configPath), { code: 'INVALID_BROWSER_ACCESS' });
+  }
+});
+
 test('unit paths quote spaces/Unicode and escape systemd percent/dollar without a shell or fallback backend', async t => {
   const f = await configFixture(t), units = renderUserUnits({ ...f.config, configPath: f.configPath });
   assert.match(units.backend, /codex-app-server/); assert.match(units.backend, /CODEX_HOME=/); assert.match(units.backend, /UMask=0077/);

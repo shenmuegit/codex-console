@@ -98,6 +98,7 @@ export async function connectedFixture({ expectedHome } = {}) {
 }
 
 export async function httpsFixture(options = {}) {
+  const { configOverrides = {}, ...serverOptions } = options;
   const native = await connectedFixture();
   const dir = await mkdtemp(join(tmpdir(), 'codex-web-'));
   const tlsKey = join(dir, 'key.pem'), tlsCert = join(dir, 'cert.pem');
@@ -106,8 +107,8 @@ export async function httpsFixture(options = {}) {
     '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1'], { stdio: 'ignore' });
   const config = { origin: 'https://127.0.0.1:0', listenHost: '127.0.0.1', port: 0,
     backendUrl: 'ws://127.0.0.1:4500', workspace: dir, tlsKey, tlsCert, stateDir: join(dir, 'state'),
-    passwordHash: await hashPassword('fixture-passphrase'), generatedRoots: [], uploadLimitBytes: 33_554_432 };
-  const server = createWebServer({ config, codex: native.client, ...options });
+    passwordHash: await hashPassword('fixture-passphrase'), generatedRoots: [], uploadLimitBytes: 33_554_432, ...configOverrides };
+  const server = createWebServer({ config, codex: native.client, ...serverOptions });
   const eventResponses = [];
   server.on('request', (req, res) => { if (req.url.startsWith('/api/events?')) eventResponses.push(res); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -149,10 +150,10 @@ export async function httpsFixture(options = {}) {
   async function view(cookie) {
     return (await request('/api/view', { method: 'POST', cookie, body: {} })).json.viewId;
   }
-  function events(cookie, viewId, pause = false) {
+  function events(cookie, viewId, pause = false, origin = config.origin) {
     return new Promise((resolve, reject) => {
       const req = https.get(config.origin + '/api/events?viewId=' + viewId,
-        { rejectUnauthorized: false, headers: { Cookie: cookie, Origin: config.origin } }, res => {
+        { rejectUnauthorized: false, headers: { Cookie: cookie, Origin: origin } }, res => {
           const chunks = [];
           if (pause) res.pause(); else res.on('data', c => chunks.push(c.toString()));
           const closed = new Promise(done => res.on('close', done));

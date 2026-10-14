@@ -508,11 +508,35 @@ Current executable: app-server `0.159.2-dev.ff9ab4a`, SHA-256 `060d8d708d00c10b5
 ## HTTPS owner access
 
 `web/server.mjs` serves fixed local assets, accepts only the configured HTTPS
-Host/Origin and uses a 12-hour, absolute `HttpOnly; Secure; SameSite=Strict`
+Host and, by default, its exact Origin. It uses a 12-hour, absolute `HttpOnly; Secure; SameSite=Strict`
 session cookie. Passwords use async native scrypt (16-byte salt, 64-byte key,
 N=16384/r=8/p=1); login throttles after five failed guesses per IP per minute.
 The password, its hash, TLS files and configuration stay outside Git. No request
 bodies or cookies are logged.
+
+Existing private JSON configurations can opt into direct plugin API access with
+`"allowedOrigins": ["https://plugin.example.test"]` and, for cross-site use,
+`"cookieSameSite": "none"`. Missing fields default to `[]` and `"strict"`;
+only `"strict"` and `"none"` are accepted. Origins must be exact canonical HTTPS
+origins with no wildcards, credentials, path (including a trailing slash), query
+or fragment; explicit ports must be 1–65535. Duplicate origins are removed.
+Keep Strict for same-site access. None applies to both login and logout while
+preserving `__Host-codex_console`, Secure, HttpOnly, Path=/ and expiry/revocation.
+Browsers can still block third-party cookies; verify a credentialed `/api/status`
+after login. A plugin origin grants access to the existing Codex owner account,
+not a separate account or data partition for each Isola user.
+
+Only `/api/` routes accept these additional origins, including controller and
+paired-host routes. Approved cross-origin requests receive their exact
+Access-Control-Allow-Origin, Access-Control-Allow-Credentials: true and Vary:
+Origin headers before Host or authentication errors. Valid OPTIONS preflights
+need no login or request body and allow only GET/POST/PUT and
+Content-Type/Last-Event-ID; invalid origins, methods or headers return 403.
+Writes still require an Origin, and Host, login throttling, sessions, view IDs,
+native RPC allowlists, field and path validation remain enforced. Fixed page
+assets retain their original Origin check and CSP `frame-ancestors 'self'`.
+Update only these fields in the existing private configuration and use the
+existing service commands; do not reinitialize passwords, TLS or native data.
 
 Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
 and raw thread creation are rejected. Native credentials are filtered from reads

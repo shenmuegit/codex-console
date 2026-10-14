@@ -380,11 +380,28 @@ node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 \
 
 ## HTTPS 用户访问
 
-`web/server.mjs` 提供固定本地页面，只接受配置中的 HTTPS Host/Origin。
+`web/server.mjs` 提供固定本地页面，只接受配置中的 HTTPS Host，默认只允许其精确 Origin。
 登录使用有效期固定为 12 小时的 `HttpOnly; Secure; SameSite=Strict` Cookie。
 密码采用异步原生 scrypt，盐为 16 字节、密钥为 64 字节，N=16384/r=8/p=1；
 每 IP 每分钟失败五次后限流。密码、哈希、TLS 文件及配置保存在仓库外，
 不记录请求正文或 Cookie。
+
+已有私有 JSON 配置可增加 `"allowedOrigins": ["https://plugin.example.test"]`，
+跨站接入时再显式设置 `"cookieSameSite": "none"`。未配置时分别默认为 `[]` 和 `"strict"`，
+Cookie 模式仅接受 `"strict"`、`"none"`。来源须为规范 HTTPS 来源，不允许通配符、凭据、
+路径（含尾部斜线）、查询或片段；显式端口必须为 1–65535，重复来源会去重。
+同站接入保留 Strict。None 同时用于登录和注销，仍保留 `__Host-codex_console`、
+Secure、HttpOnly、Path=/ 和原有有效期及撤销行为。浏览器仍可能阻止第三方 Cookie，
+登录后需通过带凭据的 `/api/status` 验证。插件来源访问的是现有 Codex 所有者账号，
+不会为每个 Isola 用户自动创建独立账号或数据分区。
+
+额外来源只适用于 `/api/` 路由，包括控制端与已配对设备。获准跨来源请求在 Host 或认证
+错误前获得精确 Access-Control-Allow-Origin、Access-Control-Allow-Credentials: true
+和 Vary: Origin 头。合法 OPTIONS 预检不要求登录、不读取请求正文，仅允许 GET/POST/PUT
+及 Content-Type/Last-Event-ID；非法来源、方法或请求头返回 403。
+写请求仍须携带 Origin，Host、登录限流、会话、viewId、原生 RPC 白名单、字段和路径校验
+继续生效。固定页面资源保留原来源校验和 CSP `frame-ancestors 'self'`。
+只更新已有私有配置中的这些字段并沿用原服务管理命令，不重新初始化密码、TLS 或原生数据。
 
 浏览器只能调用固定读取接口；任意进程、配置、凭据接口及原始新建会话请求被拒绝。
 读取和事件中过滤原生凭据。暂不支持的登录刷新、证明或动态工具请求明确返回

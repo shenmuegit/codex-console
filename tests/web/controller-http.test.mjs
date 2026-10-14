@@ -17,6 +17,23 @@ function controllerFixture() {
   };
 }
 
+test('allowed plugin origins reach authenticated controller routes with the same validation', async t => {
+  const origin = 'https://plugin.example.test', controller = controllerFixture();
+  const f = await httpsFixture({ controller, configOverrides: { allowedOrigins: [origin], cookieSameSite: 'none' } }); t.after(() => f.close());
+  const pre = await f.request('/api/controller/pair', { method: 'OPTIONS', origin,
+    headers: { 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'Content-Type' } });
+  assert.equal(pre.status, 204); assert.equal(controller.calls.length, 0);
+  const missing = await f.request('/api/controller/status', { origin });
+  assert.equal(missing.status, 401); assert.equal(missing.headers['access-control-allow-origin'], origin);
+  const cookie = await f.login();
+  const pair = await f.request('/api/controller/pair', { method: 'POST', origin, cookie, body: { code: '123456' } });
+  assert.equal(pair.status, 200); assert.deepEqual(pair.json, { environmentId: 'host-a' });
+  const invalid = await f.request('/api/controller/pair', { method: 'POST', origin, cookie, body: { code: 1 } });
+  assert.equal(invalid.status, 400); assert.equal(invalid.headers['access-control-allow-origin'], origin);
+  const denied = await f.request('/api/controller/pair', { method: 'POST', origin: 'null', cookie, body: { code: '123456' } });
+  assert.equal(denied.status, 403); assert.deepEqual(controller.calls, [['pair', '123456']]);
+});
+
 test('controller setup and pairing require owner authentication and the canonical origin', async t => {
   const controller = controllerFixture(), f = await httpsFixture({ controller }); t.after(() => f.close());
   assert.equal((await f.request('/api/controller/status')).status, 401);
