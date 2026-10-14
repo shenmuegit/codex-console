@@ -484,6 +484,23 @@ SSE 要求获取快照、退出登录；没有输出密码内容。
 
 ## 浏览器聊天
 
+Isola 仓库提供独立的 `playwright.direct.config.ts` 集成验收。把
+`ISOLA_TEST_CONSOLE_DIR` 设置为本仓库绝对路径，安装两仓库依赖，再按 Isola
+`docs/acceptance.md` 准备临时 Linux 后端镜像和专用测试数据库。Windows 浏览器
+仍通过回环 CONNECT 代理使用真实 TLS；后端的目录 fsync 和 /proc 文件引用校验
+在 Linux 执行。原生 RPC 使用受控 peer，不连接真实账号或模型。
+
+部署时为 Isola 宿主、名称摘要插件子域和本后端准备受信任 HTTPS。资产命名空间
+需要通配 DNS 和证书，反向代理保留 Host 且只允许 GET/HEAD。使用 SDK 0.1.2，
+安装声明 downloads、external-links、dialogs 的包。allowedOrigins 填写精确的
+公开插件来源，VITE_CODEX_CONSOLE_BACKEND_URL 填写公开后端来源，两者都不能包含
+凭据。Isola HTTPS Cookie 改名后用户需要重新登录。
+
+Isola 与本后端分别登录；Isola 用户不会自动获得独立原生数据空间。同站 Strict
+是主要验收模式。跨站 None 仍受浏览器 Cookie 策略限制，显示 Cookie 受限提示
+只代表限制解释清楚，不能算业务成功。受控验收不证明生产 DNS/证书、真实模型、
+用户账号或原生设备/WebView 已经可用。
+
 选择原生项目或全部会话，每页显示 20 条。新会话使用所选主机目录，默认完全访问、
 执行免审批，服从原生托管限制。新建空会话保留原生命名并在持久化后原子恢复。会话行菜单可复制真实会话 ID，
 `/status` 可查看原生会话默认设置。读取会话不会改变当前执行权限。

@@ -479,6 +479,29 @@ The corrected build returns the same seven visible models as the desktop, includ
 
 ## Verification
 
+The Isola checkout provides a separate `playwright.direct.config.ts` integration
+suite. Set `ISOLA_TEST_CONSOLE_DIR` to this repository's absolute path, install
+both repositories' dependencies, and follow Isola's `docs/acceptance.md` to
+prepare its disposable Linux backend image and dedicated test database. Windows
+browsers still exercise real TLS through a loopback CONNECT proxy. Linux is
+required for the backend's directory fsync and /proc file-reference validation.
+The native RPC peer is controlled; no real account or model is contacted.
+
+Deployment needs trusted HTTPS for the Isola host, each hashed plugin subdomain,
+and this backend. Configure wildcard DNS and a wildcard certificate for the
+asset namespace; its reverse proxy must preserve Host and allow only GET/HEAD.
+Use SDK 0.1.2 and install the package declaring downloads, external-links and
+dialogs. Put the exact public plugin origin in allowedOrigins and the public
+backend origin in VITE_CODEX_CONSOLE_BACKEND_URL. Both are public configuration,
+never credentials. The Isola HTTPS cookie rename requires users to log in again.
+
+Isola and this backend have separate logins; Isola users do not automatically
+receive separate native data stores. Same-site Strict is the primary acceptance
+mode. Cross-site None remains subject to browser cookie policy: a displayed
+cookie restriction is an explained limitation, not a successful business flow.
+Controlled browser acceptance does not verify production DNS/certificates,
+real model calls, user accounts, or native device/WebView behavior.
+
 ```bash
 npm --prefix web test
 node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 \
