@@ -22,6 +22,7 @@ import { createRemoteController } from './remote-controller.mjs';
 import { createRemoteRelay } from './remote-relay.mjs';
 import { createRemoteHostPool } from './remote-hosts.mjs';
 import { createPassiveHistorySync } from './passive-history.mjs';
+import { createNativeAutomations } from './automations.mjs';
 
 const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
@@ -29,6 +30,7 @@ const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/connections.js', ['connections.js', 'text/javascript; charset=utf-8']],
+  ['/automations.js', ['automations.js', 'text/javascript; charset=utf-8']],
   ['/composer.js', ['composer.js', 'text/javascript; charset=utf-8']],
   ['/capabilities.js', ['capabilities.js', 'text/javascript; charset=utf-8']],
   ['/followups.js', ['followups.js', 'text/javascript; charset=utf-8']],
@@ -40,6 +42,7 @@ const error = (status, code, message) => Object.assign(new Error(message), { sta
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = (v, max = 8192) => typeof v === 'string' && v.length <= max && !v.includes('\0');
 const id = v => text(v, 128) && /^[A-Za-z0-9_-]+$/.test(v);
+const automationId = v => text(v, 255) && v.trim() && !['.', '..'].includes(v) && !/[/\\\x00-\x1f\x7f]/.test(v) && Buffer.byteLength(v) <= 255;
 const absolutePath = absoluteHostPath;
 const secretKeys = new Set(['accesstoken', 'refreshtoken', 'idtoken', 'apikey', 'authorization', 'authtoken', 'bearertoken', 'password', 'passwordhash', 'tokens']);
 function safe(value) {
@@ -206,6 +209,49 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
     return models;
   }
   const nativeRead = async (method, params) => (await codex.rpc(method, params)).result;
+  let automations;
+  function nativeAutomations() {
+    if (config.remoteHost) throw error(403, 'LOCAL_AUTOMATIONS_ONLY', '定时任务由本机 Codex 桌面管理，请先选择本机设备。');
+    if (!config.backendHome) throw error(503, 'AUTOMATIONS_UNAVAILABLE', '原生 Codex 数据目录尚未配置。');
+    return automations ??= createNativeAutomations({ home: config.backendHome, onChange() {
+      broadcast({ kind: 'notification', cursor: checkpoint, native: { method: 'automation/changed', params: {} } });
+    } });
+  }
+  async function automationInput(input, previous) {
+    fields(input, ['kind', 'name', 'prompt', 'status', 'rrule', 'targetThreadId', 'projectId', 'executionEnvironment', 'model', 'reasoningEffort']);
+    const value = { ...previous, ...input }, creating = !previous;
+    if (!['heartbeat', 'cron'].includes(value.kind) || (previous && value.kind !== previous.kind) ||
+        ('targetThreadId' in input && !id(input.targetThreadId)) ||
+        ('projectId' in input && input.projectId !== null && !id(input.projectId))) throw error(400, 'INVALID_AUTOMATION', '定时任务类型或目标不正确。');
+    if (value.kind === 'heartbeat') {
+      if (['projectId', 'executionEnvironment', 'model', 'reasoningEffort'].some(key => key in input) || !id(value.targetThreadId)) {
+        throw error(400, 'INVALID_AUTOMATION', '继续已有会话的任务沿用该会话的项目及模型。');
+      }
+      if (creating || input.targetThreadId !== undefined && input.targetThreadId !== previous.targetThreadId) {
+        const result = await nativeRead('thread/read', { threadId: value.targetThreadId, includeTurns: false });
+        if (result.thread?.id !== value.targetThreadId) throw error(422, 'INVALID_AUTOMATION_TARGET', '目标原生会话不可用。');
+      }
+    } else {
+      if ('targetThreadId' in input) throw error(400, 'INVALID_AUTOMATION', '独立任务请选择原生项目。');
+      if (creating || 'projectId' in input && input.projectId !== previous.projectId) {
+        let cwds = [];
+        if (value.projectId) {
+          const { project } = await nativeRead('project/read', { projectId: value.projectId });
+          if (project?.id !== value.projectId || !project.roots?.length || project.roots.some(root => !absolutePath(root.path))) {
+            throw error(422, 'INVALID_AUTOMATION_TARGET', '目标原生项目没有可用的工作目录。');
+          }
+          cwds = project.roots.map(root => root.path);
+        }
+        input = { ...input, cwds };
+      }
+      if ((creating || 'executionEnvironment' in input || 'projectId' in input) && (value.executionEnvironment ?? 'local') === 'worktree' && !value.projectId) throw error(400, 'INVALID_AUTOMATION', '工作树任务需要已有原生项目。');
+      if ((creating || ['model', 'reasoningEffort'].some(key => key in input && input[key] !== previous[key])) && (value.model || value.reasoningEffort)) {
+        const models = await nativeModels(), model = value.model || models.find(model => model.isDefault)?.model;
+        modelChoice(models, model, value.reasoningEffort);
+      }
+    }
+    return input;
+  }
   async function skillsAt(cwd) { return (await nativeRead('skills/list', { cwds: [cwd] })).data.flatMap(entry => entry.skills); }
   async function pluginsAt(cwd) { return (await nativeRead('plugin/installed', { cwds: [cwd] })).marketplaces.flatMap(market => market.plugins); }
   async function appsAt(threadId, unavailable, refresh = false) {
@@ -840,6 +886,26 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         if (views.size >= 1024) throw error(429, 'TOO_MANY_VIEWS', '页面数量过多，请退出后重新登录。');
         const viewId = randomBytes(24).toString('base64url');
         views.set(viewId, { session, threadId: null, streams: new Set() }); reply(res, 200, { viewId });
+      } else if (url.pathname.startsWith('/api/automations/')) {
+        const action = url.pathname.slice('/api/automations/'.length);
+        const actions = { list: [], read: ['id'], create: ['item'], update: ['id', 'expectedUpdatedAt', 'patch'], delete: ['id', 'expectedUpdatedAt', 'confirmed'] };
+        if (!Object.hasOwn(actions, action)) throw error(404, 'NOT_FOUND', '没有这个定时任务操作。');
+        if (config.remoteHost) throw error(403, 'LOCAL_AUTOMATIONS_ONLY', '定时任务由本机 Codex 桌面管理，请先选择本机设备。');
+        fields(body, ['viewId', ...actions[action]]); requireView(body.viewId, session);
+        if (action !== 'list' && action !== 'create' && !automationId(body.id)) throw error(400, 'INVALID_AUTOMATION', '定时任务 ID 不正确。');
+        if (['update', 'delete'].includes(action) && (!Number.isSafeInteger(body.expectedUpdatedAt) || body.expectedUpdatedAt < 0 || action === 'delete' && body.confirmed !== true)) {
+          throw error(400, 'CONFIRM_REQUIRED', '请重新读取定时任务并确认操作。');
+        }
+        let result;
+        if (action === 'list') result = { ...await nativeAutomations().list(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, now: Date.now() };
+        else if (action === 'read') result = await nativeAutomations().read(body.id);
+        else if (action === 'create') result = await nativeAutomations().create(await automationInput(body.item));
+        else if (action === 'update') {
+          const { item } = await nativeAutomations().read(body.id);
+          if (item.updatedAt !== body.expectedUpdatedAt) throw error(409, 'AUTOMATION_CONFLICT', '定时任务已被其他客户端修改，请重新打开后编辑。');
+          result = await nativeAutomations().update(body.id, body.expectedUpdatedAt, await automationInput(body.patch, item));
+        } else result = await nativeAutomations().delete(body.id, body.expectedUpdatedAt, body.confirmed);
+        reply(res, 200, result);
       } else if (url.pathname === '/api/project/create') {
         fields(body, ['viewId', 'name', 'rootPath', 'idempotencyKey']); requireView(body.viewId, session);
         if (!text(body.name, 160) || !body.name.trim() || !absolutePath(body.rootPath) || !id(body.idempotencyKey)) throw error(400, 'INVALID_PROJECT', '请输入项目名称、所选主机绝对目录和有效操作标识。');
@@ -1017,7 +1083,7 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
   let disposed = false;
   server.dispose = () => {
     if (disposed) return;
-    disposed = true; off(); passiveHistory.close();
+    disposed = true; off(); passiveHistory.close(); automations?.close();
     for (const [key, view] of views) releaseView(key, view);
     for (const value of renderTimers.values()) clearTimeout(value.timer);
   };

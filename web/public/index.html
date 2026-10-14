@@ -28,6 +28,7 @@
           <button id="back-projects" class="icon-button" aria-label="收起侧栏" title="收起侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/></svg></button>
         </header>
         <button id="new-thread" class="new-thread"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M16 3l5 5M10 14l-1 4 4-1L22 8l-5-5Z"/></svg><span>新建会话</span></button>
+        <button id="show-automations" class="new-thread automation-trigger" type="button" aria-haspopup="dialog" aria-controls="automations-dialog" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>定时任务</span></button>
         <div class="sidebar-scroll">
           <section class="projects-pane" aria-label="项目">
             <div class="pane-heading"><h2 id="projects-title">项目</h2><button id="show-archived-projects" class="more-button" type="button" aria-pressed="false">已归档</button><button id="new-project" class="more-button" type="button" aria-haspopup="dialog" aria-controls="project-dialog">新建项目</button></div>
@@ -111,6 +112,45 @@
     <section id="capability-panel" class="capability-panel" role="tabpanel" aria-labelledby="capability-tab-skills"><ul id="capability-results" class="capability-results"></ul><section id="capability-details" class="capability-details" aria-label="能力详情" hidden></section></section>
     <p id="capability-status" class="muted small" role="status" aria-live="polite"></p>
     <div class="capability-footer"><button id="refresh-capabilities" type="button">刷新列表</button><button id="done-capabilities" class="primary" type="button">返回编辑</button></div>
+  </dialog>
+  <dialog id="automations-dialog" class="automations-dialog" aria-labelledby="automations-title" aria-describedby="automation-hint">
+    <div class="dialog-heading"><h2 id="automations-title">定时任务</h2><button id="close-automations" class="icon-button" type="button" aria-label="关闭定时任务">×</button></div>
+    <p id="automation-hint" class="muted small">由原生 Codex 执行，需要服务电脑上的 Codex 客户端保持运行。计划按服务电脑的本地时间解释。</p>
+    <section id="automation-list-panel" class="automation-list-panel" aria-label="原生定时任务">
+      <div class="automation-toolbar"><p id="automation-list-status" class="muted small" role="status" aria-live="polite"></p><button id="refresh-automations" type="button">刷新</button><button id="new-automation" class="primary" type="button">新建任务</button></div>
+      <p id="automation-list-error" class="error" role="alert"></p>
+      <div id="automation-list-scroll" class="automation-scroll" tabindex="0" aria-label="任务列表"><ul id="automation-list" class="automation-list"></ul><p id="automation-empty" class="muted">尚无定时任务。</p></div>
+    </section>
+    <form id="automation-form" class="automation-form" hidden>
+      <div id="automation-form-scroll" class="automation-scroll automation-fields">
+        <label for="automation-name">任务名称<input id="automation-name" name="name" autocomplete="off" maxlength="200" required></label>
+        <label for="automation-prompt">任务提示词<textarea id="automation-prompt" name="prompt" rows="5" maxlength="500000" required></textarea></label>
+        <label for="automation-kind">执行方式<select id="automation-kind"><option value="cron">每次新建独立会话</option><option value="heartbeat">继续已有会话（保留上下文）</option></select></label>
+        <div id="automation-heartbeat-fields" class="automation-field-group" hidden>
+          <label for="automation-thread">原会话<select id="automation-thread" aria-describedby="automation-thread-hint"></select></label>
+          <p id="automation-thread-hint" class="muted small">继续原会话需先在服务器的 Codex 桌面打开该会话，之后保持客户端运行。继承该会话的模型与思考强度。</p>
+        </div>
+        <div id="automation-cron-fields" class="automation-field-group">
+          <label for="automation-project">项目<select id="automation-project"><option value="">无项目</option></select></label>
+          <p id="automation-environment" class="muted small">执行环境：本机。工作目录由原生项目决定。</p>
+          <div class="automation-columns">
+            <label for="automation-model">模型<select id="automation-model"><option value="">沿用 Codex 默认</option></select></label>
+            <label for="automation-effort">思考强度<select id="automation-effort"><option value="">沿用 Codex 默认</option></select></label>
+          </div>
+        </div>
+        <p id="automation-catalog-status" class="muted small" role="status" aria-live="polite"></p>
+        <label for="automation-schedule">计划<select id="automation-schedule"><option value="minutes">每 N 分钟</option><option value="hours">每 N 小时</option><option value="daily">每天</option><option value="weekly">每周</option><option value="once">一次</option><option value="custom">自定义原生 RRULE</option></select></label>
+        <label id="automation-interval-field" for="automation-interval" hidden>间隔<input id="automation-interval" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+        <label id="automation-time-field" for="automation-time">时间<input id="automation-time" type="time" value="09:00"></label>
+        <fieldset id="automation-days-field" class="automation-days" hidden><legend>重复日期</legend><label><input id="automation-day-MO" type="checkbox" value="MO">一</label><label><input id="automation-day-TU" type="checkbox" value="TU">二</label><label><input id="automation-day-WE" type="checkbox" value="WE">三</label><label><input id="automation-day-TH" type="checkbox" value="TH">四</label><label><input id="automation-day-FR" type="checkbox" value="FR">五</label><label><input id="automation-day-SA" type="checkbox" value="SA">六</label><label><input id="automation-day-SU" type="checkbox" value="SU">日</label></fieldset>
+        <label id="automation-once-field" for="automation-once" hidden>日期与时间<input id="automation-once" type="datetime-local"></label>
+        <label id="automation-rule-field" for="automation-rule" hidden>原生 RRULE<textarea id="automation-rule" rows="3" spellcheck="false" aria-describedby="automation-rule-hint"></textarea><span id="automation-rule-hint" class="muted small">保留原生 RRULE，可包含 DTSTART 与 RRULE 两行。</span></label>
+        <p id="automation-timezone" class="muted small">服务电脑本地时间</p>
+        <p id="automation-form-error" class="error" role="alert"></p>
+      </div>
+      <div class="automation-form-footer"><button id="cancel-automation" type="button">返回列表</button><button id="save-automation" class="primary" type="submit">创建任务</button></div>
+    </form>
+    <div id="automation-menu" class="thread-menu automation-menu" popover role="menu" aria-label="任务选项" hidden><button id="automation-menu-edit" type="button" role="menuitem">编辑任务</button><button id="automation-menu-toggle" type="button" role="menuitem">暂停任务</button><button id="automation-menu-open" type="button" role="menuitem">打开原会话</button><button id="automation-menu-delete" class="danger" type="button" role="menuitem">删除任务</button></div>
   </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-heading"><h2 id="settings-title">系统设置</h2><button id="close-settings" class="icon-button" type="button" aria-label="关闭系统设置">×</button></div>

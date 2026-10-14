@@ -1,9 +1,10 @@
 import { mountChat } from './chat.js';
 import { mountConnections } from './connections.js';
+import { mountAutomations } from './automations.js';
 import { scopeHostPath } from './composer.js';
 const $ = selector => document.querySelector(selector);
 if (new URL(location.href).searchParams.get('side') === '1') document.body.dataset.sideChat = 'true';
-let events, chat, connections, leaving = false, initialization = 0;
+let events, chat, connections, automations, leaving = false, initialization = 0;
 const selectedHost = new URL(location.href).searchParams.get('host') ?? 'local';
 const hostPath = path => {
   if (selectedHost === 'local' || path.startsWith('/api/controller/') || ['/api/login', '/api/logout'].includes(path)) return path;
@@ -23,11 +24,11 @@ async function request(path, body) {
   }
   return data;
 }
-function showLogin() { if (leaving) return; ++initialization; events?.close(); chat?.dispose(); connections?.dispose(); chat = null; connections = null; $('#login-panel').hidden = false; $('#workspace').hidden = true; }
+function showLogin() { if (leaving) return; ++initialization; events?.close(); chat?.dispose(); connections?.dispose(); automations?.dispose(); chat = null; connections = null; automations = null; $('#login-panel').hidden = false; $('#workspace').hidden = true; }
 function showWorkspace() {
   $('#login-panel').hidden = true; $('#workspace').hidden = false;
   connections?.dispose(); connections = mountConnections({ api, selectedHost, selectHost(id) {
-    leaving = true; ++initialization; chat?.dispose(); events?.close(); connections?.dispose();
+    leaving = true; ++initialization; chat?.dispose(); events?.close(); connections?.dispose(); automations?.dispose();
     const destination = new URL(location.href); destination.searchParams.delete('thread');
     if (id === 'local') destination.searchParams.delete('host'); else destination.searchParams.set('host', id);
     location.assign(destination.href);
@@ -53,12 +54,14 @@ async function connected() {
     if (leaving || version !== initialization) return;
     const { viewId } = await api('/api/view', {});
     if (leaving || version !== initialization) return;
-    chat?.dispose(); chat = mountChat({ api, viewId, selectedHost, uploadLimitBytes: status.uploadLimitBytes });
+    automations?.dispose(); chat?.dispose(); chat = mountChat({ api, viewId, selectedHost, uploadLimitBytes: status.uploadLimitBytes });
+    automations = mountAutomations({ api, viewId, selectedHost, getState: () => chat?.getState(), onOpenThread: id => chat?.open(id) });
     chat.connection(status.online);
     events?.close(); events = new EventSource(hostPath('/api/events?viewId=' + encodeURIComponent(viewId)));
     events.onmessage = event => {
       const envelope = JSON.parse(event.data);
-      chat?.onEvent(envelope);
+      automations?.onEvent(envelope);
+      if (envelope.native?.method !== 'automation/changed') chat?.onEvent(envelope);
     };
     events.onerror = () => { chat?.connection(false); api('/api/status').catch(() => {}); };
     await chat.load();

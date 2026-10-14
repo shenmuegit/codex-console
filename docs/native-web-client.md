@@ -185,6 +185,35 @@ Restoring from a row menu preserves the current conversation, draft and archive
 filter. Clicking the archived row itself restores and opens it unless a newer
 navigation supersedes that action; repeated restores share the row's busy guard.
 
+## Native scheduled tasks
+
+The sidebar's Scheduled tasks entry manages the local Codex desktop's existing
+automations. New tasks default to a standalone conversation without a project;
+choose a registered native project or explicitly continue an existing conversation. Edit the name, prompt,
+target and schedule; pause, resume or delete a task from its menu. Continuing a
+conversation requires opening it in the server's Codex desktop first so the native
+scheduler has its running settings, and inherits those settings. Standalone tasks can select a
+native model and reasoning effort, and new tasks use local execution.
+
+Schedules support intervals, daily/weekly times, a single run and a native RRULE.
+Dates use the Codex computer's timezone, shown in the form. Next/last execution
+times come from the native scheduler's cache; unknown times remain unknown.
+The Codex desktop must stay running and the computer must stay awake, as described
+in [OpenAI's automation guide](https://learn.chatgpt.com/docs/automations?surface=app).
+
+The gateway uses Python 3.11+ standard-library TOML/SQLite support to read and
+atomically update `CODEX_HOME/automations/<id>/automation.toml`; it has no separate
+scheduler and sends no model turn when saving a task. Full prompts load only when
+editing. Writes preserve unknown native fields and reject stale versions so another
+client's changes are not overwritten. Deleting preserves conversation history and
+task memory. Only local tasks are managed; remote devices and cloud-owned tasks
+are not modified. Local task-file changes refresh the open panel over SSE while
+preserving edits. Replies in original conversations use the passive native history
+synchronization described below, including when another process owns the writer.
+Production acceptance created a disposable one-time task, opened its conversation
+in the original desktop, and received its native reply over authenticated HTTPS/SSE.
+The test task and conversation were removed; the desktop and native backend stayed running.
+
 ## Install and operate
 
 Requires Linux with a user systemd manager, Node.js 24+, OpenSSL and the verified
