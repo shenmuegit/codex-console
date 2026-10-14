@@ -115,7 +115,7 @@ nav { display: grid; gap: 2px; }
 .welcome p { color: var(--muted); margin: 0; }
 .chat-pane[data-empty="true"] .chat-feed { flex: 0 1 auto; padding-top: clamp(60px, 16dvh, 150px); padding-bottom: 0; }
 .chat-pane[data-empty="true"] .composer { margin-bottom: auto; margin-top: 12px; }
-.composer { flex: 0 0 auto; width: min(100%, calc(var(--content-width) + 48px)); margin: 0 auto; padding: 8px 24px max(12px, env(safe-area-inset-bottom)); }
+.composer { flex: 0 0 auto; width: min(100%, calc(var(--content-width) + 48px)); margin: 0 auto; padding: 8px 24px max(12px, env(safe-area-inset-bottom)); user-select: none; }
 .queued-messages { max-height: 25dvh; overflow-y: auto; margin-bottom: 8px; }
 .queued-message { display: flex; align-items: center; gap: 4px; min-width: 0; border-top: 1px solid var(--border); padding: 4px 0; }
 .queue-icon { color: var(--muted); padding: 6px; }
@@ -151,7 +151,7 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 #goal-error { margin: 6px 0 0; }
 .goal-mode { display: inline-flex; align-items: center; gap: 5px; margin-left: 5px; padding: 5px 8px; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; }
 #goal-toggle[data-action="pause"] .goal-play, #goal-toggle[data-action="resume"] .goal-pause { display: none; }
-#draft { display: block; width: 100%; min-height: 68px; max-height: 32dvh; field-sizing: content; resize: none; overflow-y: auto; border: 0; outline: 0; border-radius: 12px; padding: 4px 4px 12px; background: transparent; line-height: 1.55; }
+#draft { display: block; width: 100%; min-height: 68px; max-height: 32dvh; field-sizing: content; resize: none; overflow-y: auto; border: 0; outline: 0; border-radius: 12px; padding: 4px 4px 12px; background: transparent; line-height: 1.55; user-select: text; }
 #draft::placeholder { color: var(--muted); opacity: 1; }
 .composer-surface:focus-within { border-color: color-mix(in srgb, var(--text) 25%, transparent); }
 .composer-surface:has(#draft:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }

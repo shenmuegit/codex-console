@@ -101,14 +101,21 @@ def main():
                 for offset in [-4, 4]:
                     surface = page.locator('.composer-surface').bounding_box()
                     page.locator('#thread-title').focus()
-                    page.mouse.click(surface['x'] + 24, surface['y'] + offset)
-                    expect(page.locator('#draft')).to_be_focused()
+                    page.evaluate('getSelection().removeAllRanges()')
+                    page.mouse.move(surface['x'] + 24, surface['y'] + offset)
+                    page.mouse.down()
+                    assert page.evaluate('!document.querySelector("#composer").contains(getSelection().anchorNode)'), 'Padding must not create a document caret, even before releasing the mouse'
+                    expect(page.locator('#draft')).not_to_be_focused()
+                    page.mouse.up()
+                    expect(page.locator('#draft')).not_to_be_focused()
                 page.locator('#draft').fill('请检查这次改动 😀，保留这段说明。')
+                page.locator('#draft').press('Control+A')
+                assert page.locator('#draft').evaluate('(n) => n.value.slice(n.selectionStart, n.selectionEnd) === n.value'), 'Text selection still works inside the editor'
                 page.locator('#draft').evaluate('(n) => n.setSelectionRange(2, 2)')
                 page.locator('#thread-title').focus()
                 surface = page.locator('.composer-surface').bounding_box()
                 page.mouse.click(surface['x'] + 24, surface['y'] + 4)
-                expect(page.locator('#draft')).to_be_focused()
+                expect(page.locator('#draft')).not_to_be_focused()
                 assert page.locator('#draft').evaluate('(n) => n.selectionStart === 2 && n.selectionEnd === 2'), 'Blank clicks preserve the editing position'
                 page.locator('#draft').evaluate('(n) => n.setSelectionRange(n.value.length, n.value.length)')
                 page.locator('#show-capabilities').click()
