@@ -2,6 +2,8 @@ import { mountChat } from './chat.js';
 import { mountConnections } from './connections.js';
 import { mountAutomations } from './automations.js';
 import { scopeHostPath } from './composer.js';
+import { createTransport } from './transport.js';
+const transport = createTransport();
 const $ = selector => document.querySelector(selector);
 if (new URL(location.href).searchParams.get('side') === '1') document.body.dataset.sideChat = 'true';
 let events, chat, connections, automations, leaving = false, initialization = 0;
@@ -16,13 +18,8 @@ if (window.visualViewport) {
 }
 export function api(path, body) { return request(hostPath(path), body); }
 async function request(path, body) {
-  const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const data = await response.json();
-  if (!response.ok) {
-    if (response.status === 401) showLogin();
-    throw Object.assign(new Error(data.error?.message ?? '请求失败。'), data.error, { status: response.status });
-  }
-  return data;
+  try { return await transport.request(path, body); }
+  catch (error) { if (error.status === 401) showLogin(); throw error; }
 }
 function showLogin() { if (leaving) return; ++initialization; events?.close(); chat?.dispose(); connections?.dispose(); automations?.dispose(); chat = null; connections = null; automations = null; $('#login-panel').hidden = false; $('#workspace').hidden = true; }
 function showWorkspace() {
@@ -54,10 +51,10 @@ async function connected() {
     if (leaving || version !== initialization) return;
     const { viewId } = await api('/api/view', {});
     if (leaving || version !== initialization) return;
-    automations?.dispose(); chat?.dispose(); chat = mountChat({ api, viewId, selectedHost, uploadLimitBytes: status.uploadLimitBytes });
+    automations?.dispose(); chat?.dispose(); chat = mountChat({ api, viewId, selectedHost, businessUrl: transport.url, uploadLimitBytes: status.uploadLimitBytes });
     automations = mountAutomations({ api, viewId, selectedHost, getState: () => chat?.getState(), onOpenThread: id => chat?.open(id) });
     chat.connection(status.online);
-    events?.close(); events = new EventSource(hostPath('/api/events?viewId=' + encodeURIComponent(viewId)));
+    events?.close(); events = transport.eventSource(hostPath('/api/events?viewId=' + encodeURIComponent(viewId)));
     events.onmessage = event => {
       const envelope = JSON.parse(event.data);
       automations?.onEvent(envelope);

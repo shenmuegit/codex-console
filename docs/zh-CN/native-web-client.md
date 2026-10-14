@@ -403,6 +403,20 @@ Secure、HttpOnly、Path=/ 和原有有效期及撤销行为。浏览器仍可�
 继续生效。固定页面资源保留原来源校验和 CSP `frame-ancestors 'self'`。
 只更新已有私有配置中的这些字段并沿用原服务管理命令，不重新初始化密码、TLS 或原生数据。
 
+浏览器模块在 `transport.js` 提供 `createTransport(backendOrigin?)`。
+不传来源时保留独立页面的相对 `/api/` 地址；显式后端必须是规范 HTTPS 来源，
+不含凭据、路径、查询或片段。`url(path)` 只接受相对 API 路径并拒绝路径穿越；
+`request(path, body?)` 携带凭据，有正文时发送 JSON，`eventSource(path)` 携带 SSE 凭据。
+错误保留 HTTP `status`、后端 `code` 和 `outcome`；请求不会自动重试，
+包括结果未知的超时请求。
+
+挂载聊天时，把 transport 的 `url` 作为 `businessUrl`，获准后端来源作为 `backendOrigin`。
+上传、经白名单验证的图片与文件引用、Markdown 导出先保留 host 范围，再解析到该后端；
+view 和 thread 字段保留在原有请求中。`pageEntryUrl`（或挂载参数 `pageUrl`）
+只把 `/?...` 导航映射到当前入口 pathname，因此会话链接和侧边聊天仍使用
+`/plugins/<release>/dist/index.html`。图片查看器只允许获准后端的图片路径和当前页面来源的 blob。
+独立服务器也提供 `/transport.js`。这些是模块接入接口；插件启动和打包另行实现。
+
 浏览器只能调用固定读取接口；任意进程、配置、凭据接口及原始新建会话请求被拒绝。
 读取和事件中过滤原生凭据。暂不支持的登录刷新、证明或动态工具请求明确返回
 “不支持”。审批和输入请求只能回答一次；权限回答不能超过对应原生请求。

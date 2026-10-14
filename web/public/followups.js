@@ -1,4 +1,5 @@
 import { scopeHostPath, displayNativeText } from './composer.js';
+import { pageEntryUrl } from './transport.js';
 
 const deliveryLabels = { start: ['正在发送…', '已发送', '发送状态待核对'], steer: ['正在引导…', '已引导', '引导状态待核对'] };
 export function beginSteer(state, clientId, text, mode = 'steer') {
@@ -12,7 +13,7 @@ export function settleSteer(state, message, error) {
   else message._delivery = deliveryLabels[message._deliveryMode ?? 'steer'][error ? 2 : 1];
 }
 
-export function mountFollowups({ api, viewId, selectedHost = 'local', getState, onChange, onError }) {
+export function mountFollowups({ api, viewId, selectedHost = 'local', getState, onChange, onError, pageUrl = pageEntryUrl }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController(), rows = new Map();
   const list = $('#queued-messages'), menu = $('#queue-menu');
   const menuButtons = ['#queue-menu-edit', '#queue-menu-side', '#queue-menu-toggle'].map($);
@@ -28,7 +29,7 @@ export function mountFollowups({ api, viewId, selectedHost = 'local', getState, 
   }
   function setMode(value) { mode = value; try { sessionStorage.setItem('codex-follow-up-mode', value); } catch {} }
   function openSide(threadId) {
-    $('#side-chat-frame').src = scopeHostPath('/?thread=' + encodeURIComponent(threadId) + '&side=1', selectedHost);
+    $('#side-chat-frame').src = pageUrl(scopeHostPath('/?thread=' + encodeURIComponent(threadId) + '&side=1', selectedHost));
     $('#side-chat').hidden = false; $('#close-side-chat').focus();
   }
   async function load(state) {

@@ -233,14 +233,14 @@ export function mountCompletions({ api, viewId, getState, onChange, onCommand, o
   return { refresh, close, dispose() { alive = false; abort.abort(); close(); } };
 }
 
-export function mountImageViewer() {
+export function mountImageViewer({ backendOrigin = new URL(location.href).origin } = {}) {
   const dialog = document.querySelector('#image-viewer'), image = document.querySelector('#image-viewer-image');
   const close = document.querySelector('#close-image-viewer'), abort = new AbortController(), options = { signal: abort.signal };
   let opener;
   function open(target) {
     if (!target?.matches?.('.chat-image')) return false;
     const url = new URL(target.src, location.href);
-    if (url.origin !== new URL(location.href).origin || url.protocol !== 'blob:' && !/^\/api\/images\/[A-Za-z0-9_-]+$/.test(url.pathname)) return false;
+    if (url.protocol === 'blob:' ? url.origin !== new URL(location.href).origin : url.origin !== backendOrigin || !/^\/api\/images\/[A-Za-z0-9_-]+$/.test(url.pathname)) return false;
     opener = target; image.src = url.href; image.alt = target.alt; dialog.showModal(); close.focus(); return true;
   }
   document.body.addEventListener('click', event => { if (open(event.target)) event.preventDefault(); }, options);
@@ -251,7 +251,7 @@ export function mountImageViewer() {
   return { dispose() { abort.abort(); dialog.close(); image.removeAttribute('src'); opener = null; } };
 }
 
-export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes, selectedHost = 'local' }) {
+export function mountAttachments({ api, viewId, getState, getStates, onChange, uploadLimitBytes, selectedHost = 'local', businessUrl = path => path }) {
   const fileInput = document.querySelector('#file-input'), photoInput = document.querySelector('#photo-input');
   const container = document.querySelector('#attachments'), abort = new AbortController(), records = new Set();
   let queue = Promise.resolve(), alive = true, renderedState, renderedKey, renderedRecords = [];
@@ -260,12 +260,12 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
   function sendBytes(record) {
     return new Promise((resolve, reject) => {
       const xhr = record.xhr = new XMLHttpRequest();
-      xhr.open('PUT', scopeHostPath(`/api/uploads/${encodeURIComponent(record.id)}?viewId=${encodeURIComponent(viewId)}`, selectedHost));
+      xhr.open('PUT', businessUrl(scopeHostPath(`/api/uploads/${encodeURIComponent(record.id)}?viewId=${encodeURIComponent(viewId)}`, selectedHost)));
       xhr.withCredentials = true; xhr.responseType = 'json'; xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       let updated = 0;
       xhr.upload.onprogress = event => { if (performance.now() - updated < 100) return; updated = performance.now();
         record.progress = event.total ? Math.round(100 * event.loaded / event.total) : 0; notify(record.state); };
-      xhr.onload = () => xhr.status === 201 ? resolve(xhr.response) : reject(Object.assign(new Error(xhr.response?.error?.message ?? '上传失败。'), { status: xhr.status }));
+      xhr.onload = () => xhr.status === 201 ? resolve(xhr.response) : reject(Object.assign(new Error(xhr.response?.error?.message ?? '上传失败。'), xhr.response?.error, { status: xhr.status }));
       xhr.onerror = () => reject(new Error('上传连接中断，草稿已保留。'));
       xhr.onabort = () => reject(new Error('上传已取消。'));
       xhr.send(record.file);
@@ -323,7 +323,7 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
     if (renderedState === state && renderedKey === key && attachments.every((record, index) => renderedRecords[index] === record)) return;
     container.replaceChildren();
     for (const record of attachments) {
-      const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+(?:\?[^#]*)?$/.test(record.imageHref) ? record.imageHref : null);
+      const src = record.previewUrl || (/^\/api\/images\/[A-Za-z0-9_-]+(?:\?[^#]*)?$/.test(record.imageHref) ? businessUrl(scopeHostPath(record.imageHref, selectedHost)) : null);
       const node = document.createElement('div'); node.className = 'attachment' + (src ? ' attachment-image' : '');
       if (src) { const image = document.createElement('img'); image.src = src; image.alt = record.name; image.width = image.height = 80; image.className = 'chat-image'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + record.name); node.append(image); }
       if (!src) {

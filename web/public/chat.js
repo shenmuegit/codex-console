@@ -2,6 +2,7 @@ import { scopeHostPath, displayNativeText, mountAttachments, mountCompletions, m
 import { mountCapabilities } from './capabilities.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
+import { pageEntryUrl } from './transport.js';
 import { createRequestCard } from './requests.js';
 import { mountGoals } from './goals.js';
 
@@ -281,7 +282,7 @@ function appendRenderedText(body, text) {
 }
 
 /** Browser bindings; the state functions above also run in the gateway and Node tests. */
-export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local' }) {
+export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local', businessUrl = path => path, pageUrl = pageEntryUrl, backendOrigin }) {
   const $ = selector => document.querySelector(selector), abort = new AbortController();
   const states = new Map(), cachedViews = new Map();
   let messageNodes = new Map(), activityNodes = new Map(), formNodes = new Map();
@@ -294,12 +295,12 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
   const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
   const projectGroups = new Map(), allThreads = { list: $('#threads'), more: $('#more-threads'), load: 0 };
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
-  const attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
+  const attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, businessUrl, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
   const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
   const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit(), onSelect: item => capabilities.remember(item) });
   const capabilities = mountCapabilities({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); draw(); }, onOpen: () => completions.close() });
-  const followups = mountFollowups({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
-  const imageViewer = mountImageViewer();
+  const followups = mountFollowups({ api, viewId, selectedHost, pageUrl, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
+  const imageViewer = mountImageViewer({ backendOrigin });
   const goals = mountGoals({ api, viewId, getState: () => selected, onChange: state => { save(state); if (selected === state) draw(); } });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
@@ -633,7 +634,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       if (!entry) {
         const node = element('article', null, 'message message-subagent'), header = element('header');
         const label = element(/^[A-Za-z0-9_-]{1,64}$/.test(item.agentThreadId) ? 'a' : 'span');
-        if (label.tagName === 'A') { label.href = scopeHostPath('/?thread=' + encodeURIComponent(item.agentThreadId), selectedHost); bind(label, 'click', event => { event.preventDefault(); return open(item.agentThreadId); }); }
+        if (label.tagName === 'A') { label.href = pageUrl(scopeHostPath('/?thread=' + encodeURIComponent(item.agentThreadId), selectedHost)); bind(label, 'click', event => { event.preventDefault(); return open(item.agentThreadId); }); }
         header.append(activityIcon(true), label); node.append(header); node.dataset.itemId = item.id; node.setAttribute('aria-label', '子代理活动');
         messageNodes.set(item.id, entry = { node, label });
       }
@@ -656,7 +657,13 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     if (typeof html === 'string' && (entry.html !== html || entry.unformatted)) {
       const template = document.createElement('template'); template.innerHTML = html;
       for (const link of template.content.querySelectorAll('a[href]')) {
-        const href = link.getAttribute('href'); if (/^\/\?thread=[A-Za-z0-9_-]+$/.test(href)) link.setAttribute('href', scopeHostPath(href, selectedHost));
+        const href = link.getAttribute('href');
+        if (/^\/\?thread=[A-Za-z0-9_-]+$/.test(href)) link.setAttribute('href', pageUrl(scopeHostPath(href, selectedHost)));
+        else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(href)) link.setAttribute('href', businessUrl(scopeHostPath(href, selectedHost)));
+      }
+      for (const image of template.content.querySelectorAll('img[src]')) {
+        const src = image.getAttribute('src');
+        if (/^\/api\/images\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(src)) image.setAttribute('src', businessUrl(scopeHostPath(src, selectedHost)));
       }
       patchChildren(entry.body, template.content);
       entry.html = html; entry.plain = null; entry.text = text; entry.unformatted = entry.waitingForHtml = false;
@@ -680,8 +687,8 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       entry.downloads.replaceChildren();
       for (const file of files) {
         if (file.imageHref && /^\/api\/images\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.imageHref)) {
-          if (!entry.html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = file.imageHref; image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
-        } else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = file.href; link.download = file.name; entry.downloads.append(link); }
+          if (!entry.html?.includes('src="' + file.imageHref + '"')) { const image = element('img'); image.src = businessUrl(scopeHostPath(file.imageHref, selectedHost)); image.alt = file.name; image.className = 'chat-image'; image.loading = 'lazy'; image.setAttribute('role', 'button'); image.setAttribute('tabindex', '0'); image.setAttribute('aria-haspopup', 'dialog'); image.setAttribute('aria-label', '查看大图 ' + file.name); entry.downloads.append(image); }
+        } else if (/^\/api\/files\/[A-Za-z0-9_-]+(?:\?host=[^&#]+)?$/.test(file.href)) { const link = element('a', '下载 ' + file.name); link.href = businessUrl(scopeHostPath(file.href, selectedHost)); link.download = file.name; entry.downloads.append(link); }
       }
       entry.filesKey = filesKey;
     }
@@ -847,7 +854,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     if (command === 'archive') return archiveConversation({ id: selected.threadId, status: { type: activeTurn(selected) ? 'active' : 'idle' } });
     if (command === 'delete') return deleteConversation(selected.threadId);
     if (command === 'fork') { const result = await api('/api/thread/fork', { viewId, threadId: selected.threadId }); const state = stateFor(result.snapshot.thread.id); installSnapshot(state, result); select(state); goals.load(state, true); await loadThreads(); return; }
-    if (command === 'export') { const link = element('a'); link.href = scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
+    if (command === 'export') { const link = element('a'); link.href = businessUrl(scopeHostPath('/api/thread/export?threadId=' + encodeURIComponent(selected.threadId), selectedHost)); link.download = selected.threadId + '.md'; document.body.append(link); link.click(); link.remove(); }
   }
   function clearSelectedThread(threadId) {
     cachedViews.delete(threadId);

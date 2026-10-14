@@ -538,6 +538,25 @@ assets retain their original Origin check and CSP `frame-ancestors 'self'`.
 Update only these fields in the existing private configuration and use the
 existing service commands; do not reinitialize passwords, TLS or native data.
 
+The browser modules expose `createTransport(backendOrigin?)` in `transport.js`.
+Omitting the origin preserves relative `/api/` URLs for the standalone page;
+an explicit backend must be a canonical HTTPS origin with no credentials, path,
+query or fragment. `url(path)` accepts only relative API paths and rejects
+traversal; `request(path, body?)` includes credentials and sends JSON when a body
+is supplied, and `eventSource(path)` includes SSE credentials. Errors retain
+their HTTP `status`, backend `code` and `outcome`; requests are not automatically
+retried, including timeouts with an unknown outcome.
+
+Pass the transport's `url` as `businessUrl` and its approved origin as
+`backendOrigin` when mounting chat. Uploads, validated image/file references and
+Markdown exports resolve against that backend after host scoping; view and
+thread fields remain in their existing requests. `pageEntryUrl` (or the
+`pageUrl` mount option) maps only `/?...` navigation to the current entry
+pathname, so thread links and side chat retain `/plugins/<release>/dist/index.html`.
+Image previews accept approved backend image paths and blobs from the current
+page origin. The standalone server also publishes `/transport.js`. These are
+module integration interfaces; plugin bootstrap and packaging are separate work.
+
 Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
 and raw thread creation are rejected. Native credentials are filtered from reads
 and events. Unsupported credential-refresh/attestation/dynamic-tool requests
