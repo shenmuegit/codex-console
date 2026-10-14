@@ -10,6 +10,7 @@ __pycache__/
 *.pem
 /dist/
 /web/node_modules/
+/web/dist/
 /.tools/
 /AGENT.md
 /AGENTS.md

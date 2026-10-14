@@ -26,6 +26,7 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
     cleanupRequired: '上次设置尚未清理完成，请稍后重试或联系管理员。', unavailable: '控制端账号或密钥不可用，请检查 server 状态。' };
   function error(value) { if (alive) $('connections-error').textContent = value?.message ?? '连接操作失败。'; }
   async function refresh() {
+    if (!alive) return;
     const current = ++generation;
     try {
       const status = await api('/api/controller/status');
@@ -84,13 +85,14 @@ export function mountConnections({ api, selectedHost = 'local', selectHost }) {
   $('controller-callback-form').addEventListener('submit', event => {
     event.preventDefault(); action($('controller-callback-submit'), async () => {
       await api('/api/controller/callback', { url: $('controller-callback').value.trim() });
+      if (!alive) return;
       $('controller-callback').value = ''; await refresh();
     });
   }, options);
   $('pair-form').addEventListener('submit', event => {
     event.preventDefault(); if (!enrolled) return;
-    action($('pair-submit'), async () => { await api('/api/controller/pair', { code: $('pair-code').value.trim() }); $('pair-code').value = ''; await refresh(); });
+    action($('pair-submit'), async () => { await api('/api/controller/pair', { code: $('pair-code').value.trim() }); if (!alive) return; $('pair-code').value = ''; await refresh(); });
   }, options);
-  return { refresh, dispose() { alive = false; ++generation; clearTimeout(timer); abort.abort(); $('settings-dialog').close(); $('connections-dialog').close();
+  return { refresh, dispose() { if (!alive) return; alive = false; ++generation; clearTimeout(timer); abort.abort(); $('settings-dialog').close(); $('connections-dialog').close();
     $('controller-auth-link').removeAttribute('href'); $('controller-auth-link').hidden = true; $('controller-callback').value = ''; } };
 }

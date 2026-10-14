@@ -538,6 +538,61 @@ assets retain their original Origin check and CSP `frame-ancestors 'self'`.
 Update only these fields in the existing private configuration and use the
 existing service commands; do not reinitialize passwords, TLS or native data.
 
+### Isola React package
+
+`web/` also builds the frontend-only `codex-console-web@0.1.0` Isola package.
+Use Node 24 and run from `web/`:
+
+```powershell
+npm ci
+$env:VITE_CODEX_CONSOLE_BACKEND_URL = 'https://codex.example.test'
+npm run build:plugin
+npm pack --dry-run --json
+npm pack
+```
+
+Use your existing backend's canonical HTTPS origin, with no trailing slash or
+path. It is embedded at build time; rebuild when it changes. A missing or invalid
+origin fails the build. On Windows, ensure npm itself runs under Node 24; if an
+older `npm.cmd` pins a sibling Node, invoke the chosen Node executable with npm's
+`bin/npm-cli.js` and the same arguments. `npm start` and `npm test` keep their
+standalone server and test behavior.
+
+The committed `vendor/isola-plugin-0.1.2.tgz` is the SDK built and packed from the
+Isola source (`pnpm --filter @isola/plugin build`, then
+`pnpm --filter @isola/plugin pack --pack-destination <directory>`). Its relative
+file dependency and lockfile support a fresh checkout. Inspect the actual SDK
+archive for version 0.1.2 and its MIT LICENSE before replacing it. The plugin
+archive contains `package.json`, `LICENSE` and `dist/`, including bundled
+dependency licenses in `dist/.vite/license.md`; it excludes the server, vendor
+archive, configuration, certificates and user data. `web/dist` is generated and
+ignored; the vendor SDK remains tracked.
+
+The manifest uses API version 1, entry `dist/index.html`, and the `downloads`,
+`external-links`, and `dialogs` permissions. It declares no `isola.server`.
+React renders the original HTML body and CSS inside an accessible SDK Pane;
+only the duplicate sidebar wordmark is removed. Conversation titles, navigation,
+automations and passive history retain the existing modules. Host menu entries
+for new conversation and settings invoke the original buttons.
+
+`startPlugin({ backendOrigin, connect, loadApp? })` immediately returns
+`{ ready, dispose }`; it marks the document before dynamically importing the app
+and ignores late connection/import results after disposal. Only a nested,
+same-origin `side=1` page skips SDK connection and outer-menu registration.
+The SDK bridge is shared by the document and closes on document exit; component
+disposal unregisters its own menu. `mountApp({ backendOrigin?, registerMenu? })`
+returns `{ api, dispose }`, cleans streams, module listeners, timers, uploads and
+previews, and guards late initialization/login responses. The standalone page
+still mounts automatically and retains the exported `api` function. Stream
+errors keep EventSource's normal reconnect behavior; leaving closes the stream.
+
+After password submission the input is cleared immediately, and a credentialed
+`/api/status` confirms the cookie before workspace initialization. If it remains
+401, the login screen displays “无法保持登录会话，可能被浏览器 Cookie 策略阻止。”
+without an automatic login or message resend. Browser cookie policy can still
+prevent a cross-site session; a built archive does not establish real HTTPS,
+login or native-operation acceptance.
+
 The browser modules expose `createTransport(backendOrigin?)` in `transport.js`.
 Omitting the origin preserves relative `/api/` URLs for the standalone page;
 an explicit backend must be a canonical HTTPS origin with no credentials, path,
@@ -555,7 +610,7 @@ thread fields remain in their existing requests. `pageEntryUrl` (or the
 pathname, so thread links and side chat retain `/plugins/<release>/dist/index.html`.
 Image previews accept approved backend image paths and blobs from the current
 page origin. The standalone server also publishes `/transport.js`. These are
-module integration interfaces; plugin bootstrap and packaging are separate work.
+module integration interfaces reused by the plugin entry above.
 
 Browser RPC is a fixed read allowlist. Arbitrary process/config/auth-token APIs
 and raw thread creation are rejected. Native credentials are filtered from reads

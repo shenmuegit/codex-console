@@ -1,15 +1,32 @@
 {
   "name": "codex-console-web",
+  "version": "0.1.0",
+  "description": "Codex Console client for Isola",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "files": ["dist"],
+  "isola": {
+    "title": "Codex Console",
+    "apiVersion": 1,
+    "entry": "dist/index.html",
+    "permissions": ["downloads", "external-links", "dialogs"]
+  },
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "test": "node --test ../tests/web/*.test.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "build:plugin": "vite build"
   },
   "dependencies": {
-    "markdown-it": "15.0.2"
+    "markdown-it": "15.0.2",
+    "@isola/plugin": "file:vendor/isola-plugin-0.1.2.tgz",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
   }
 }

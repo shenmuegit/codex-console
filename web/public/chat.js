@@ -295,13 +295,22 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
   const sidebar = $('#sidebar'), chatPane = $('#chat-pane'), backdrop = $('#sidebar-backdrop'), narrow = matchMedia('(max-width: 760px)');
   const projectGroups = new Map(), allThreads = { list: $('#threads'), more: $('#more-threads'), load: 0 };
   const busyThreads = new Set(), busyProjects = new Set(); let menuTarget, menuTrigger;
-  const attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, businessUrl, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
-  const usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
-  const completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit(), onSelect: item => capabilities.remember(item) });
-  const capabilities = mountCapabilities({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); draw(); }, onOpen: () => completions.close() });
-  const followups = mountFollowups({ api, viewId, selectedHost, pageUrl, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
-  const imageViewer = mountImageViewer({ backendOrigin });
-  const goals = mountGoals({ api, viewId, getState: () => selected, onChange: state => { save(state); if (selected === state) draw(); } });
+  let attachments, usage, completions, capabilities, followups, imageViewer, goals;
+  let cleanup = () => abort.abort();
+  try {
+  cleanup = () => {
+    if (!alive) return;
+    alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); cachedViews.clear();
+    for (const resource of [attachments, usage, completions, capabilities, followups, imageViewer, goals]) resource?.dispose();
+    clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected);
+  };
+  attachments = mountAttachments({ api, viewId, uploadLimitBytes, selectedHost, businessUrl, getState: () => selected, getStates: () => [...states.values()], onChange: state => { save(state); if (selected === state) draw(); } });
+  usage = mountUsage({ api, viewId, getState: () => selected, onChange: () => draw(), onError: e => showError(e) });
+  completions = mountCompletions({ api, viewId, getState: () => selected, onChange: state => { save(state); draw(); }, onCommand: () => $('#composer').requestSubmit(), onSelect: item => capabilities.remember(item) });
+  capabilities = mountCapabilities({ api, viewId, selectedHost, getState: () => selected, onChange: state => { save(state); draw(); }, onOpen: () => completions.close() });
+  followups = mountFollowups({ api, viewId, selectedHost, pageUrl, getState: () => selected, onChange: state => { save(state); if (state === selected) draw(); }, onError: e => showError(e) });
+  imageViewer = mountImageViewer({ backendOrigin });
+  goals = mountGoals({ api, viewId, getState: () => selected, onChange: state => { save(state); if (selected === state) draw(); } });
   $('#messages').replaceChildren(); $('#native-requests').replaceChildren();
   const element = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
   const showError = e => { if (alive) $('#chat-error').textContent = e?.message ?? String(e); };
@@ -984,6 +993,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     },
     connection(value) { online = value; draw(); },
     open, getState: () => selected, viewId,
-    dispose() { alive = false; if (menuTarget) closeThreadMenu(); abort.abort(); cachedViews.clear(); attachments.dispose(); usage.dispose(); completions.dispose(); capabilities.dispose(); followups.dispose(); imageViewer.dispose(); goals.dispose(); clearTimeout(refreshTimer); $('#info-dialog').close(); $('#project-dialog').close(); if (selected) save(selected); },
+    dispose: cleanup,
   };
+  } catch (error) { cleanup(); throw error; }
 }

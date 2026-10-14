@@ -403,6 +403,52 @@ Secure、HttpOnly、Path=/ 和原有有效期及撤销行为。浏览器仍可�
 继续生效。固定页面资源保留原来源校验和 CSP `frame-ancestors 'self'`。
 只更新已有私有配置中的这些字段并沿用原服务管理命令，不重新初始化密码、TLS 或原生数据。
 
+### Isola React 插件包
+
+`web/` 同时可构建只包含前端的 `codex-console-web@0.1.0` Isola 插件。
+使用 Node 24，在 `web/` 中运行：
+
+```powershell
+npm ci
+$env:VITE_CODEX_CONSOLE_BACKEND_URL = 'https://codex.example.test'
+npm run build:plugin
+npm pack --dry-run --json
+npm pack
+```
+
+将示例地址替换为原有后端的规范 HTTPS 来源，不带末尾斜杠或路径。
+后端来源在构建时写入产物，变更来源需要重新构建；缺失或非法来源会使构建失败。
+Windows 下需确认 npm 自身使用 Node 24；若旧 `npm.cmd` 固定调用同目录的旧 Node，
+用所选 Node 可执行文件直接运行 npm 的 `bin/npm-cli.js`，参数保持相同。
+原有 `npm start` 和 `npm test` 继续提供独立服务及测试。
+
+源码保存 `vendor/isola-plugin-0.1.2.tgz`，它来自 Isola 源码的
+`pnpm --filter @isola/plugin build` 与
+`pnpm --filter @isola/plugin pack --pack-destination <目录>`。
+相对 file 依赖与锁文件支持全新检出；更新 SDK 时应核对实际归档中的版本 0.1.2
+和 MIT LICENSE。插件归档只含 `package.json`、`LICENSE` 与 `dist/`，
+其中 `dist/.vite/license.md` 保存打包依赖许可证；不包含后端、vendor 归档、
+私有配置、证书或用户数据。`web/dist` 为被忽略的构建产物，vendor SDK 保持跟踪。
+
+清单使用 API 版本 1、入口 `dist/index.html`，声明 downloads、external-links、dialogs
+三项权限，不声明 `isola.server`。React 将原有 HTML body 和 CSS 挂入有可访问名称的
+SDK Pane，只去掉侧栏重复品牌字样，保留会话标题、导航、定时任务与被动历史模块。
+宿主的“新建会话”和“设置”菜单调用原有按钮。
+
+`startPlugin({ backendOrigin, connect, loadApp? })` 同步返回 `{ ready, dispose }`，
+在动态导入应用之前标记插件文档，卸载后忽略较晚的连接与模块加载结果。
+只有实际嵌套、同源且带 `side=1` 的内部页跳过 SDK 连接和外层菜单注册。
+SDK 桥接由整个文档共享，在离开文档时关闭；组件卸载撤销自己的菜单。
+`mountApp({ backendOrigin?, registerMenu? })` 返回 `{ api, dispose }`，清理流、
+模块监听器、计时器、上传及预览，并阻止较晚的初始化或登录响应恢复页面。
+独立网页仍自动挂载并保留原有 `api` 导出。SSE 出错时继续使用 EventSource 原有
+重连行为，离开页面才关闭流。
+
+提交密码后立即清空输入框，并在进入工作区之前通过有凭据的 `/api/status` 核对 Cookie。
+若仍返回 401，登录页显示“无法保持登录会话，可能被浏览器 Cookie 策略阻止。”，
+不自动重复登录或发送消息。浏览器 Cookie 策略仍可能阻止跨站会话；构建归档通过
+不代表真实 HTTPS、登录和原生操作已经验收。
+
 浏览器模块在 `transport.js` 提供 `createTransport(backendOrigin?)`。
 不传来源时保留独立页面的相对 `/api/` 地址；显式后端必须是规范 HTTPS 来源，
 不含凭据、路径、查询或片段。`url(path)` 只接受相对 API 路径并拒绝路径穿越；
@@ -415,7 +461,7 @@ Secure、HttpOnly、Path=/ 和原有有效期及撤销行为。浏览器仍可�
 view 和 thread 字段保留在原有请求中。`pageEntryUrl`（或挂载参数 `pageUrl`）
 只把 `/?...` 导航映射到当前入口 pathname，因此会话链接和侧边聊天仍使用
 `/plugins/<release>/dist/index.html`。图片查看器只允许获准后端的图片路径和当前页面来源的 blob。
-独立服务器也提供 `/transport.js`。这些是模块接入接口；插件启动和打包另行实现。
+独立服务器也提供 `/transport.js`；上述插件入口复用这些模块接入接口。
 
 浏览器只能调用固定读取接口；任意进程、配置、凭据接口及原始新建会话请求被拒绝。
 读取和事件中过滤原生凭据。暂不支持的登录刷新、证明或动态工具请求明确返回

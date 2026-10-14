@@ -282,12 +282,15 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
           try {
             if (typeof createImageBitmap === 'function') { const bitmap = await createImageBitmap(record.file); bitmap.close(); }
             else { const image = new Image(); image.src = record.previewUrl; await image.decode(); }
-          } catch { URL.revokeObjectURL(record.previewUrl); record.previewUrl = null; throw new Error('无法读取这张照片，请选择 PNG、JPEG、WebP 或 GIF。'); }
+          } catch { if (record.previewUrl) URL.revokeObjectURL(record.previewUrl); record.previewUrl = null; throw new Error('无法读取这张照片，请选择 PNG、JPEG、WebP 或 GIF。'); }
         }
+        if (!alive || record.removed) return;
         if (record.id) {
           try { Object.assign(record, await api(`/api/uploads/${encodeURIComponent(record.id)}?threadId=${encodeURIComponent(record.state.threadId)}`)); record.status = 'complete'; notify(record.state); return; } catch (e) { if (e.status !== 404 && e.status !== 409) throw e; }
         }
+        if (!alive || record.removed) return;
         const meta = await api('/api/uploads', { viewId, threadId: record.state.threadId, name: record.name, size: record.file.size, mime: record.file.type || '' });
+        if (!alive || record.removed) return;
         record.id = meta.id;
         const complete = await sendBytes(record); Object.assign(record, complete); record.status = 'complete'; record.progress = 100;
       } catch (e) { if (!record.removed) { record.status = 'error'; record.error = e.message; } }
@@ -349,6 +352,11 @@ export function mountAttachments({ api, viewId, getState, getStates, onChange, u
       }
       notify(state);
     },
-    dispose() { alive = false; abort.abort(); for (const record of records) { record.xhr?.abort(); if (record.previewUrl) URL.revokeObjectURL(record.previewUrl); } },
+    dispose() {
+      if (!alive) return;
+      alive = false; abort.abort();
+      for (const record of records) { record.xhr?.abort(); if (record.previewUrl) URL.revokeObjectURL(record.previewUrl); record.previewUrl = null; }
+      records.clear();
+    },
   };
 }
