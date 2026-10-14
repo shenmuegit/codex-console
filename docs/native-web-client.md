@@ -19,6 +19,9 @@ input surface. Model, effort and the read-only context indicator
 are inside that surface. Context usage is a non-clickable indicator with hover
 text and accessible details; it has no disclosure popup. Details retain native token/window values and
 the native 12000-token percentage baseline; no custom context limit is added.
+Clicks on the composer's blank padding focus the message editor immediately,
+preserving its selection and draft. Attachment, model and capability controls
+keep their own focus; a disabled editor stays inactive.
 The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native
 updates; disconnections, pending sends and errors remain visible.

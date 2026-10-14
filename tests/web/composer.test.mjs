@@ -4,9 +4,23 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { encodeComposer, utf8Range, commandAction, COMMANDS, findTrigger, updateSelections, mountCompletions } from '../../web/public/composer.js';
 import { httpsFixture, resumeFixture } from './helpers.mjs';
 import { domFixture } from './dom.mjs';
+import { mountChat } from '../../web/public/chat.js';
 
 function selection(text, token, entity) { const start = text.indexOf(token); return { start, end: start + token.length, token, ...entity }; }
 async function waitCall(peer, method, count = 1) { for (let i = 0; i < 100; i++) { if (peer.sent.filter(m => m.method === method).length >= count) return; await delay(5); } assert.fail(`Missing ${method}`); }
+
+test('clicking composer padding restores the editing caret synchronously and skips a disabled editor', async t => {
+  const dom = domFixture(), chat = mountChat({ api: async (path, body) => path === '/api/thread/open' ?
+    { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } } : { result: { data: [], nextCursor: null } }, viewId: 'view', uploadLimitBytes: 32 });
+  t.after(() => { chat.dispose(); dom.restore(); }); chat.connection(true); await chat.open('t');
+  const draft = dom.get('draft'); draft.value = '继续编辑这段草稿'; dom.event('draft', 'input'); draft.setSelectionRange(2, 2);
+  dom.get('thread-title').focus(); dom.get('composer').click();
+  assert.equal(dom.document.activeElement, draft);
+  assert.equal(draft.value, '继续编辑这段草稿');
+  assert.deepEqual([draft.selectionStart, draft.selectionEnd], [2, 2]);
+  chat.connection(false); dom.get('thread-title').focus(); dom.get('composer').click();
+  assert.equal(dom.document.activeElement, dom.get('thread-title'));
+});
 
 test('UTF-8 ranges handle Chinese/emoji and reject boundaries splitting surrogate pairs', () => {
   assert.deepEqual(utf8Range('中😀x', 1, 3), { start: 3, end: 7 });

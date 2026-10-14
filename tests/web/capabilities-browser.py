@@ -98,8 +98,21 @@ def main():
                 page.route('**/favicon.ico', lambda route: route.fulfill(status=204))
                 page.route('**/api/**', route_api)
                 setup(page)
+                for offset in [-4, 4]:
+                    surface = page.locator('.composer-surface').bounding_box()
+                    page.locator('#thread-title').focus()
+                    page.mouse.click(surface['x'] + 24, surface['y'] + offset)
+                    expect(page.locator('#draft')).to_be_focused()
                 page.locator('#draft').fill('请检查这次改动 😀，保留这段说明。')
+                page.locator('#draft').evaluate('(n) => n.setSelectionRange(2, 2)')
+                page.locator('#thread-title').focus()
+                surface = page.locator('.composer-surface').bounding_box()
+                page.mouse.click(surface['x'] + 24, surface['y'] + 4)
+                expect(page.locator('#draft')).to_be_focused()
+                assert page.locator('#draft').evaluate('(n) => n.selectionStart === 2 && n.selectionEnd === 2'), 'Blank clicks preserve the editing position'
+                page.locator('#draft').evaluate('(n) => n.setSelectionRange(n.value.length, n.value.length)')
                 page.locator('#show-capabilities').click()
+                expect(page.locator('#capability-search')).to_be_focused()
                 expect(page.get_by_role('button', name='选择 代码审查', exact=True)).to_be_enabled()
                 prefix = f'{width}x{height}-{scheme}'
                 page.screenshot(path=str(output / f'{prefix}-skills.png'))
@@ -166,6 +179,11 @@ def main():
                 page.screenshot(path=str(output / f'{prefix}-multi-long.png'))
                 catalog['items'] = original
                 captures.append(dict(viewport=prefix, metrics=metrics, screenshots=[str(output / f'{prefix}-{state}.png') for state in ['skills', 'plugin', 'selected', 'multi-long']]))
+                page.evaluate('qaChat.connection(false)')
+                expect(page.locator('#draft')).to_be_disabled()
+                surface = page.locator('.composer-surface').bounding_box()
+                page.mouse.click(surface['x'] + 24, surface['y'] + 4)
+                expect(page.locator('#draft')).not_to_be_focused()
                 context.close()
             browser.close()
         assert not errors, errors
