@@ -54,13 +54,13 @@
         <div id="chat-feed" class="chat-feed" tabindex="0" aria-label="聊天记录">
           <button id="older-history" class="more-button" hidden>加载更早记录</button><div id="messages"></div>
           <div id="thinking-status" class="thinking-status" role="status" hidden>正在思考</div>
-          <section id="native-requests" aria-label="待回答的原生请求"></section>
           <div id="chat-empty" class="welcome"><h2>开始构建</h2><p>从侧栏选择或新建会话。</p></div>
         </div>
         <section id="workspace-error" class="chat-error" hidden aria-label="设备连接错误">
           <p id="workspace-error-message" class="error" role="alert"></p>
         </section>
         <div id="chat-error" class="error chat-error" role="alert"></div>
+        <section id="native-requests" aria-label="待回答的原生请求"></section>
         <form id="composer" class="composer">
           <section id="queued-messages" class="queued-messages" aria-label="排队消息" hidden></section>
           <div id="queue-recovery" class="queue-recovery" hidden><p id="queue-recovery-text" role="status"></p><button id="queue-recovery-restore" type="button">核对后重新排队</button><button id="queue-recovery-dismiss" type="button">已核对，无需重发</button></div>

@@ -1,3 +1,5 @@
+import { questionReplies } from './requests.js';
+
 export function scopeHostPath(path, host = 'local') {
   if (host === 'local') return path;
   const url = new URL(path, 'https://host-scope.invalid'); url.searchParams.set('host', host); return url.pathname + url.search;
@@ -15,7 +17,8 @@ export function displayNativeText(part) {
     if (typeof range.placeholder !== 'string' || !Number.isInteger(start) || !Number.isInteger(stop) || start < 0 || stop > end || start > stop) continue;
     result = range.placeholder + decoder.decode(bytes.subarray(stop, end)) + result; end = start;
   }
-  return decoder.decode(bytes.subarray(0, end)) + result;
+  const text = decoder.decode(bytes.subarray(0, end)) + result, replies = questionReplies(text);
+  return replies.length ? replies.map(reply => reply.question + '\n\n' + reply.answer).join('\n\n') : text;
 }
 
 export function updateQueuedInput(input, text) {

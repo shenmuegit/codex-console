@@ -869,7 +869,7 @@ HTML disabled, restricted URL schemes and no automatic external image loads.
 Text streams immediately; safe HTML updates coalesce to 100 ms.
 
 Native approvals, permission requests, questions and MCP form/URL elicitations
-appear as cards inside the chat scroll area. Question cards show each option and
+appear as cards above the composer. Question cards show each option and
 its description, with free text when the native question allows it and masked
 secret inputs. Nothing is selected unless the native form supplies a default.
 MCP forms support primitive fields, titled single/multiple choices and the native
@@ -884,6 +884,20 @@ conversation, reject duplicate answers and preserve input on failure. Native
 resolution or reconnect removes stale cards; streaming never resets a form.
 Form schema property names such as `apiKey` and `password` are retained as field
 definitions; unrelated native credentials remain filtered from browser events.
+
+Native asynchronous `agentMessage` items with `delivery: "async"` and structured
+`questions` also render as retained question cards, rather than fallback Markdown
+bullets. Each question has numbered choices and a free-text answer. The first
+suggested choice follows Codex's default, but sending always requires an explicit
+action. Answers retain the native question ID and reply envelope, use the existing
+message/steer path, and preserve the main draft and attachments. Close/Skip only
+hides that page's card and never grants a permission. Indexed question replies and
+older whole-message replies resolve matching cards on live updates and reopening.
+Pending answer UUIDs and outcomes are saved with this host/thread's session draft;
+uncertain delivery remains locked after reload until native history confirms it.
+An accepted answer stays resolved while its persisted history catches up. Ordinary
+assistant prose and bullet lists never create a card.
+
 Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
 desktop Enter sends, and the Send button is available on all devices.
 
