@@ -288,35 +288,59 @@ origin and matching certificate; arbitrary Host/Origin values remain rejected.
 
 ## Bind a domain
 
-For this host, use `codex-console.117-72-158-35.sslip.io`. The free
-[sslip.io service](https://nip.io/) resolves the IP embedded in a hostname, so
-this name needs no registration or DNS credentials. It depends on that external
-DNS service and must change if the public IP changes. For a domain you own,
-create an A record pointing to `117.72.158.35` and use that hostname instead.
+Use `console.meolord.com` in the existing Cloudflare-managed `meolord.com` zone.
+On 2026-10-15, its public nameservers were `everton.ns.cloudflare.com` and
+`paislee.ns.cloudflare.com`; the selected subdomain returned NXDOMAIN. No DNS
+record or application binding has been applied yet. The existing IP entry stays
+`https://117.72.158.35:15443` until the domain certificate and configuration are ready.
 
-On 2026-10-15, DNS resolved the selected name to `117.72.158.35` and the existing
-IP HTTPS homepage returned 200. Binding was **not applied**: the current OS user
-cannot bind port 80 or 443, and noninteractive sudo requires a password. The
-existing certificate fails hostname validation for this name; an unconfigured
-Host returns 403. DNS resolution alone does not make the new entry usable.
+The existing Wrangler login was found in
+`~/.config/.wrangler/config/default.toml` and successfully refreshed. Its grant
+can read the active `meolord.com` zone, but the DNS records API returns HTTP 403
+with Cloudflare error 10000. The grant includes `zone:read` and has no DNS-edit
+scope; a separate DNS API token is required. Credentials remain outside Git.
 
-Run the following as `desktop` in the project directory, from a terminal with
-working sudo. Keep application traffic on TCP 15443. Allow inbound TCP 80 in
-both the cloud security group and host firewall for certificate issuance and
-renewal, and keep 15443 reachable. Port 80 must be free while Certbot runs;
-443 is not needed for this setup. Let's Encrypt's
-[HTTP-01 validation](https://letsencrypt.org/docs/challenge-types/#http-01-challenge)
-always uses port 80, even though the application uses 15443. If port 80 cannot
-be opened, use a domain whose DNS you control with DNS-01 instead.
+In Cloudflare's [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/),
+add the following record after confirming the name is unused:
 
-1. Install Certbot on this Debian host and obtain a certificate. Follow its
-   email and terms prompts; continue only after issuance succeeds.
+| Field | Value |
+| --- | --- |
+| Type | A |
+| Name | console |
+| IPv4 address | 117.72.158.35 |
+| Proxy status | DNS only (gray cloud) |
+| TTL | Auto |
+
+Cloudflare's ordinary proxy does not support
+[port 15443](https://developers.cloudflare.com/fundamentals/reference/network-ports/).
+DNS-only traffic connects directly to the server; keep inbound TCP 15443 reachable.
+Use DNS-01 for a publicly trusted certificate, without opening port 80 or 443.
+Run the commands below as `desktop` from the project directory; they use the
+already installed `uv` to install Certbot as a user tool without sudo.
+
+First [create a Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+with Zone / DNS / Edit and Zone / Zone / Read, restricted to `meolord.com`.
+Save it with an editor in `~/.config/codex-console-web/cloudflare.ini` as
+`dns_cloudflare_api_token = YOUR_TOKEN`. Keep this file outside Git with mode 600;
+do not paste the token into chat or use the Global API Key. A Wrangler Workers
+login does not necessarily grant DNS-edit access. The
+[Certbot Cloudflare plugin](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
+uses the credentials file to create and remove verification TXT records.
+
+1. Install Certbot and its Cloudflare plugin, then obtain a certificate. Follow
+   the email and terms prompts; continue only after issuance succeeds.
 
    ```bash
-   domain=codex-console.117-72-158-35.sslip.io
-   sudo apt-get update &&
-   sudo apt-get install -y certbot &&
-   sudo certbot certonly --standalone --preferred-challenges http \
+   domain=console.meolord.com
+   acme="$HOME/.config/codex-console-web/acme"
+   cloudflare_ini="$HOME/.config/codex-console-web/cloudflare.ini"
+   test -s "$cloudflare_ini" && chmod 600 "$cloudflare_ini" &&
+   install -d -m 700 "$acme" &&
+   uv tool install --with certbot-dns-cloudflare certbot &&
+   certbot certonly --dns-cloudflare \
+     --dns-cloudflare-credentials "$cloudflare_ini" \
+     --dns-cloudflare-propagation-seconds 60 \
+     --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs" \
      --cert-name "$domain" -d "$domain"
    ```
 
@@ -326,10 +350,8 @@ be opened, use a domain whose DNS you control with DNS-01 instead.
    ```bash
    domain_tls="$HOME/.config/codex-console-web/domain-tls"
    install -d -m 700 "$domain_tls" &&
-   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
-     "/etc/letsencrypt/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
-   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
-     "/etc/letsencrypt/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   install -m 600 "$acme/config/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/config/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
    ```
 
 3. Edit `~/.config/codex-console-web/config.json`, changing these four fields
@@ -337,7 +359,7 @@ be opened, use a domain whose DNS you control with DNS-01 instead.
 
    ```json
    {
-     "origin": "https://codex-console.117-72-158-35.sslip.io:15443",
+     "origin": "https://console.meolord.com:15443",
      "port": 15443,
      "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
      "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
@@ -371,15 +393,22 @@ If an Isola plugin package is already deployed, rebuild and redeploy it with
 `VITE_CODEX_CONSOLE_BACKEND_URL` set to the new origin; its previous build keeps
 using the old IP entry. See [HTTPS owner access](#https-owner-access).
 
-Certificate copies require maintenance: periodically run
-`sudo certbot renew --cert-name "$domain"`, then repeat step 2 and restart the
-web unit after a successful renewal. Certbot's scheduled renewal updates
-`/etc/letsencrypt`, **not these private copies**. Unattended operation needs a
+Certificate copies require maintenance. Periodically run:
+
+```bash
+certbot renew --cert-name "$domain" \
+  --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs"
+```
+
+After a successful renewal, repeat step 2 and restart the web unit. Add
+`--dry-run` to this command to test renewal after setup. This user-tool install
+does not schedule renewal; unattended operation needs a user timer and a
 [deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
-to synchronize them and restart the web unit. Test issuance/renewal with
-`sudo certbot renew --cert-name "$domain" --dry-run` after setup. Issuance,
-firewall changes, renewal and access from another device were not tested in
-this session; the commands above are operator instructions.
+to synchronize the private copies and restart the web unit. DNS-01 still needs a
+valid DNS API token at renewal time. Certificate issuance, renewal and access
+from another device have not been verified; these are operator instructions.
+The attempted user-tool installation also hit PyPI download timeouts, so the
+Certbot/Cloudflare tool installation has not completed on this host.
 
 ## Restart and rollback
 

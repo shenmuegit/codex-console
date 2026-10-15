@@ -206,30 +206,55 @@ node web/service.mjs stop
 
 ## 绑定域名
 
-本机选用 `codex-console.117-72-158-35.sslip.io`。免费的
-[sslip.io 服务](https://nip.io/)会将域名中包含的 IP 解析为目标地址，无需注册或
-DNS 凭据。这个地址依赖第三方 DNS 服务，公网 IP 变化时需更换。如果使用自有域名，
-添加指向 `117.72.158.35` 的 A 记录，并在以下步骤中替换域名。
+使用已有的 Cloudflare 托管域名 `meolord.com`，子域名选用 `console.meolord.com`。
+2026-10-15 查询到主域名的公开 NS 为 `everton.ns.cloudflare.com` 和
+`paislee.ns.cloudflare.com`，所选子域名返回 NXDOMAIN。**尚未添加 DNS 记录或执行
+应用绑定**；证书与配置就绪前，现有入口继续为 `https://117.72.158.35:15443`。
 
-2026-10-15 已验证所选域名解析为 `117.72.158.35`，现有 IP 的 HTTPS 首页返回 200。
-**尚未执行绑定**：当前系统用户不能监听 80 或 443，非交互 sudo 要求密码。
-现有证书不匹配所选域名，未配置的 Host 返回 403；只有 DNS 解析还不能使用新入口。
+已在 `~/.config/.wrangler/config/default.toml` 找到并成功刷新现有 Wrangler 登录。
+这份授权可以读取 active 状态的 `meolord.com`，但 DNS 记录 API 返回 HTTP 403，
+Cloudflare 错误码为 10000。授权包含 `zone:read`，没有 DNS 编辑 scope，仍需单独的
+DNS API Token。所有凭据继续保存在仓库外。
 
-以下步骤需在具备 sudo 权限的终端中，以 `desktop` 用户从项目目录执行。应用继续使用
-TCP 15443。在云安全组和主机防火墙中放行入站 TCP 80，供证书签发和续期使用，
-同时保留 15443 的访问。Certbot 运行时 80 端口必须空闲，此方案无需 443。
-Let's Encrypt 的 [HTTP-01 验证](https://letsencrypt.org/docs/challenge-types/#http-01-challenge)
-固定使用 80，应用在 15443 运行不会改变验证端口。无法开放 80 时，需使用可管理 DNS
-的域名，改走 DNS-01 验证。
+在 Cloudflare 的 [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
+确认名称未被占用后，添加以下记录：
 
-1. 在本机 Debian 系统安装 Certbot 并申请证书，按提示填写邮箱和处理服务条款；
+| 字段 | 值 |
+| --- | --- |
+| 类型 | A |
+| 名称 | console |
+| IPv4 地址 | 117.72.158.35 |
+| 代理状态 | 仅 DNS（灰云） |
+| TTL | 自动 |
+
+Cloudflare 的普通代理不支持
+[15443 端口](https://developers.cloudflare.com/fundamentals/reference/network-ports/)。
+灰云模式直接连接服务器，需要保留入站 TCP 15443 的访问。证书使用 DNS-01 验证，
+无需开放 80 或 443。以下命令从项目目录以 `desktop` 用户执行，使用本机已有的
+`uv` 安装用户级 Certbot，无需 sudo。
+
+先在 Cloudflare [创建 API Token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)，
+权限为 Zone / DNS / Edit 和 Zone / Zone / Read，资源范围仅限 `meolord.com`。
+用编辑器在仓库外的 `~/.config/codex-console-web/cloudflare.ini` 中保存
+`dns_cloudflare_api_token = YOUR_TOKEN`，文件权限设为 600；不要把令牌发到聊天中，
+也不要使用 Global API Key。Wrangler 的 Workers 登录不一定包含 DNS 编辑权限。
+[Certbot Cloudflare 插件](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
+使用这个凭据文件创建并移除验证所需的 TXT 记录。
+
+1. 安装 Certbot 和 Cloudflare 插件后申请证书，按提示填写邮箱和处理服务条款；
    只有签发成功后才继续。
 
    ```bash
-   domain=codex-console.117-72-158-35.sslip.io
-   sudo apt-get update &&
-   sudo apt-get install -y certbot &&
-   sudo certbot certonly --standalone --preferred-challenges http \
+   domain=console.meolord.com
+   acme="$HOME/.config/codex-console-web/acme"
+   cloudflare_ini="$HOME/.config/codex-console-web/cloudflare.ini"
+   test -s "$cloudflare_ini" && chmod 600 "$cloudflare_ini" &&
+   install -d -m 700 "$acme" &&
+   uv tool install --with certbot-dns-cloudflare certbot &&
+   certbot certonly --dns-cloudflare \
+     --dns-cloudflare-credentials "$cloudflare_ini" \
+     --dns-cloudflare-propagation-seconds 60 \
+     --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs" \
      --cert-name "$domain" -d "$domain"
    ```
 
@@ -239,10 +264,8 @@ Let's Encrypt 的 [HTTP-01 验证](https://letsencrypt.org/docs/challenge-types/
    ```bash
    domain_tls="$HOME/.config/codex-console-web/domain-tls"
    install -d -m 700 "$domain_tls" &&
-   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
-     "/etc/letsencrypt/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
-   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
-     "/etc/letsencrypt/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   install -m 600 "$acme/config/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/config/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
    ```
 
 3. 编辑 `~/.config/codex-console-web/config.json`，只修改以下四个字段，保留其余
@@ -250,7 +273,7 @@ Let's Encrypt 的 [HTTP-01 验证](https://letsencrypt.org/docs/challenge-types/
 
    ```json
    {
-     "origin": "https://codex-console.117-72-158-35.sslip.io:15443",
+     "origin": "https://console.meolord.com:15443",
      "port": 15443,
      "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
      "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
@@ -281,13 +304,19 @@ Let's Encrypt 的 [HTTP-01 验证](https://letsencrypt.org/docs/challenge-types/
 如果已经部署 Isola 插件包，需将 `VITE_CODEX_CONSOLE_BACKEND_URL` 改为新来源后
 重新构建并发布；旧构建仍会请求原 IP 入口。参见 [HTTPS 用户访问](#https-用户访问)。
 
-证书副本需要维护：定期执行 `sudo certbot renew --cert-name "$domain"`，续期成功后
-重新执行第 2 步并重启网页服务。Certbot 的定时续期只更新 `/etc/letsencrypt`，
-**不会更新这些私有副本**。长期无人值守运行需要配置
+证书副本需要维护，定期执行：
+
+```bash
+certbot renew --cert-name "$domain" \
+  --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs"
+```
+
+续期成功后重新执行第 2 步并重启网页服务。配置后在上述命令中添加 `--dry-run`
+测试续期。用户级安装不会创建续期计划；长期无人值守运行需要用户定时器及
 [deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
-同步副本并重启网页服务。配置后用 `sudo certbot renew --cert-name "$domain" --dry-run`
-测试签发与续期。本次未实测证书签发、防火墙修改、续期和外部设备访问，以上命令为
-管理员操作步骤。
+同步私有副本并重启网页服务。DNS-01 续期时仍需有效的 DNS API Token。
+证书签发、续期和外部设备访问尚未验证，以上为操作步骤。
+本次用户级工具安装也遇到 PyPI 下载超时，Certbot/Cloudflare 工具尚未安装完成。
 
 ## 重启与回退
 
