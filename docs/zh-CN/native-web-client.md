@@ -192,7 +192,7 @@ node web/service.mjs stop
 - 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
 - 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
   网页偏好及上传继续保留在其 `web/` 子目录。
-- 代码位于托管工作树 `/home/desktop/.codex/worktrees/native-web-client/codex-console`。
+- 代码位于 `main` 工作目录 `/home/desktop/Documents/Codex/codex-console`。
 - 按所有者要求停止并禁用旧 Xpra 服务 `codex-console.service`，释放 15443；
   其中的原桌面及后端进程已结束，独立原生后端继续为网页客户端提供服务。
 
@@ -203,6 +203,22 @@ node web/service.mjs stop
 `cert-public-117.72.158.35.pem`，证书 SAN 匹配公网 IP；该证书为自签名，访问设备需信任/导入
 当前证书。检查禁用代理变量并直连公网 IP，外部设备仍需人工验收。
 公网 IP 或主机名变化时，同时更新配置入口和匹配证书；其他 Host/Origin 继续拒绝。
+
+更新此工作目录后，以 `desktop` 用户只重启 `codex-console-native-web.service`，
+并在登录前核对入口及每个浏览器模块：
+
+```bash
+git pull --ff-only origin main
+systemctl --user restart codex-console-native-web.service
+curl --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
+```
+
+模块须在没有登录 Cookie 时返回 200 和 `Content-Type: text/javascript`。旧进程可能
+保留旧的资产路由，却从磁盘读取新页面，导致模块收到 401 JSON，整个应用无法挂载。
+`tests/web/static-assets.test.mjs` 覆盖全部浏览器模块和样式的公开 GET/HEAD，线上
+Web 探针也检查所有模块。更新时保留已有未提交改动和私有配置。服务器 HTML 不包含
+内联脚本或 style 元素；修改 CSP 前应先定位浏览器注入内容的来源，继续保留严格策略。
 
 ## 绑定域名
 

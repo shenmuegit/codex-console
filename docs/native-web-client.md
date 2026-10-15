@@ -270,7 +270,7 @@ with HTTPS unavailable; installation and startup retain full validation.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
   web preferences/uploads remain under its `web/` child.
-- Code: native managed worktree `/home/desktop/.codex/worktrees/native-web-client/codex-console`.
+- Code: `main` checkout `/home/desktop/Documents/Codex/codex-console`.
 - The old Xpra service `codex-console.service` is stopped and disabled by owner
   request to release port 15443; its original desktop/backend processes have ended.
   The independent native backend continues to serve the browser client.
@@ -285,6 +285,25 @@ trust/import the current certificate on the accessing device. Checks disable pro
 variables and connect directly to the public IP. External-device acceptance is
 still manual. If the public IP or hostname changes, update both the configured
 origin and matching certificate; arbitrary Host/Origin values remain rejected.
+
+After updating this checkout, restart only `codex-console-native-web.service` as
+the `desktop` user, then verify the public entry and every module before login:
+
+```bash
+git pull --ff-only origin main
+systemctl --user restart codex-console-native-web.service
+curl --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
+```
+
+The module must return 200 with `Content-Type: text/javascript`, without a login
+cookie. An old process can retain the previous asset routes while serving new
+files from disk; a 401 JSON response to a module then prevents the entire app
+from mounting. `tests/web/static-assets.test.mjs` checks public GET/HEAD for all
+browser modules and styles, and the live Web probe includes every module.
+Retain existing uncommitted changes and private configuration when updating.
+The served HTML contains no inline scripts or style elements; investigate the
+source of injected browser content before changing CSP. Keep the strict policy.
 
 ## Bind a domain
 
