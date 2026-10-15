@@ -740,6 +740,16 @@ without an automatic login or message resend. Browser cookie policy can still
 prevent a cross-site session; a built archive does not establish real HTTPS,
 login or native-operation acceptance.
 
+Login sends the access password only in the JSON body of `POST /api/login`.
+The HTML form declares a fixed POST action and the password input has no `name`,
+so a blocked or missing script cannot serialize the password into a URL or a
+native form body. The JSON-only endpoint rejects that empty native submission.
+Legacy entry URLs containing `password` redirect to the same path without those
+parameters before loading the page; the plugin also replaces its current history
+entry, preserving host, thread, side-chat and fragment navigation. Query passwords
+are never used for authentication. This cannot erase copies already stored in
+browser history or external logs; rotate an access password that was exposed.
+
 The browser modules expose `createTransport(backendOrigin?)` in `transport.js`.
 Omitting the origin preserves relative `/api/` URLs for the standalone page;
 an explicit backend must be a canonical HTTPS origin with no credentials, path,

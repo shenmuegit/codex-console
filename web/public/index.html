@@ -13,9 +13,9 @@
     <strong class="wordmark">Codex</strong>
     <h1>连接 Codex</h1>
     <p class="muted">继续你的工作。</p>
-    <form id="login-form">
+    <form id="login-form" method="post" action="/api/login">
       <label for="password">访问密码</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required aria-describedby="login-error">
+      <input id="password" type="password" autocomplete="current-password" maxlength="256" required aria-describedby="login-error">
       <p id="login-error" class="error" role="alert"></p>
       <button type="submit" class="primary">继续</button>
     </form>

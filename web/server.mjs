@@ -767,6 +767,9 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
       if (req.headers.host !== new URL(config.origin).host) throw error(403, 'HOST_DENIED', '请使用配置中的地址。');
+      if (!mutation && url.pathname === '/' && url.searchParams.has('password')) {
+        url.searchParams.delete('password'); res.writeHead(303, { Location: url.pathname + url.search }); res.end(); return;
+      }
       if (api && req.method === 'OPTIONS') {
         const method = req.headers['access-control-request-method'];
         const headers = req.headers['access-control-request-headers'];

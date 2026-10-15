@@ -42,6 +42,32 @@ test('HTTPS rejects unauthenticated APIs, cross-Origin requests, oversized bodie
   assert.equal((await stat(f.config.stateDir)).mode & 0o077, 0);
 });
 
+test('login form cannot serialize a password when its script fails to load', async t => {
+  const f = await httpsFixture(); t.after(() => f.close());
+  const page = await f.request('/');
+  const form = page.text.match(/<form\b[^>]*\bid="login-form"[^>]*>[\s\S]*?<\/form>/)[0];
+  assert.match(form, /\bmethod="post"/i);
+  assert.match(form, /\baction="\/api\/login"/);
+  assert.doesNotMatch(form, /\bname="password"/i);
+  const fallback = await f.request('/api/login', { method: 'POST', body: '', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  assert.equal(fallback.status, 415);
+  assert.equal(fallback.headers.location, undefined);
+  assert.equal(fallback.headers['set-cookie'], undefined);
+});
+
+test('legacy password query parameters redirect to a clean entry before authentication', async t => {
+  const f = await httpsFixture(); t.after(() => f.close());
+  for (const method of ['GET', 'HEAD']) {
+    const response = await f.request('/?host=remote&password=fixture-secret&thread=t&%70assword=second-secret', { method });
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.location, '/?host=remote&thread=t');
+    assert.equal(response.headers['cache-control'], 'no-store');
+    assert.equal(response.headers['referrer-policy'], 'no-referrer');
+    assert.equal(response.headers['set-cookie'], undefined);
+    assert.equal(response.text, '');
+  }
+});
+
 test('thread reads support bounded exact native cwd lists and null project membership', async t => {
   const f = await httpsFixture(); t.after(() => f.close()); const cookie = await f.login();
   const params = { projectId: null, cwd: ['/demo', '/secondary'], archived: false, limit: 20 };
