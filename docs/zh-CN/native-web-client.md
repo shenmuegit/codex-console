@@ -199,7 +199,7 @@ node web/service.mjs stop
 
 ## 当前已验证部署
 
-- 入口 `https://117.72.158.35:15443`，HTTPS 监听 `0.0.0.0:15443`；原生 WS 仅回环 `ws://127.0.0.1:4500`。
+- 入口 `https://console.meolord.com:15443`，HTTPS 监听 `0.0.0.0:15443`；原生 WS 仅回环 `ws://127.0.0.1:4500`。
 - 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
 - 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
   网页偏好及上传继续保留在其 `web/` 子目录。
@@ -208,12 +208,14 @@ node web/service.mjs stop
   其中的原桌面及后端进程已结束，独立原生后端继续为网页客户端提供服务。
 
 公网入口已通过直连 HTTPS 登录、外来 Host/Origin 拒绝、原生模型读取、SSE 快照恢复和退出验证。
-密码、私钥、原生数据及上传文件继续保留在原私有位置。
+密码、原生数据及上传文件继续保留在原私有位置。
 
-规范 Host/Origin 为 `https://117.72.158.35:15443`。私有配置使用
-`cert-public-117.72.158.35.pem`，证书 SAN 匹配公网 IP；该证书为自签名，访问设备需信任/导入
-当前证书。检查禁用代理变量并直连公网 IP，外部设备仍需人工验收。
-公网 IP 或主机名变化时，同时更新配置入口和匹配证书；其他 Host/Origin 继续拒绝。
+规范 Host/Origin 为 `https://console.meolord.com:15443`。私有配置使用
+`~/.config/codex-console-web/` 下的 `domain-tls/fullchain.pem` 和
+`domain-tls/privkey.pem`。Let's Encrypt 证书匹配该主机名，2027-01-13 到期，
+已验证正常的公开 CA 信任。检查不经过代理，外部设备仍需人工验收。
+公网 IP 变化时更新 DNS A 记录；更换主机名时同时更新配置入口和证书。
+其他 Host/Origin 继续拒绝。原 IP 的证书和私钥保留用于回退。
 
 更新此工作目录后，以 `desktop` 用户只重启 `codex-console-native-web.service`，
 并在登录前核对入口及每个浏览器模块：
@@ -221,8 +223,7 @@ node web/service.mjs stop
 ```bash
 git pull --ff-only origin main
 systemctl --user restart codex-console-native-web.service
-curl --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
-  -I https://117.72.158.35:15443/transport.js
+curl --noproxy '*' -I https://console.meolord.com:15443/transport.js
 ```
 
 模块须在没有登录 Cookie 时返回 200 和 `Content-Type: text/javascript`。旧进程可能
@@ -237,13 +238,15 @@ Web 探针也检查所有模块。更新时保留已有未提交改动和私有�
 
 使用已有的 Cloudflare 托管域名 `meolord.com`，子域名选用 `console.meolord.com`。
 2026-10-15 查询到主域名的公开 NS 为 `everton.ns.cloudflare.com` 和
-`paislee.ns.cloudflare.com`，所选子域名返回 NXDOMAIN。**尚未添加 DNS 记录或执行
-应用绑定**；证书与配置就绪前，现有入口继续为 `https://117.72.158.35:15443`。
+`paislee.ns.cloudflare.com`，所选子域名最初返回 NXDOMAIN。所有者已添加灰云 A 记录，
+公开 DNS 已确认 `console.meolord.com` 解析为 `117.72.158.35`，没有 AAAA 记录。
+**应用绑定已完成**，入口为 `https://console.meolord.com:15443`，Let's Encrypt
+证书通过所有者手动添加 TXT 记录完成验证。
 
 已在 `~/.config/.wrangler/config/default.toml` 找到并成功刷新现有 Wrangler 登录。
 这份授权可以读取 active 状态的 `meolord.com`，但 DNS 记录 API 返回 HTTP 403，
-Cloudflare 错误码为 10000。授权包含 `zone:read`，没有 DNS 编辑 scope，仍需单独的
-DNS API Token。所有凭据继续保存在仓库外。
+Cloudflare 错误码为 10000。授权包含 `zone:read`，没有 DNS 编辑 scope。由所有者
+手动操作 DNS，以下手动证书流程无需 DNS API Token。所有凭据继续保存在仓库外。
 
 在 Cloudflare 的 [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 确认名称未被占用后，添加以下记录：
@@ -259,33 +262,47 @@ DNS API Token。所有凭据继续保存在仓库外。
 Cloudflare 的普通代理不支持
 [15443 端口](https://developers.cloudflare.com/fundamentals/reference/network-ports/)。
 灰云模式直接连接服务器，需要保留入站 TCP 15443 的访问。证书使用 DNS-01 验证，
-无需开放 80 或 443。以下命令从项目目录以 `desktop` 用户执行，使用本机已有的
-`uv` 安装用户级 Certbot，无需 sudo。
+无需开放 80 或 443。以下命令从项目目录以 `desktop` 用户执行，使用 acme.sh 3.1.6
+和本机已有的 Bash、OpenSSL、curl，无需 sudo。工具脚本及私有 ACME 数据保存在仓库外。
 
-先在 Cloudflare [创建 API Token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)，
-权限为 Zone / DNS / Edit 和 Zone / Zone / Read，资源范围仅限 `meolord.com`。
-用编辑器在仓库外的 `~/.config/codex-console-web/cloudflare.ini` 中保存
-`dns_cloudflare_api_token = YOUR_TOKEN`，文件权限设为 600；不要把令牌发到聊天中，
-也不要使用 Global API Key。Wrangler 的 Workers 登录不一定包含 DNS 编辑权限。
-[Certbot Cloudflare 插件](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
-使用这个凭据文件创建并移除验证所需的 TXT 记录。
-
-1. 安装 Certbot 和 Cloudflare 插件后申请证书，按提示填写邮箱和处理服务条款；
-   只有签发成功后才继续。
+1. 下载固定版本的上游脚本，使用[手动 DNS 验证](https://github.com/acmesh-official/acme.sh/wiki/dns-manual-mode)
+   申请证书。
 
    ```bash
    domain=console.meolord.com
-   acme="$HOME/.config/codex-console-web/acme"
-   cloudflare_ini="$HOME/.config/codex-console-web/cloudflare.ini"
-   test -s "$cloudflare_ini" && chmod 600 "$cloudflare_ini" &&
-   install -d -m 700 "$acme" &&
-   uv tool install --with certbot-dns-cloudflare certbot &&
-   certbot certonly --dns-cloudflare \
-     --dns-cloudflare-credentials "$cloudflare_ini" \
-     --dns-cloudflare-propagation-seconds 60 \
-     --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs" \
-     --cert-name "$domain" -d "$domain"
+   acme_home="$HOME/.local/lib/codex-console-acme"
+   acme="$HOME/.config/codex-console-web/acme-manual"
+   umask 077
+   install -d -m 700 "$acme_home" "$acme" &&
+   curl --fail --location --silent --show-error \
+     https://raw.githubusercontent.com/acmesh-official/acme.sh/3.1.6/acme.sh \
+     --output "$acme_home/acme.sh" &&
+   bash -n "$acme_home/acme.sh" &&
+   bash "$acme_home/acme.sh" --issue --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt --dns --keylength ec-256 -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
    ```
+
+   初次申请会输出验证值并以状态码 3 退出，等待手动配置 DNS。
+   在 `meolord.com` 区域添加 TXT 记录：
+
+   | 字段 | 值 |
+   | --- | --- |
+   | 类型 | TXT |
+   | 名称 | _acme-challenge.console |
+   | 内容 | acme.sh 本次输出的完整验证值 |
+   | TTL | 自动 |
+
+   等公开 DNS 能查到完全一致的 TXT 值后，执行以下命令继续：
+
+   ```bash
+   bash "$acme_home/acme.sh" --renew --ecc --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   每次申请使用新验证值，不复用旧值；只有签发成功后才进行第 2 步。
+   验证成功后可以删除这条 TXT 记录。
 
 2. 将证书和私钥复制到仓库外、仅所有者可读的目录。新入口验证通过前保留原 IP
    证书和私钥，便于恢复。
@@ -293,8 +310,8 @@ Cloudflare 的普通代理不支持
    ```bash
    domain_tls="$HOME/.config/codex-console-web/domain-tls"
    install -d -m 700 "$domain_tls" &&
-   install -m 600 "$acme/config/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
-   install -m 600 "$acme/config/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   install -m 600 "$acme/${domain}_ecc/fullchain.cer" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/${domain}_ecc/$domain.key" "$domain_tls/privkey.pem"
    ```
 
 3. 编辑 `~/.config/codex-console-web/config.json`，只修改以下四个字段，保留其余
@@ -333,19 +350,14 @@ Cloudflare 的普通代理不支持
 如果已经部署 Isola 插件包，需将 `VITE_CODEX_CONSOLE_BACKEND_URL` 改为新来源后
 重新构建并发布；旧构建仍会请求原 IP 入口。参见 [HTTPS 用户访问](#https-用户访问)。
 
-证书副本需要维护，定期执行：
+证书到期前，重新执行第 1 步，手动发布本次新的 TXT 值；续期成功后重新执行第 2 步
+并重启网页服务。手动 DNS 验证续期时仍需要所有者操作，本机没有安装自动续期任务。
+当前证书于 2027-01-13 到期。
 
-```bash
-certbot renew --cert-name "$domain" \
-  --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs"
-```
-
-续期成功后重新执行第 2 步并重启网页服务。配置后在上述命令中添加 `--dry-run`
-测试续期。用户级安装不会创建续期计划；长期无人值守运行需要用户定时器及
-[deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
-同步私有副本并重启网页服务。DNS-01 续期时仍需有效的 DNS API Token。
-证书签发、续期和外部设备访问尚未验证，以上为操作步骤。
-本次用户级工具安装也遇到 PyPI 下载超时，Certbot/Cloudflare 工具尚未安装完成。
+2026-10-15 实际验收通过公开 CA 信任、全部 14 个浏览器资源、未登录 401、外来
+Host/Origin 403、登录/退出、原生模型读取和 SSE 初始 status/resync。
+只重启网页服务，原生后端 PID 保持不变，没有请求推理。未来续期和外部设备访问
+尚未验证。签发成功后可删除临时的 `_acme-challenge.console` TXT 记录，保留 A 记录。
 
 ## 重启与回退
 

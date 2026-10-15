@@ -280,7 +280,7 @@ with HTTPS unavailable; installation and startup retain full validation.
 
 ## Current verified deployment
 
-- Entry: `https://117.72.158.35:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
+- Entry: `https://console.meolord.com:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
   `ws://127.0.0.1:4500`.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
@@ -291,15 +291,17 @@ with HTTPS unavailable; installation and startup retain full validation.
   The independent native backend continues to serve the browser client.
 
 The public entry was verified with direct HTTPS login, rejected foreign Host/Origin,
-native model reads, SSE snapshot recovery and logout. Password, private key and
-native/upload data are retained in the same private locations.
+native model reads, SSE snapshot recovery and logout. Password and native/upload
+data are retained in the same private locations.
 
-The canonical Host/Origin is `https://117.72.158.35:15443`. The private config uses
-`cert-public-117.72.158.35.pem`, whose SAN matches the public IP. It is self-signed;
-trust/import the current certificate on the accessing device. Checks disable proxy
-variables and connect directly to the public IP. External-device acceptance is
-still manual. If the public IP or hostname changes, update both the configured
-origin and matching certificate; arbitrary Host/Origin values remain rejected.
+The canonical Host/Origin is `https://console.meolord.com:15443`. The private
+config uses `domain-tls/fullchain.pem` and `domain-tls/privkey.pem` under
+`~/.config/codex-console-web/`. The Let's Encrypt certificate matches this
+hostname and expires on 2027-01-13; normal public CA trust was verified.
+Checks connect directly without a proxy. External-device acceptance is still
+manual. If the public IP changes, update the DNS A record; changing the hostname
+requires updating the configured origin and certificate. Arbitrary Host/Origin
+values remain rejected. The old IP certificate/key are retained for rollback.
 
 After updating this checkout, restart only `codex-console-native-web.service` as
 the `desktop` user, then verify the public entry and every module before login:
@@ -307,8 +309,7 @@ the `desktop` user, then verify the public entry and every module before login:
 ```bash
 git pull --ff-only origin main
 systemctl --user restart codex-console-native-web.service
-curl --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
-  -I https://117.72.158.35:15443/transport.js
+curl --noproxy '*' -I https://console.meolord.com:15443/transport.js
 ```
 
 The module must return 200 with `Content-Type: text/javascript`, without a login
@@ -327,14 +328,17 @@ The page declares `/favicon.ico` as a PNG icon; public GET/HEAD reuse
 Use `console.meolord.com` in the existing Cloudflare-managed `meolord.com` zone.
 On 2026-10-15, its public nameservers were `everton.ns.cloudflare.com` and
 `paislee.ns.cloudflare.com`; the selected subdomain returned NXDOMAIN. No DNS
-record or application binding has been applied yet. The existing IP entry stays
-`https://117.72.158.35:15443` until the domain certificate and configuration are ready.
+record existed initially. The owner added the DNS-only A record, and public DNS
+now resolves `console.meolord.com` to `117.72.158.35` with no AAAA record.
+Application binding is complete at `https://console.meolord.com:15443`, using a
+Let's Encrypt certificate obtained through owner-managed TXT validation.
 
 The existing Wrangler login was found in
 `~/.config/.wrangler/config/default.toml` and successfully refreshed. Its grant
 can read the active `meolord.com` zone, but the DNS records API returns HTTP 403
 with Cloudflare error 10000. The grant includes `zone:read` and has no DNS-edit
-scope; a separate DNS API token is required. Credentials remain outside Git.
+scope. The owner will manage DNS manually; no DNS API token is needed for the
+manual certificate workflow below. Credentials remain outside Git.
 
 In Cloudflare's [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/),
 add the following record after confirming the name is unused:
@@ -351,34 +355,48 @@ Cloudflare's ordinary proxy does not support
 [port 15443](https://developers.cloudflare.com/fundamentals/reference/network-ports/).
 DNS-only traffic connects directly to the server; keep inbound TCP 15443 reachable.
 Use DNS-01 for a publicly trusted certificate, without opening port 80 or 443.
-Run the commands below as `desktop` from the project directory; they use the
-already installed `uv` to install Certbot as a user tool without sudo.
+Run the commands below as `desktop` from the project directory. They use
+acme.sh 3.1.6 with the existing Bash, OpenSSL and curl, without sudo. Its script
+and private ACME data stay outside Git.
 
-First [create a Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
-with Zone / DNS / Edit and Zone / Zone / Read, restricted to `meolord.com`.
-Save it with an editor in `~/.config/codex-console-web/cloudflare.ini` as
-`dns_cloudflare_api_token = YOUR_TOKEN`. Keep this file outside Git with mode 600;
-do not paste the token into chat or use the Global API Key. A Wrangler Workers
-login does not necessarily grant DNS-edit access. The
-[Certbot Cloudflare plugin](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
-uses the credentials file to create and remove verification TXT records.
-
-1. Install Certbot and its Cloudflare plugin, then obtain a certificate. Follow
-   the email and terms prompts; continue only after issuance succeeds.
+1. Fetch the pinned upstream script and request a certificate using
+   [manual DNS validation](https://github.com/acmesh-official/acme.sh/wiki/dns-manual-mode).
 
    ```bash
    domain=console.meolord.com
-   acme="$HOME/.config/codex-console-web/acme"
-   cloudflare_ini="$HOME/.config/codex-console-web/cloudflare.ini"
-   test -s "$cloudflare_ini" && chmod 600 "$cloudflare_ini" &&
-   install -d -m 700 "$acme" &&
-   uv tool install --with certbot-dns-cloudflare certbot &&
-   certbot certonly --dns-cloudflare \
-     --dns-cloudflare-credentials "$cloudflare_ini" \
-     --dns-cloudflare-propagation-seconds 60 \
-     --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs" \
-     --cert-name "$domain" -d "$domain"
+   acme_home="$HOME/.local/lib/codex-console-acme"
+   acme="$HOME/.config/codex-console-web/acme-manual"
+   umask 077
+   install -d -m 700 "$acme_home" "$acme" &&
+   curl --fail --location --silent --show-error \
+     https://raw.githubusercontent.com/acmesh-official/acme.sh/3.1.6/acme.sh \
+     --output "$acme_home/acme.sh" &&
+   bash -n "$acme_home/acme.sh" &&
+   bash "$acme_home/acme.sh" --issue --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt --dns --keylength ec-256 -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
    ```
+
+   The initial request prints the validation value and exits with code 3,
+   waiting for manual DNS. Add a TXT record in the `meolord.com` zone:
+
+   | Field | Value |
+   | --- | --- |
+   | Type | TXT |
+   | Name | _acme-challenge.console |
+   | Content | The exact current validation value printed by acme.sh |
+   | TTL | Auto |
+
+   Wait until public DNS returns this exact TXT value, then continue:
+
+   ```bash
+   bash "$acme_home/acme.sh" --renew --ecc --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   Use each new challenge's value; do not reuse an old value. Continue to step
+   2 only after issuance succeeds. The TXT record can then be removed.
 
 2. Copy the certificate and key into owner-only storage outside Git. Keep the
    original IP certificate/key available until the new entry is verified.
@@ -386,8 +404,8 @@ uses the credentials file to create and remove verification TXT records.
    ```bash
    domain_tls="$HOME/.config/codex-console-web/domain-tls"
    install -d -m 700 "$domain_tls" &&
-   install -m 600 "$acme/config/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
-   install -m 600 "$acme/config/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   install -m 600 "$acme/${domain}_ecc/fullchain.cer" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/${domain}_ecc/$domain.key" "$domain_tls/privkey.pem"
    ```
 
 3. Edit `~/.config/codex-console-web/config.json`, changing these four fields
@@ -429,22 +447,18 @@ If an Isola plugin package is already deployed, rebuild and redeploy it with
 `VITE_CODEX_CONSOLE_BACKEND_URL` set to the new origin; its previous build keeps
 using the old IP entry. See [HTTPS owner access](#https-owner-access).
 
-Certificate copies require maintenance. Periodically run:
+Renew before the certificate expires by repeating step 1 and manually publishing
+the new TXT value, then repeat step 2 and restart the web unit. Manual DNS
+validation requires the owner's involvement at renewal time; no automatic
+renewal job is installed. The current certificate expires on 2027-01-13.
 
-```bash
-certbot renew --cert-name "$domain" \
-  --config-dir "$acme/config" --work-dir "$acme/work" --logs-dir "$acme/logs"
-```
-
-After a successful renewal, repeat step 2 and restart the web unit. Add
-`--dry-run` to this command to test renewal after setup. This user-tool install
-does not schedule renewal; unattended operation needs a user timer and a
-[deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
-to synchronize the private copies and restart the web unit. DNS-01 still needs a
-valid DNS API token at renewal time. Certificate issuance, renewal and access
-from another device have not been verified; these are operator instructions.
-The attempted user-tool installation also hit PyPI download timeouts, so the
-Certbot/Cloudflare tool installation has not completed on this host.
+Live acceptance on 2026-10-15 passed public certificate trust, all 14 browser
+assets, unauthenticated 401, foreign Host/Origin 403, login/logout, native model
+reads and initial SSE status/resync. Only the web unit was restarted; the native
+backend PID remained unchanged. No inference was requested. Future renewal and
+access from another device have not been verified. After successful issuance,
+the temporary `_acme-challenge.console` TXT record can be deleted; retain the A
+record.
 
 ## Restart and rollback
 
