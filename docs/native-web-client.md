@@ -22,6 +22,16 @@ the native 12000-token percentage baseline; no custom context limit is added.
 The composer's blank padding cannot receive a page text caret. Blank clicks do
 not redirect focus or move the editor's caret. Text selection, caret placement
 and keyboard editing work inside the message editor.
+
+User messages shrink-wrap their rendered text/photos at the right edge. User
+photo sizing uses a definite 320 px maximum during intrinsic layout, while flex
+items can still shrink on narrow screens. This prevents a large image's natural
+width from leaving empty space to the right of a smaller thumbnail after preview
+enrichment. Run `node tests/web/message-layout-browser.mjs`, open the printed
+loopback URL, and check 320, 375, 760, 820 and 1280 px widths. Its browser assertions
+cover text, delayed landscape/portrait photos and multiple photos using synthetic
+data; it never connects to an owner session.
+
 The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native
 updates; disconnections, pending sends and errors remain visible.

@@ -228,6 +228,7 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .message-files { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
 .message-files a { display: block; overflow-wrap: anywhere; font-size: 12px; }
 .chat-image { max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: 10px; display: block; cursor: zoom-in; }
+.message-user .chat-image { max-width: 320px; min-width: 0; }
 #image-viewer { width: min(1100px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 40px 12px 12px; overflow: hidden; }
 #image-viewer-image { display: block; width: 100%; max-height: calc(100dvh - 88px); object-fit: contain; }
 #close-image-viewer { position: absolute; top: 4px; right: 8px; }
