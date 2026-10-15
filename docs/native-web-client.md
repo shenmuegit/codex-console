@@ -935,6 +935,12 @@ uncertain delivery remains locked after reload until native history confirms it.
 An accepted answer stays resolved while its persisted history catches up. Ordinary
 assistant prose and bullet lists never create a card.
 
+Each numbered choice has a native radio hit area covering its entire row,
+including the number, text and whitespace, while keyboard radio navigation stays
+native. Run `node tests/web/question-card-browser.mjs` and open its loopback URL
+at desktop/mobile widths to check row hit targets and test answers during
+background updates. The fixture never connects to an owner session.
+
 Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
 desktop Enter sends, and the Send button is available on all devices.
 
