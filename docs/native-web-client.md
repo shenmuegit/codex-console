@@ -22,11 +22,10 @@ the native 12000-token percentage baseline; no custom context limit is added.
 The composer's blank padding cannot receive a page text caret. Blank clicks do
 not redirect focus or move the editor's caret. Text selection, caret placement
 and keyboard editing work inside the message editor.
-Releasing a pointer in read-only chat history clears only a collapsed document
-selection, so a simple click does not leave a text caret in the transcript.
-Dragged selections remain available for copying; editable controls keep their
-caret. The history remains keyboard-focusable for scrolling, and this cleanup
-does not redirect focus or change the composer draft or selection.
+Read-only chat history has a transparent caret from its initial rendered style,
+including while the pointer is held down. Text inputs and editable descendants
+retain their normal caret. Browser selections remain native for dragging and
+copying; there is no pointer-release cleanup, focus redirection or draft change.
 
 User messages shrink-wrap their rendered text/photos at the right edge. User
 photo sizing uses a definite 320 px maximum during intrinsic layout, while flex
@@ -35,7 +34,8 @@ width from leaving empty space to the right of a smaller thumbnail after preview
 enrichment. Run `node tests/web/message-layout-browser.mjs`, open the printed
 loopback URL, and check 320, 375, 760, 820 and 1280 px widths. Its browser assertions
 cover text, delayed landscape/portrait photos and multiple photos using synthetic
-data; it never connects to an owner session.
+data; it never connects to an owner session. It also checks the history caret
+before interaction and on pointer down/up, while keeping the composer caret visible.
 
 The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native

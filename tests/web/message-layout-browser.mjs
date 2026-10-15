@@ -21,8 +21,20 @@ document.querySelector('#login-panel').hidden = true; document.querySelector('#w
 const api = async (path, body) => (await fetch(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
 const chat = mountChat({api,viewId:'layout',uploadLimitBytes:33554432}); chat.connection(true); await chat.open('t');
 const reports=[];
+function checkCaret(phase, target) {
+  if (target.closest('input,textarea,[contenteditable]')) return;
+  const color=getComputedStyle(target).caretColor;
+  if(color!=='rgba(0, 0, 0, 0)') throw new Error(phase+': read-only history caret is visible: '+color);
+}
+for(const phase of ['pointerdown','pointermove','pointerup']) document.querySelector('#chat-feed').addEventListener(phase,event=>{
+  if(phase==='pointermove' && !(event.buttons&1)) return;
+  try { checkCaret(phase,event.target); document.querySelector('#layout-result').dataset.caretPhase=phase; }
+  catch(error) { document.querySelector('#layout-result').textContent='FAIL: '+error.message; }
+});
 async function check(phase) {
   await new Promise(requestAnimationFrame);
+  for(const body of document.querySelectorAll('.message-body')) checkCaret(phase,body);
+  if(getComputedStyle(document.querySelector('#draft')).caretColor==='rgba(0, 0, 0, 0)') throw new Error('Composer caret must remain visible');
   if (phase==='images' && document.querySelectorAll('.chat-image').length!==4) throw new Error('Expected four rendered photos');
   for (const image of document.querySelectorAll('.chat-image')) { image.loading='eager'; await image.decode(); }
   await document.fonts.ready;
