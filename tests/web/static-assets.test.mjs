@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { httpsFixture } from './helpers.mjs';
 
 test('every browser module and stylesheet is public with the correct MIME type', async t => {
@@ -16,4 +16,16 @@ test('every browser module and stylesheet is public with the correct MIME type',
       else assert.ok(response.text.length);
     }
   }
+});
+
+test('the browser favicon is the existing project icon and needs no login', async t => {
+  const f = await httpsFixture(); t.after(() => f.close());
+  const icon = await readFile(new URL('../../assets/codex-console-icon.png', import.meta.url));
+  for (const method of ['GET', 'HEAD']) {
+    const response = await f.request('/favicon.ico', { method, origin: null });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers['content-type'], 'image/png');
+    assert.equal(response.text, method === 'HEAD' ? '' : icon.toString());
+  }
+  assert.match((await f.request('/')).text, /<link\b[^>]*rel="icon"[^>]*href="\/favicon.ico"/);
 });

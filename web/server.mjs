@@ -28,6 +28,7 @@ const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/favicon.ico', ['../../assets/codex-console-icon.png', 'image/png']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/connections.js', ['connections.js', 'text/javascript; charset=utf-8']],
   ['/automations.js', ['automations.js', 'text/javascript; charset=utf-8']],

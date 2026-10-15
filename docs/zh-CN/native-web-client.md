@@ -219,6 +219,8 @@ curl --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
 `tests/web/static-assets.test.mjs` 覆盖全部浏览器模块和样式的公开 GET/HEAD，线上
 Web 探针也检查所有模块。更新时保留已有未提交改动和私有配置。服务器 HTML 不包含
 内联脚本或 style 元素；修改 CSP 前应先定位浏览器注入内容的来源，继续保留严格策略。
+页面显式声明 PNG 图标 `/favicon.ico`，公开 GET/HEAD 复用现有的
+`assets/codex-console-icon.png`，不要求先登录。
 
 ## 绑定域名
 

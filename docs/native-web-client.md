@@ -304,6 +304,8 @@ browser modules and styles, and the live Web probe includes every module.
 Retain existing uncommitted changes and private configuration when updating.
 The served HTML contains no inline scripts or style elements; investigate the
 source of injected browser content before changing CSP. Keep the strict policy.
+The page declares `/favicon.ico` as a PNG icon; public GET/HEAD reuse
+`assets/codex-console-icon.png` without requiring an owner session.
 
 ## Bind a domain
 
