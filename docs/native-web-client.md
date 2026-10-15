@@ -286,6 +286,101 @@ variables and connect directly to the public IP. External-device acceptance is
 still manual. If the public IP or hostname changes, update both the configured
 origin and matching certificate; arbitrary Host/Origin values remain rejected.
 
+## Bind a domain
+
+For this host, use `codex-console.117-72-158-35.sslip.io`. The free
+[sslip.io service](https://nip.io/) resolves the IP embedded in a hostname, so
+this name needs no registration or DNS credentials. It depends on that external
+DNS service and must change if the public IP changes. For a domain you own,
+create an A record pointing to `117.72.158.35` and use that hostname instead.
+
+On 2026-10-15, DNS resolved the selected name to `117.72.158.35` and the existing
+IP HTTPS homepage returned 200. Binding was **not applied**: the current OS user
+cannot bind port 80 or 443, and noninteractive sudo requires a password. The
+existing certificate fails hostname validation for this name; an unconfigured
+Host returns 403. DNS resolution alone does not make the new entry usable.
+
+Run the following as `desktop` in the project directory, from a terminal with
+working sudo. Keep application traffic on TCP 15443. Allow inbound TCP 80 in
+both the cloud security group and host firewall for certificate issuance and
+renewal, and keep 15443 reachable. Port 80 must be free while Certbot runs;
+443 is not needed for this setup. Let's Encrypt's
+[HTTP-01 validation](https://letsencrypt.org/docs/challenge-types/#http-01-challenge)
+always uses port 80, even though the application uses 15443. If port 80 cannot
+be opened, use a domain whose DNS you control with DNS-01 instead.
+
+1. Install Certbot on this Debian host and obtain a certificate. Follow its
+   email and terms prompts; continue only after issuance succeeds.
+
+   ```bash
+   domain=codex-console.117-72-158-35.sslip.io
+   sudo apt-get update &&
+   sudo apt-get install -y certbot &&
+   sudo certbot certonly --standalone --preferred-challenges http \
+     --cert-name "$domain" -d "$domain"
+   ```
+
+2. Copy the certificate and key into owner-only storage outside Git. Keep the
+   original IP certificate/key available until the new entry is verified.
+
+   ```bash
+   domain_tls="$HOME/.config/codex-console-web/domain-tls"
+   install -d -m 700 "$domain_tls" &&
+   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
+     "/etc/letsencrypt/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
+   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
+     "/etc/letsencrypt/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   ```
+
+3. Edit `~/.config/codex-console-web/config.json`, changing these four fields
+   and retaining every other field, especially credentials and native paths:
+
+   ```json
+   {
+     "origin": "https://codex-console.117-72-158-35.sslip.io:15443",
+     "port": 15443,
+     "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
+     "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
+   }
+   ```
+
+4. Validate the configuration before restarting **only the web unit**. Run the
+   restart and curl check only if validation succeeds.
+
+   ```bash
+   if node --input-type=module <<'JS'
+   import { readFile } from 'node:fs/promises';
+   import { validateConfig } from './web/service.mjs';
+   const path = process.env.HOME + '/.config/codex-console-web/config.json';
+   await validateConfig(JSON.parse(await readFile(path, 'utf8')), path);
+   console.log('Configuration and certificate validated.');
+   JS
+   then
+     systemctl --user restart codex-console-native-web.service &&
+     curl --noproxy '*' --fail --show-error --head \
+       "https://$domain:15443/"
+   fi
+   ```
+
+   Expect HTTP 200 with normal certificate verification, then sign in at the
+   domain URL. Do not bypass TLS verification. The IP URL ceases to be an
+   accepted Host after this change. If verification fails, restore the previous
+   `origin`, `tlsCert` and `tlsKey`, then restart the web unit again.
+
+If an Isola plugin package is already deployed, rebuild and redeploy it with
+`VITE_CODEX_CONSOLE_BACKEND_URL` set to the new origin; its previous build keeps
+using the old IP entry. See [HTTPS owner access](#https-owner-access).
+
+Certificate copies require maintenance: periodically run
+`sudo certbot renew --cert-name "$domain"`, then repeat step 2 and restart the
+web unit after a successful renewal. Certbot's scheduled renewal updates
+`/etc/letsencrypt`, **not these private copies**. Unattended operation needs a
+[deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
+to synchronize them and restart the web unit. Test issuance/renewal with
+`sudo certbot renew --cert-name "$domain" --dry-run` after setup. Issuance,
+firewall changes, renewal and access from another device were not tested in
+this session; the commands above are operator instructions.
+
 ## Restart and rollback
 
 For an existing installation, change the private config's `origin` and `port`

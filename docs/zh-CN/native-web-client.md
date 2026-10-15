@@ -204,6 +204,91 @@ node web/service.mjs stop
 当前证书。检查禁用代理变量并直连公网 IP，外部设备仍需人工验收。
 公网 IP 或主机名变化时，同时更新配置入口和匹配证书；其他 Host/Origin 继续拒绝。
 
+## 绑定域名
+
+本机选用 `codex-console.117-72-158-35.sslip.io`。免费的
+[sslip.io 服务](https://nip.io/)会将域名中包含的 IP 解析为目标地址，无需注册或
+DNS 凭据。这个地址依赖第三方 DNS 服务，公网 IP 变化时需更换。如果使用自有域名，
+添加指向 `117.72.158.35` 的 A 记录，并在以下步骤中替换域名。
+
+2026-10-15 已验证所选域名解析为 `117.72.158.35`，现有 IP 的 HTTPS 首页返回 200。
+**尚未执行绑定**：当前系统用户不能监听 80 或 443，非交互 sudo 要求密码。
+现有证书不匹配所选域名，未配置的 Host 返回 403；只有 DNS 解析还不能使用新入口。
+
+以下步骤需在具备 sudo 权限的终端中，以 `desktop` 用户从项目目录执行。应用继续使用
+TCP 15443。在云安全组和主机防火墙中放行入站 TCP 80，供证书签发和续期使用，
+同时保留 15443 的访问。Certbot 运行时 80 端口必须空闲，此方案无需 443。
+Let's Encrypt 的 [HTTP-01 验证](https://letsencrypt.org/docs/challenge-types/#http-01-challenge)
+固定使用 80，应用在 15443 运行不会改变验证端口。无法开放 80 时，需使用可管理 DNS
+的域名，改走 DNS-01 验证。
+
+1. 在本机 Debian 系统安装 Certbot 并申请证书，按提示填写邮箱和处理服务条款；
+   只有签发成功后才继续。
+
+   ```bash
+   domain=codex-console.117-72-158-35.sslip.io
+   sudo apt-get update &&
+   sudo apt-get install -y certbot &&
+   sudo certbot certonly --standalone --preferred-challenges http \
+     --cert-name "$domain" -d "$domain"
+   ```
+
+2. 将证书和私钥复制到仓库外、仅所有者可读的目录。新入口验证通过前保留原 IP
+   证书和私钥，便于恢复。
+
+   ```bash
+   domain_tls="$HOME/.config/codex-console-web/domain-tls"
+   install -d -m 700 "$domain_tls" &&
+   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
+     "/etc/letsencrypt/live/$domain/fullchain.pem" "$domain_tls/fullchain.pem" &&
+   sudo install -o "$(id -u)" -g "$(id -g)" -m 600 \
+     "/etc/letsencrypt/live/$domain/privkey.pem" "$domain_tls/privkey.pem"
+   ```
+
+3. 编辑 `~/.config/codex-console-web/config.json`，只修改以下四个字段，保留其余
+   所有字段，特别是凭据和原生路径：
+
+   ```json
+   {
+     "origin": "https://codex-console.117-72-158-35.sslip.io:15443",
+     "port": 15443,
+     "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
+     "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
+   }
+   ```
+
+4. 先校验配置，成功后才执行重启和 curl 检查，**只重启网页服务**。
+
+   ```bash
+   if node --input-type=module <<'JS'
+   import { readFile } from 'node:fs/promises';
+   import { validateConfig } from './web/service.mjs';
+   const path = process.env.HOME + '/.config/codex-console-web/config.json';
+   await validateConfig(JSON.parse(await readFile(path, 'utf8')), path);
+   console.log('Configuration and certificate validated.');
+   JS
+   then
+     systemctl --user restart codex-console-native-web.service &&
+     curl --noproxy '*' --fail --show-error --head \
+       "https://$domain:15443/"
+   fi
+   ```
+
+   应在正常验证证书的情况下得到 HTTP 200，然后通过域名入口重新登录；不要跳过
+   TLS 校验。修改后原 IP URL 的 Host 不再被接受。验证失败时，恢复原先的
+   `origin`、`tlsCert` 和 `tlsKey`，再重启网页服务。
+
+如果已经部署 Isola 插件包，需将 `VITE_CODEX_CONSOLE_BACKEND_URL` 改为新来源后
+重新构建并发布；旧构建仍会请求原 IP 入口。参见 [HTTPS 用户访问](#https-用户访问)。
+
+证书副本需要维护：定期执行 `sudo certbot renew --cert-name "$domain"`，续期成功后
+重新执行第 2 步并重启网页服务。Certbot 的定时续期只更新 `/etc/letsencrypt`，
+**不会更新这些私有副本**。长期无人值守运行需要配置
+[deploy hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
+同步副本并重启网页服务。配置后用 `sudo certbot renew --cert-name "$domain" --dry-run`
+测试签发与续期。本次未实测证书签发、防火墙修改、续期和外部设备访问，以上命令为
+管理员操作步骤。
+
 ## 重启与回退
 
 已有部署更换 HTTPS 端口时，同时修改私有配置的 `origin` 和 `port`，例如
