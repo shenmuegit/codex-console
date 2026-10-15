@@ -22,6 +22,11 @@ the native 12000-token percentage baseline; no custom context limit is added.
 The composer's blank padding cannot receive a page text caret. Blank clicks do
 not redirect focus or move the editor's caret. Text selection, caret placement
 and keyboard editing work inside the message editor.
+Releasing a pointer in read-only chat history clears only a collapsed document
+selection, so a simple click does not leave a text caret in the transcript.
+Dragged selections remain available for copying; editable controls keep their
+caret. The history remains keyboard-focusable for scrolling, and this cleanup
+does not redirect focus or change the composer draft or selection.
 
 User messages shrink-wrap their rendered text/photos at the right edge. User
 photo sizing uses a definite 320 px maximum during intrinsic layout, while flex

@@ -22,6 +22,27 @@ test('clicking composer padding never redirects focus or changes the editing car
   assert.equal(dom.document.activeElement, dom.get('thread-title'));
 });
 
+test('history clicks clear only collapsed read-only selections and preserve editor focus', async t => {
+  const dom = domFixture(), chat = mountChat({ api: async (path, body) => path === '/api/thread/open' ?
+    { snapshot: resumeFixture(body.threadId), cursor: { generation: 1, seq: 1 } } : { result: { data: [], nextCursor: null } }, viewId: 'view', uploadLimitBytes: 32 });
+  t.after(() => { chat.dispose(); dom.restore(); }); chat.connection(true); await chat.open('t');
+  const feed = dom.get('chat-feed'), paragraph = dom.document.createElement('p'), editor = dom.document.createElement('textarea');
+  feed.append(paragraph, editor);
+  let cleared = 0, selection;
+  window.getSelection = () => selection;
+  const select = (anchorNode, isCollapsed = true) => { selection = { anchorNode, isCollapsed, removeAllRanges() { cleared++; this.anchorNode = null; } }; };
+  const release = target => { const event = new Event('pointerup'); Object.defineProperty(event, 'target', { value: target }); feed.dispatchEvent(event); };
+  const draft = dom.get('draft'); draft.value = '保留草稿'; draft.setSelectionRange(2, 2); draft.focus();
+  select(paragraph); release(paragraph);
+  assert.equal(cleared, 1); assert.equal(selection.anchorNode, null);
+  assert.equal(dom.document.activeElement, draft); assert.equal(draft.value, '保留草稿'); assert.equal(draft.selectionStart, 2);
+  select(paragraph, false); release(paragraph); assert.equal(cleared, 1, 'Dragged text remains selected for copying');
+  select(draft); release(paragraph); assert.equal(cleared, 1, 'Selections outside history remain untouched');
+  select(paragraph); release(editor); assert.equal(cleared, 1, 'Text controls keep their editing caret');
+  paragraph.isContentEditable = true; release(paragraph); assert.equal(cleared, 1, 'Editable descendants retain their caret');
+  paragraph.isContentEditable = false; chat.dispose(); release(paragraph); assert.equal(cleared, 1, 'Disposal removes the history listener');
+});
+
 test('UTF-8 ranges handle Chinese/emoji and reject boundaries splitting surrogate pairs', () => {
   assert.deepEqual(utf8Range('中😀x', 1, 3), { start: 3, end: 7 });
   assert.throws(() => utf8Range('中😀x', 2, 3), { code: 'INVALID_SELECTION_RANGE' });

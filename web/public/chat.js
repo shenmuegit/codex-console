@@ -993,6 +993,11 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
   bind($('#older-history'), 'click', loadOlderHistory);
   bind(feed, 'scroll', () => { const up = feed.scrollTop < lastScrollTop; lastScrollTop = feed.scrollTop; if (up && feed.scrollTop <= 80) return loadOlderHistory(); });
   bind(feed, 'wheel', event => { if (event.deltaY < 0 && feed.scrollTop <= 80) return loadOlderHistory(); });
+  bind(feed, 'pointerup', event => {
+    const selection = window.getSelection?.();
+    if (selection?.isCollapsed && feed.contains(selection.anchorNode) &&
+        !event.target.isContentEditable && !['INPUT', 'TEXTAREA'].includes(event.target.tagName)) selection.removeAllRanges();
+  });
   // Submit prevention must run synchronously, before the async action wrapper yields.
   $('#composer').addEventListener('submit', event => { event.preventDefault(); submit().catch(showError); }, { signal: abort.signal });
   draft.addEventListener('input', () => { if (selected) { selected.selections = updateSelections(selected.draft, draft.value, selected.selections); selected.draft = draft.value; save(selected); draw(); } }, { signal: abort.signal });
