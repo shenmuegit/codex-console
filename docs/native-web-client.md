@@ -280,7 +280,7 @@ with HTTPS unavailable; installation and startup retain full validation.
 
 ## Current verified deployment
 
-- Entry: `https://console.meolord.com:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
+- Entry: `https://117.72.158.35:15443`, with HTTPS listening on `0.0.0.0:15443`; native WS stays loopback
   `ws://127.0.0.1:4500`.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
@@ -294,14 +294,19 @@ The public entry was verified with direct HTTPS login, rejected foreign Host/Ori
 native model reads, SSE snapshot recovery and logout. Password and native/upload
 data are retained in the same private locations.
 
-The canonical Host/Origin is `https://console.meolord.com:15443`. The private
-config uses `domain-tls/fullchain.pem` and `domain-tls/privkey.pem` under
-`~/.config/codex-console-web/`. The Let's Encrypt certificate matches this
-hostname and expires on 2027-01-13; normal public CA trust was verified.
-Checks connect directly without a proxy. External-device acceptance is still
-manual. If the public IP changes, update the DNS A record; changing the hostname
-requires updating the configured origin and certificate. Arbitrary Host/Origin
-values remain rejected. The old IP certificate/key are retained for rollback.
+The canonical Host/Origin is `https://117.72.158.35:15443`. The private config
+uses the existing `cert-public-117.72.158.35.pem` and `key.pem` under
+`~/.config/codex-console-web/`. This self-signed certificate has an IP SAN for
+`117.72.158.35`; accessing devices must trust/import that certificate.
+On 2026-10-15, the owner requested restoring IP access after domain-SNI TLS
+handshakes stalled on the client path. The restored IP request completed in
+about 0.14 seconds with certificate verification; login, native model reads,
+SSE and logout passed. The source of the domain-path interference was not
+established. Domain certificates and the private `config.domain-before-ip-*.json`
+backup are retained outside Git. Checks connect directly without a proxy and
+trust the IP certificate explicitly. External-device acceptance is still manual.
+If the public IP changes, update both the origin and matching certificate;
+arbitrary Host/Origin values remain rejected.
 
 After updating this checkout, restart only `codex-console-native-web.service` as
 the `desktop` user, then verify the public entry and every module before login:
@@ -309,7 +314,8 @@ the `desktop` user, then verify the public entry and every module before login:
 ```bash
 git pull --ff-only origin main
 systemctl --user restart codex-console-native-web.service
-curl --noproxy '*' -I https://console.meolord.com:15443/transport.js
+curl --noproxy '*' --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
 ```
 
 The module must return 200 with `Content-Type: text/javascript`, without a login
@@ -330,8 +336,10 @@ On 2026-10-15, its public nameservers were `everton.ns.cloudflare.com` and
 `paislee.ns.cloudflare.com`; the selected subdomain returned NXDOMAIN. No DNS
 record existed initially. The owner added the DNS-only A record, and public DNS
 now resolves `console.meolord.com` to `117.72.158.35` with no AAAA record.
-Application binding is complete at `https://console.meolord.com:15443`, using a
+Domain binding was verified at `https://console.meolord.com:15443`, using a
 Let's Encrypt certificate obtained through owner-managed TXT validation.
+The application currently uses the restored IP entry above; the steps below
+describe an optional future switch back to the domain.
 
 The existing Wrangler login was found in
 `~/.config/.wrangler/config/default.toml` and successfully refreshed. Its grant

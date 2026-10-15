@@ -200,7 +200,7 @@ node web/service.mjs stop
 
 ## 当前已验证部署
 
-- 入口 `https://console.meolord.com:15443`，HTTPS 监听 `0.0.0.0:15443`；原生 WS 仅回环 `ws://127.0.0.1:4500`。
+- 入口 `https://117.72.158.35:15443`，HTTPS 监听 `0.0.0.0:15443`；原生 WS 仅回环 `ws://127.0.0.1:4500`。
 - 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
 - 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
   网页偏好及上传继续保留在其 `web/` 子目录。
@@ -211,12 +211,15 @@ node web/service.mjs stop
 公网入口已通过直连 HTTPS 登录、外来 Host/Origin 拒绝、原生模型读取、SSE 快照恢复和退出验证。
 密码、原生数据及上传文件继续保留在原私有位置。
 
-规范 Host/Origin 为 `https://console.meolord.com:15443`。私有配置使用
-`~/.config/codex-console-web/` 下的 `domain-tls/fullchain.pem` 和
-`domain-tls/privkey.pem`。Let's Encrypt 证书匹配该主机名，2027-01-13 到期，
-已验证正常的公开 CA 信任。检查不经过代理，外部设备仍需人工验收。
-公网 IP 变化时更新 DNS A 记录；更换主机名时同时更新配置入口和证书。
-其他 Host/Origin 继续拒绝。原 IP 的证书和私钥保留用于回退。
+规范 Host/Origin 为 `https://117.72.158.35:15443`。私有配置使用
+`~/.config/codex-console-web/` 下原有的 `cert-public-117.72.158.35.pem` 和
+`key.pem`。自签名证书的 SAN 匹配该 IP，访问设备需信任/导入该证书。
+2026-10-15，因客户端链路上携带域名 SNI 的 TLS 握手停滞，按所有者要求恢复 IP 访问。
+恢复后，客户端在正常核验证书的情况下约 0.14 秒返回页面，登录、原生模型读取、SSE
+和退出均通过；域名链路受干扰的具体来源尚未确认。域名证书和私有的
+`config.domain-before-ip-*.json` 配置备份保留在仓库外。检查不经过代理，显式信任
+IP 证书，外部设备仍需人工验收。公网 IP 变化时，同时更新入口和匹配证书；
+其他 Host/Origin 继续拒绝。
 
 更新此工作目录后，以 `desktop` 用户只重启 `codex-console-native-web.service`，
 并在登录前核对入口及每个浏览器模块：
@@ -224,7 +227,8 @@ node web/service.mjs stop
 ```bash
 git pull --ff-only origin main
 systemctl --user restart codex-console-native-web.service
-curl --noproxy '*' -I https://console.meolord.com:15443/transport.js
+curl --noproxy '*' --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
 ```
 
 模块须在没有登录 Cookie 时返回 200 和 `Content-Type: text/javascript`。旧进程可能
@@ -241,8 +245,9 @@ Web 探针也检查所有模块。更新时保留已有未提交改动和私有�
 2026-10-15 查询到主域名的公开 NS 为 `everton.ns.cloudflare.com` 和
 `paislee.ns.cloudflare.com`，所选子域名最初返回 NXDOMAIN。所有者已添加灰云 A 记录，
 公开 DNS 已确认 `console.meolord.com` 解析为 `117.72.158.35`，没有 AAAA 记录。
-**应用绑定已完成**，入口为 `https://console.meolord.com:15443`，Let's Encrypt
+此前已验证域名绑定，地址为 `https://console.meolord.com:15443`，Let's Encrypt
 证书通过所有者手动添加 TXT 记录完成验证。
+应用当前使用上方恢复后的 IP 入口，以下步骤供将来按需切回域名时使用。
 
 已在 `~/.config/.wrangler/config/default.toml` 找到并成功刷新现有 Wrangler 登录。
 这份授权可以读取 active 状态的 `meolord.com`，但 DNS 记录 API 返回 HTTP 403，
