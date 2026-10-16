@@ -8,6 +8,34 @@ const overrides = { allowedOrigins: [O], cookieSameSite: 'none' };
 const preflight = { method: 'OPTIONS', origin: O, headers: {
   'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } };
 
+test('browser_access_accepts_exact_loopback_http_origins', () => {
+  const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.2:3000', 'http://[::1]:5174'];
+  assert.deepEqual(browserAccess({ allowedOrigins }), { allowedOrigins, cookieSameSite: 'strict' });
+  for (const origin of ['http://192.168.1.1:5173', 'http://0.0.0.0:5173', 'http://localhost.example.test',
+    'http://127.0.0.1.example.test', 'http://127.0.0.1:3000/', 'http://127.1:3000',
+    'http://user@127.0.0.1:3000', 'http://localhost:0', 'null', '*']) {
+    assert.throws(() => browserAccess({ allowedOrigins: [origin] }), { code: 'INVALID_BROWSER_ACCESS' });
+  }
+});
+
+test('loopback_http_plugin_can_preflight_login_and_reuse_its_session', async t => {
+  const origin = 'http://127.0.0.1:3000';
+  const f = await httpsFixture({ configOverrides: { allowedOrigins: [origin], cookieSameSite: 'none' } });
+  t.after(() => f.close());
+  const options = await f.request('/api/login', { ...preflight, origin });
+  assert.equal(options.status, 204);
+  assert.equal(options.headers['access-control-allow-origin'], origin);
+  const login = await f.request('/api/login', { method: 'POST', origin, body: { password: 'fixture-passphrase' } });
+  assert.equal(login.status, 200);
+  assert.equal(login.headers['access-control-allow-credentials'], 'true');
+  const header = login.headers['set-cookie'][0];
+  assert.match(header, /; HttpOnly; Secure; SameSite=None; Path=\//);
+  const cookie = header.split(';')[0];
+  assert.equal((await f.request('/api/status', { origin, cookie })).json.online, true);
+  assert.equal((await f.request('/api/status', { origin: 'http://127.0.0.2:3000', cookie })).status, 403);
+  assert.equal((await f.request('/api/status', { origin: 'null', cookie })).status, 403);
+});
+
 test('browser_access_rejects_noncanonical_origins', () => {
   assert.deepEqual(browserAccess({}), { allowedOrigins: [], cookieSameSite: 'strict' });
   for (const origin of ['*', 'https://*.example.test', 'null', 'http://plugin.example.test',

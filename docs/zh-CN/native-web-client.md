@@ -388,8 +388,12 @@ node tests/web/native-probe.mjs --url ws://127.0.0.1:4500 \
 
 已有私有 JSON 配置可增加 `"allowedOrigins": ["https://plugin.example.test"]`，
 跨站接入时再显式设置 `"cookieSameSite": "none"`。未配置时分别默认为 `[]` 和 `"strict"`，
-Cookie 模式仅接受 `"strict"`、`"none"`。来源须为规范 HTTPS 来源，不允许通配符、凭据、
+Cookie 模式仅接受 `"strict"`、`"none"`。来源须为规范 HTTPS 来源，或本地开发使用的
+HTTP 回环来源（`localhost`、`127.0.0.0/8`、`[::1]`）。不允许通配符、凭据、
 路径（含尾部斜线）、查询或片段；显式端口必须为 1–65535，重复来源会去重。
+例如，本地 Isola 插件地址 `http://127.0.0.1:3000` 可以显式加入 `allowedOrigins`；
+其他本地来源与 `null` 仍被拒绝。后端自身继续使用 HTTPS。本地跨站开发同样需要下文的
+`cookieSameSite: "none"` 配置及浏览器对该 Cookie 的支持。
 同站接入保留 Strict。None 同时用于登录和注销，仍保留 `__Host-codex_console`、
 Secure、HttpOnly、Path=/ 和原有有效期及撤销行为。浏览器仍可能阻止第三方 Cookie，
 登录后需通过带凭据的 `/api/status` 验证。插件来源访问的是现有 Codex 所有者账号，

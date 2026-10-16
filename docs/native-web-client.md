@@ -541,8 +541,13 @@ Existing private JSON configurations can opt into direct plugin API access with
 `"allowedOrigins": ["https://plugin.example.test"]` and, for cross-site use,
 `"cookieSameSite": "none"`. Missing fields default to `[]` and `"strict"`;
 only `"strict"` and `"none"` are accepted. Origins must be exact canonical HTTPS
-origins with no wildcards, credentials, path (including a trailing slash), query
-or fragment; explicit ports must be 1–65535. Duplicate origins are removed.
+origins, or HTTP loopback origins using `localhost`, `127.0.0.0/8` or `[::1]`
+for local development. Wildcards, credentials, paths (including a trailing slash),
+queries and fragments are rejected; explicit ports must be 1–65535. Duplicate origins are removed.
+For example, a local Isola plugin served at `http://127.0.0.1:3000` can be added
+explicitly to `allowedOrigins`; other local origins and `null` remain denied.
+The backend itself still uses HTTPS. Cross-site local development needs the same
+`cookieSameSite: "none"` configuration and browser cookie support described below.
 Keep Strict for same-site access. None applies to both login and logout while
 preserving `__Host-codex_console`, Secure, HttpOnly, Path=/ and expiry/revocation.
 Browsers can still block third-party cookies; verify a credentialed `/api/status`

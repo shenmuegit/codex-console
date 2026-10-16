@@ -8,12 +8,13 @@ const validPassword = password => typeof password === 'string' && password.lengt
 
 export function browserAccess(config) {
   const { allowedOrigins = [], cookieSameSite = 'strict' } = config;
-  const invalid = () => fail('INVALID_BROWSER_ACCESS', 'Use canonical HTTPS allowedOrigins and strict/none cookieSameSite.');
+  const invalid = () => fail('INVALID_BROWSER_ACCESS', 'Use canonical HTTPS or loopback HTTP allowedOrigins and strict/none cookieSameSite.');
   if (!Array.isArray(allowedOrigins) || !['strict', 'none'].includes(cookieSameSite)) throw invalid();
   for (const origin of allowedOrigins) {
     let url;
     try { url = new URL(origin); } catch { throw invalid(); }
-    if (typeof origin !== 'string' || url.protocol !== 'https:' || url.origin !== origin || url.hostname.includes('*') ||
+    const localHttp = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(url.hostname));
+    if (typeof origin !== 'string' || !(url.protocol === 'https:' || localHttp) || url.origin !== origin || url.hostname.includes('*') ||
         url.port && (!Number.isInteger(Number(url.port)) || Number(url.port) < 1 || Number(url.port) > 65535)) throw invalid();
   }
   return { allowedOrigins: [...new Set(allowedOrigins)], cookieSameSite };
