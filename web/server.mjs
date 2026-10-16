@@ -28,6 +28,7 @@ const BODY_LIMIT = 1_048_576, STREAM_LIMIT = 1_048_576;
 const COOKIE = '__Host-codex_console';
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const assets = new Map([['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/favicon.ico', ['../../assets/codex-console-icon.png', 'image/png']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/chat.js', ['chat.js', 'text/javascript; charset=utf-8']],
   ['/connections.js', ['connections.js', 'text/javascript; charset=utf-8']],
   ['/automations.js', ['automations.js', 'text/javascript; charset=utf-8']],
@@ -767,6 +768,9 @@ export function createWebServer({ config, codex, sharedAuth, controller, routeHo
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
       if (req.headers.host !== new URL(config.origin).host) throw error(403, 'HOST_DENIED', '请使用配置中的地址。');
+      if (!mutation && url.pathname === '/' && url.searchParams.has('password')) {
+        url.searchParams.delete('password'); res.writeHead(303, { Location: url.pathname + url.search }); res.end(); return;
+      }
       if (api && req.method === 'OPTIONS') {
         const method = req.headers['access-control-request-method'];
         const headers = req.headers['access-control-request-headers'];

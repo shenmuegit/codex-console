@@ -22,6 +22,21 @@ the native 12000-token percentage baseline; no custom context limit is added.
 The composer's blank padding cannot receive a page text caret. Blank clicks do
 not redirect focus or move the editor's caret. Text selection, caret placement
 and keyboard editing work inside the message editor.
+Read-only chat history has a transparent caret from its initial rendered style,
+including while the pointer is held down. Text inputs and editable descendants
+retain their normal caret. Browser selections remain native for dragging and
+copying; there is no pointer-release cleanup, focus redirection or draft change.
+
+User messages shrink-wrap their rendered text/photos at the right edge. User
+photo sizing uses a definite 320 px maximum during intrinsic layout, while flex
+items can still shrink on narrow screens. This prevents a large image's natural
+width from leaving empty space to the right of a smaller thumbnail after preview
+enrichment. Run `node tests/web/message-layout-browser.mjs`, open the printed
+loopback URL, and check 320, 375, 760, 820 and 1280 px widths. Its browser assertions
+cover text, delayed landscape/portrait photos and multiple photos using synthetic
+data; it never connects to an owner session. It also checks the history caret
+before interaction and on pointer down/up, while keeping the composer caret visible.
+
 The shell omits the connected label, permission summary, idle keyboard hint and
 manual quota-update button. Quota still reads when opened and follows native
 updates; disconnections, pending sends and errors remain visible.
@@ -270,21 +285,188 @@ with HTTPS unavailable; installation and startup retain full validation.
 - Private config/password/cert/env: `~/.config/codex-console-web/`.
 - Existing isolated native home/profile/workspace: `~/.local/state/codex-console-web/integration/`;
   web preferences/uploads remain under its `web/` child.
-- Code: native managed worktree `/home/desktop/.codex/worktrees/native-web-client/codex-console`.
+- Code: `main` checkout `/home/desktop/Documents/Codex/codex-console`.
 - The old Xpra service `codex-console.service` is stopped and disabled by owner
   request to release port 15443; its original desktop/backend processes have ended.
   The independent native backend continues to serve the browser client.
 
 The public entry was verified with direct HTTPS login, rejected foreign Host/Origin,
-native model reads, SSE snapshot recovery and logout. Password, private key and
-native/upload data are retained in the same private locations.
+native model reads, SSE snapshot recovery and logout. Password and native/upload
+data are retained in the same private locations.
 
-The canonical Host/Origin is `https://117.72.158.35:15443`. The private config uses
-`cert-public-117.72.158.35.pem`, whose SAN matches the public IP. It is self-signed;
-trust/import the current certificate on the accessing device. Checks disable proxy
-variables and connect directly to the public IP. External-device acceptance is
-still manual. If the public IP or hostname changes, update both the configured
-origin and matching certificate; arbitrary Host/Origin values remain rejected.
+The canonical Host/Origin is `https://117.72.158.35:15443`. The private config
+uses the existing `cert-public-117.72.158.35.pem` and `key.pem` under
+`~/.config/codex-console-web/`. This self-signed certificate has an IP SAN for
+`117.72.158.35`; accessing devices must trust/import that certificate.
+On 2026-10-15, the owner requested restoring IP access after domain-SNI TLS
+handshakes stalled on the client path. The restored IP request completed in
+about 0.14 seconds with certificate verification; login, native model reads,
+SSE and logout passed. The source of the domain-path interference was not
+established. Domain certificates and the private `config.domain-before-ip-*.json`
+backup are retained outside Git. Checks connect directly without a proxy and
+trust the IP certificate explicitly. External-device acceptance is still manual.
+If the public IP changes, update both the origin and matching certificate;
+arbitrary Host/Origin values remain rejected.
+
+After updating this checkout, restart only `codex-console-native-web.service` as
+the `desktop` user, then verify the public entry and every module before login:
+
+```bash
+git pull --ff-only origin main
+systemctl --user restart codex-console-native-web.service
+curl --noproxy '*' --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
+```
+
+The module must return 200 with `Content-Type: text/javascript`, without a login
+cookie. An old process can retain the previous asset routes while serving new
+files from disk; a 401 JSON response to a module then prevents the entire app
+from mounting. `tests/web/static-assets.test.mjs` checks public GET/HEAD for all
+browser modules and styles, and the live Web probe includes every module.
+Retain existing uncommitted changes and private configuration when updating.
+The served HTML contains no inline scripts or style elements; investigate the
+source of injected browser content before changing CSP. Keep the strict policy.
+The page declares `/favicon.ico` as a PNG icon; public GET/HEAD reuse
+`assets/codex-console-icon.png` without requiring an owner session.
+
+## Bind a domain
+
+Use `console.meolord.com` in the existing Cloudflare-managed `meolord.com` zone.
+On 2026-10-15, its public nameservers were `everton.ns.cloudflare.com` and
+`paislee.ns.cloudflare.com`; the selected subdomain returned NXDOMAIN. No DNS
+record existed initially. The owner added the DNS-only A record, and public DNS
+now resolves `console.meolord.com` to `117.72.158.35` with no AAAA record.
+Domain binding was verified at `https://console.meolord.com:15443`, using a
+Let's Encrypt certificate obtained through owner-managed TXT validation.
+The application currently uses the restored IP entry above; the steps below
+describe an optional future switch back to the domain.
+
+The existing Wrangler login was found in
+`~/.config/.wrangler/config/default.toml` and successfully refreshed. Its grant
+can read the active `meolord.com` zone, but the DNS records API returns HTTP 403
+with Cloudflare error 10000. The grant includes `zone:read` and has no DNS-edit
+scope. The owner will manage DNS manually; no DNS API token is needed for the
+manual certificate workflow below. Credentials remain outside Git.
+
+In Cloudflare's [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/),
+add the following record after confirming the name is unused:
+
+| Field | Value |
+| --- | --- |
+| Type | A |
+| Name | console |
+| IPv4 address | 117.72.158.35 |
+| Proxy status | DNS only (gray cloud) |
+| TTL | Auto |
+
+Cloudflare's ordinary proxy does not support
+[port 15443](https://developers.cloudflare.com/fundamentals/reference/network-ports/).
+DNS-only traffic connects directly to the server; keep inbound TCP 15443 reachable.
+Use DNS-01 for a publicly trusted certificate, without opening port 80 or 443.
+Run the commands below as `desktop` from the project directory. They use
+acme.sh 3.1.6 with the existing Bash, OpenSSL and curl, without sudo. Its script
+and private ACME data stay outside Git.
+
+1. Fetch the pinned upstream script and request a certificate using
+   [manual DNS validation](https://github.com/acmesh-official/acme.sh/wiki/dns-manual-mode).
+
+   ```bash
+   domain=console.meolord.com
+   acme_home="$HOME/.local/lib/codex-console-acme"
+   acme="$HOME/.config/codex-console-web/acme-manual"
+   umask 077
+   install -d -m 700 "$acme_home" "$acme" &&
+   curl --fail --location --silent --show-error \
+     https://raw.githubusercontent.com/acmesh-official/acme.sh/3.1.6/acme.sh \
+     --output "$acme_home/acme.sh" &&
+   bash -n "$acme_home/acme.sh" &&
+   bash "$acme_home/acme.sh" --issue --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt --dns --keylength ec-256 -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   The initial request prints the validation value and exits with code 3,
+   waiting for manual DNS. Add a TXT record in the `meolord.com` zone:
+
+   | Field | Value |
+   | --- | --- |
+   | Type | TXT |
+   | Name | _acme-challenge.console |
+   | Content | The exact current validation value printed by acme.sh |
+   | TTL | Auto |
+
+   Wait until public DNS returns this exact TXT value, then continue:
+
+   ```bash
+   bash "$acme_home/acme.sh" --renew --ecc --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   Use each new challenge's value; do not reuse an old value. Continue to step
+   2 only after issuance succeeds. The TXT record can then be removed.
+
+2. Copy the certificate and key into owner-only storage outside Git. Keep the
+   original IP certificate/key available until the new entry is verified.
+
+   ```bash
+   domain_tls="$HOME/.config/codex-console-web/domain-tls"
+   install -d -m 700 "$domain_tls" &&
+   install -m 600 "$acme/${domain}_ecc/fullchain.cer" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/${domain}_ecc/$domain.key" "$domain_tls/privkey.pem"
+   ```
+
+3. Edit `~/.config/codex-console-web/config.json`, changing these four fields
+   and retaining every other field, especially credentials and native paths:
+
+   ```json
+   {
+     "origin": "https://console.meolord.com:15443",
+     "port": 15443,
+     "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
+     "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
+   }
+   ```
+
+4. Validate the configuration before restarting **only the web unit**. Run the
+   restart and curl check only if validation succeeds.
+
+   ```bash
+   if node --input-type=module <<'JS'
+   import { readFile } from 'node:fs/promises';
+   import { validateConfig } from './web/service.mjs';
+   const path = process.env.HOME + '/.config/codex-console-web/config.json';
+   await validateConfig(JSON.parse(await readFile(path, 'utf8')), path);
+   console.log('Configuration and certificate validated.');
+   JS
+   then
+     systemctl --user restart codex-console-native-web.service &&
+     curl --noproxy '*' --fail --show-error --head \
+       "https://$domain:15443/"
+   fi
+   ```
+
+   Expect HTTP 200 with normal certificate verification, then sign in at the
+   domain URL. Do not bypass TLS verification. The IP URL ceases to be an
+   accepted Host after this change. If verification fails, restore the previous
+   `origin`, `tlsCert` and `tlsKey`, then restart the web unit again.
+
+If an Isola plugin package is already deployed, rebuild and redeploy it with
+`VITE_CODEX_CONSOLE_BACKEND_URL` set to the new origin; its previous build keeps
+using the old IP entry. See [HTTPS owner access](#https-owner-access).
+
+Renew before the certificate expires by repeating step 1 and manually publishing
+the new TXT value, then repeat step 2 and restart the web unit. Manual DNS
+validation requires the owner's involvement at renewal time; no automatic
+renewal job is installed. The current certificate expires on 2027-01-13.
+
+Live acceptance on 2026-10-15 passed public certificate trust, all 14 browser
+assets, unauthenticated 401, foreign Host/Origin 403, login/logout, native model
+reads and initial SSE status/resync. Only the web unit was restarted; the native
+backend PID remained unchanged. No inference was requested. Future renewal and
+access from another device have not been verified. After successful issuance,
+the temporary `_acme-challenge.console` TXT record can be deleted; retain the A
+record.
 
 ## Restart and rollback
 
@@ -621,6 +803,16 @@ without an automatic login or message resend. Browser cookie policy can still
 prevent a cross-site session; a built archive does not establish real HTTPS,
 login or native-operation acceptance.
 
+Login sends the access password only in the JSON body of `POST /api/login`.
+The HTML form declares a fixed POST action and the password input has no `name`,
+so a blocked or missing script cannot serialize the password into a URL or a
+native form body. The JSON-only endpoint rejects that empty native submission.
+Legacy entry URLs containing `password` redirect to the same path without those
+parameters before loading the page; the plugin also replaces its current history
+entry, preserving host, thread, side-chat and fragment navigation. Query passwords
+are never used for authentication. This cannot erase copies already stored in
+browser history or external logs; rotate an access password that was exposed.
+
 The browser modules expose `createTransport(backendOrigin?)` in `transport.js`.
 Omitting the origin preserves relative `/api/` URLs for the standalone page;
 an explicit backend must be a canonical HTTPS origin with no credentials, path,
@@ -719,7 +911,7 @@ HTML disabled, restricted URL schemes and no automatic external image loads.
 Text streams immediately; safe HTML updates coalesce to 100 ms.
 
 Native approvals, permission requests, questions and MCP form/URL elicitations
-appear as cards inside the chat scroll area. Question cards show each option and
+appear as cards above the composer. Question cards show each option and
 its description, with free text when the native question allows it and masked
 secret inputs. Nothing is selected unless the native form supplies a default.
 MCP forms support primitive fields, titled single/multiple choices and the native
@@ -734,6 +926,26 @@ conversation, reject duplicate answers and preserve input on failure. Native
 resolution or reconnect removes stale cards; streaming never resets a form.
 Form schema property names such as `apiKey` and `password` are retained as field
 definitions; unrelated native credentials remain filtered from browser events.
+
+Native asynchronous `agentMessage` items with `delivery: "async"` and structured
+`questions` also render as retained question cards, rather than fallback Markdown
+bullets. Each question has numbered choices and a free-text answer. The first
+suggested choice follows Codex's default, but sending always requires an explicit
+action. Answers retain the native question ID and reply envelope, use the existing
+message/steer path, and preserve the main draft and attachments. Close/Skip only
+hides that page's card and never grants a permission. Indexed question replies and
+older whole-message replies resolve matching cards on live updates and reopening.
+Pending answer UUIDs and outcomes are saved with this host/thread's session draft;
+uncertain delivery remains locked after reload until native history confirms it.
+An accepted answer stays resolved while its persisted history catches up. Ordinary
+assistant prose and bullet lists never create a card.
+
+Each numbered choice has a native radio hit area covering its entire row,
+including the number, text and whitespace, while keyboard radio navigation stays
+native. Run `node tests/web/question-card-browser.mjs` and open its loopback URL
+at desktop/mobile widths to check row hit targets and test answers during
+background updates. The fixture never connects to an owner session.
+
 Chinese IME confirmation, Shift+Enter and mobile Enter do not send drafts;
 desktop Enter sends, and the Send button is available on all devices.
 

@@ -3,7 +3,7 @@ import { mountCapabilities } from './capabilities.js';
 import { mountUsage } from './usage.js';
 import { beginSteer, mountFollowups, settleSteer } from './followups.js';
 import { pageEntryUrl } from './transport.js';
-import { createRequestCard } from './requests.js';
+import { createRequestCard, createAsyncQuestionCard, asyncQuestions, questionReplies } from './requests.js';
 import { mountGoals } from './goals.js';
 
 export function createChatState(threadId) {
@@ -67,6 +67,15 @@ export function installSnapshot(state, { snapshot, cursor }) {
 }
 
 function reconcilePending(state) {
+  if (state.pendingAnswers?.length) {
+    const items = state.turns.flatMap(turn => turn.items ?? []).filter(item => item.type === 'userMessage');
+    const clients = new Set(items.map(item => item.clientId)), answers = new Set();
+    for (const item of items) {
+      const content = (item.content ?? []).filter(part => !['skill', 'mention'].includes(part.type));
+      if (content.length === 1 && content[0].type === 'text') for (const reply of questionReplies(content[0].text)) answers.add(reply.questionItemId);
+    }
+    state.pendingAnswers = state.pendingAnswers.filter(record => !clients.has(record.id) && !answers.has(record.sourceId) && !record.replies.every(reply => answers.has(reply.questionItemId)));
+  }
   if (state.steers?.length) {
     const delivered = new Set(state.turns.flatMap(turn => turn.items.filter(item => item.type === 'userMessage').map(item => item.clientId)));
     state.steers = state.steers.filter(item => !delivered.has(item.clientId));
@@ -401,6 +410,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
   function save(state) {
     try { sessionStorage.setItem(draftKey(state.threadId), JSON.stringify({ text: state.draft, selections: state.selections, pending: state.pending ? { ...state.pending, unknown: true } : null,
       queueRecovery: state.queueRecovery, goalMode: state.goalMode, goalPending: state.goalPending,
+      pendingAnswers: state.pendingAnswers?.map(record => ({ ...record, unknown: !record.accepted })),
       attachments: state.attachments.filter(a => a.status === 'complete').map(a => ({ id: a.id, name: a.name, size: a.size, status: a.status })) })); } catch { /* Drafts still remain in memory when browser storage is unavailable. */ }
   }
   function stateFor(threadId) {
@@ -413,6 +423,9 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
         state.goalMode = saved?.goalMode === true;
         if (typeof saved?.goalPending?.text === 'string' && typeof saved.goalPending.objective === 'string') state.goalPending = saved.goalPending;
         if (typeof saved?.pending?.id === 'string' && typeof saved.pending.text === 'string') state.pending = { ...saved.pending, unknown: true };
+        if (Array.isArray(saved?.pendingAnswers)) state.pendingAnswers = saved.pendingAnswers.filter(record => typeof record?.id === 'string' && typeof record.sourceId === 'string' &&
+          Array.isArray(record.replies) && record.replies.length && record.replies.every(reply => reply && ['questionItemId', 'question', 'answer'].every(key => typeof reply[key] === 'string')))
+          .map(record => ({ ...record, accepted: record.accepted === true, unknown: record.accepted !== true }));
         if (typeof saved?.queueRecovery?.id === 'string' && typeof saved.queueRecovery.queuedSubmissionId === 'string') state.queueRecovery = saved.queueRecovery;
         if (Array.isArray(saved?.attachments)) state.attachments = saved.attachments.filter(a => typeof a.id === 'string' && typeof a.name === 'string').map(a => ({ ...a, status: 'complete' }));
       } catch {}
@@ -719,11 +732,18 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       $('#thread-menu-archive').disabled = $('#thread-menu-delete').disabled = !online || (menuTarget.kind === 'project' ? busyProjects : busyThreads).has(menuTarget.id);
     }
     const state = selected, active = state && activeTurn(state), stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+    const answered = new Set([...(state?.answeredQuestions ?? []), ...(state?.dismissedQuestions ?? []),
+      ...(state?.pendingAnswers ?? []).filter(record => record.accepted).flatMap(record => record.replies.map(reply => reply.questionItemId))]);
+    for (const turn of state?.turns ?? []) for (const item of turn.items ?? []) if (item.type === 'userMessage') {
+      const content = (item.content ?? []).filter(part => !['skill', 'mention'].includes(part.type));
+      if (content.length === 1 && content[0].type === 'text') for (const reply of questionReplies(content[0].text)) answered.add(reply.questionItemId);
+    }
+    const questions = (state?.turns ?? []).flatMap(turn => (turn.items ?? []).flatMap(asyncQuestions)).filter(question => !answered.has(question.id) && !answered.has(question.sourceId));
     if (state) reconcilePending(state);
     const accepted = state?.acceptedTurn;
     if (accepted && (!state.ready || accepted.thread !== state.thread || accepted.cursor.generation !== state.generation || state.turns.some(turn => turn.id === accepted.id))) state.acceptedTurn = null;
     const last = active?.items.at(-1), streaming = last?.type === 'agentMessage' && last._incomplete && messageText(last).trim();
-    const thinking = Boolean(online && state?.ready && (active || state.acceptedTurn) && !state.requests.size && !streaming), thinkingStatus = $('#thinking-status');
+    const thinking = Boolean(online && state?.ready && (active || state.acceptedTurn) && !state.requests.size && !questions.length && !streaming), thinkingStatus = $('#thinking-status');
     if (thinkingStatus.hidden !== !thinking) thinkingStatus.hidden = !thinking;
     if (state) state.online = online;
     goals.render();
@@ -736,7 +756,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     draft.disabled = !state?.ready || !online || state.deleting;
     if (state && !state.composing && draft.value !== state.draft) draft.value = state.draft;
     $('#choose-files').disabled = $('#choose-photos').disabled = !state?.ready || !online || state.deleting;
-    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || Boolean(state.acceptedTurn) || state.commandPending || (state.goalMode && !commandAction(state.draft) && goals.blocked(state)) || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
+    $('#send').disabled = !state?.ready || !online || state.deleting || Boolean(state.pending) || Boolean(state.acceptedTurn) || state.questionSending || state.commandPending || (state.goalMode && !commandAction(state.draft) && goals.blocked(state)) || state.attachments.some(a => a.status !== 'complete') || (!state.draft.trim() && !state.attachments.length);
     $('#stop-turn').hidden = !active; $('#stop-turn').disabled = !online;
     $('#retry-uncertain').hidden = !state?.pending?.unknown;
     $('#turn-status').textContent = state?.pending?.unknown ? '发送状态未知，请先核对会话' : state?.pending ? '正在提交…' : !online ? '连接中断 · 正在重连' : state?.commandPending ? '正在执行命令…' : active ? 'Codex 正在工作' : '';
@@ -748,6 +768,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       const groups = [];
       const prefix = starts.filter(item => item._turnId === turn.id);
       for (const item of prefix.length ? [...prefix, ...turn.items ?? []] : turn.items ?? []) {
+        if (asyncQuestions(item).length) continue;
         if (item.type === 'reasoning' && !itemText(item).trim()) continue;
         const role = item.type === 'userMessage' ? 'user' : ['agentMessage', 'plan', 'imageGeneration'].includes(item.type) ? 'assistant' : item.type === 'subAgentActivity' ? 'subagent' : 'tool';
         let group = groups.at(-1);
@@ -788,7 +809,18 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       const form = createRequestCard({ api, viewId, state, key, native, signal: abort.signal, onResolved(node) { if (nodes.get(key) === node) nodes.delete(key); if (selected === state) draw(); } });
       formNodes.set(key, form); $('#native-requests').append(form);
     }
-    for (const [key, form] of formNodes) if (!state?.requests.has(key)) { form.remove(); formNodes.delete(key); }
+    const asyncKeys = new Set();
+    for (const question of questions) {
+      const key = 'async:' + question.id; asyncKeys.add(key);
+      if (!formNodes.has(key)) {
+        const form = createAsyncQuestionCard({ state, question, signal: abort.signal,
+          onSend: replies => sendQuestion(state, question.sourceId, replies), onDismiss(id) {
+            (state.dismissedQuestions ??= new Set()).add(id); if (selected === state) draw();
+          } });
+        formNodes.set(key, form); $('#native-requests').append(form);
+      }
+    }
+    for (const [key, form] of formNodes) if (!state?.requests.has(key) && !asyncKeys.has(key)) { form.remove(); formNodes.delete(key); }
     if (stick) feed.scrollTop = feed.scrollHeight;
     if (state) save(state);
     if (shownNativeError !== state?.error) { shownNativeError = state?.error; $('#chat-error').textContent = state?.error ?? ''; }
@@ -807,7 +839,7 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     finally { presentationPending = false; if (presentationAgain) { presentationAgain = false; loadPresentation(); } }
   }
   async function submit() {
-    if (!selected?.ready || !online || selected.deleting || selected.pending || selected.acceptedTurn || selected.commandPending) return;
+    if (!selected?.ready || !online || selected.deleting || selected.pending || selected.acceptedTurn || selected.questionSending || selected.commandPending) return;
     const action = commandAction(selected.draft);
     if (action && !selected.composing) {
       const state = selected, commandText = state.draft; state.commandPending = true; draw();
@@ -820,8 +852,15 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
     if (selected.goalMode) { await goals.submit(selected); return; }
     if (selected.attachments.some(a => a.status !== 'complete') || (!selected.draft.trim() && !selected.attachments.length)) return;
     const state = selected, submission = beginSend(state), mode = activeTurn(state) ? followups.sendMode() : 'start';
-    const feedback = beginSteer(state, submission.id, [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n'), mode);
-    save(state); draw(); $('#chat-error').textContent = '';
+    const preview = [submission.text, ...state.attachments.filter(item => submission.uploadIds.includes(item.id)).map(item => item.imageHref ? '［图片］' : item.name)].filter(Boolean).join('\n');
+    $('#chat-error').textContent = '';
+    try { await deliver(state, submission, mode, preview); settleSend(state, submission.id, { ok: true }); }
+    catch (e) { settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
+    finally { save(state); if (selected === state) draw(); }
+  }
+  async function deliver(state, submission, mode, preview) {
+    const feedback = beginSteer(state, submission.id, preview, mode);
+    save(state); if (selected === state) draw();
     try {
       const response = await api('/api/thread/send', { viewId, threadId: state.threadId, draft: { text: submission.text, selections: submission.selections, uploadIds: submission.uploadIds },
         mode, clientUserMessageId: submission.id });
@@ -831,9 +870,29 @@ export function mountChat({ api, viewId, uploadLimitBytes, selectedHost = 'local
       if (turn?.id && turn.status === 'inProgress' && state.ready && response.cursor?.generation === state.generation && response.cursor.seq > (state.snapshotCursor?.seq ?? state.cursor.seq) && !state.turns.some(existing => existing.id === turn.id)) {
         state.acceptedTurn = { id: turn.id, cursor: response.cursor, thread: state.thread };
       }
-      settleSteer(state, feedback); settleSend(state, submission.id, { ok: true });
-    } catch (e) { settleSteer(state, feedback, e); settleSend(state, submission.id, { ok: false, unknown: e.outcome === 'unknown' || !e.status }); showError(e); }
-    finally { save(state); if (selected === state) draw(); }
+      settleSteer(state, feedback); return response;
+    } catch (e) { settleSteer(state, feedback, e); throw e; }
+  }
+  async function sendQuestion(state, sourceId, replies) {
+    if (!alive || selected !== state || !state.ready || !online || state.deleting || state.pending || state.questionSending || state.commandPending || state.acceptedTurn) {
+      throw Object.assign(new Error('请等待当前发送完成后再回答。'), { status: 409 });
+    }
+    if (state.pendingAnswers?.some(record => record.replies.some(previous => replies.some(reply => reply.questionItemId === previous.questionItemId)))) {
+      throw Object.assign(new Error('回答发送状态待核对，请先查看原生会话。'), { status: 409, outcome: 'unknown' });
+    }
+    state.questionSending = true;
+    const pending = { id: crypto.randomUUID(), sourceId, replies, unknown: false };
+    (state.pendingAnswers ??= []).push(pending);
+    const text = '<send_user_message_question_reply>\n' + JSON.stringify(replies) + '\n</send_user_message_question_reply>';
+    try {
+      await deliver(state, { id: pending.id, text, selections: [], uploadIds: [] }, activeTurn(state) ? 'steer' : 'start', replies.map(reply => reply.question + '\n\n' + reply.answer).join('\n\n'));
+      pending.accepted = true;
+      for (const reply of replies) (state.answeredQuestions ??= new Set()).add(reply.questionItemId);
+    } catch (error) {
+      if (error.outcome === 'unknown' || !error.status) pending.unknown = true;
+      else state.pendingAnswers = state.pendingAnswers.filter(record => record !== pending);
+      throw error;
+    } finally { state.questionSending = false; save(state); if (alive && selected === state) draw(); }
   }
   function information(title, text) { $('#info-title').textContent = title; $('#info-body').textContent = text; $('#info-dialog').showModal(); }
   async function restore(threadId, selectRestored = false) {

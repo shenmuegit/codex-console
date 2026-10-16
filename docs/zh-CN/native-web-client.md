@@ -18,6 +18,18 @@
 百分比基线，不增加自定义上下文上限。
 输入框外层留白不可选中，不会在那里生成页面文本光标，也不会自动聚焦或挪动输入区光标。
 消息编辑区支持点击定位、文字选择和键盘编辑。
+只读聊天记录从初始样式开始就使用透明光标，鼠标按住期间也不显示。
+文本输入及可编辑区域保留正常光标，拖选、复制和键盘聚焦继续使用浏览器原生行为；
+不再通过松开鼠标后清理选区处理，也不转移焦点或修改草稿。
+
+用户消息按实际文字和图片宽度收拢，并贴齐聊天内容区右侧。用户图片在固有尺寸计算时
+使用明确的 320 px 最大宽度，同时允许 flex 项在窄屏继续缩小，避免预览补全后原图
+宽度撑大消息容器、缩略图右侧留下空白，造成消息看似居中的现象。
+运行 `node tests/web/message-layout-browser.mjs`，打开输出的回环地址，检查 320、375、
+760、820 和 1280 px 宽度。浏览器断言覆盖纯文字、延迟加载的横图/竖图和多图；
+使用合成数据，不连接所有者会话。它还会在交互前及指针按下/松开时检查只读记录的
+光标样式，并确认输入框光标仍可见。
+
 界面不显示“已连接”、权限摘要、闲置时的快捷键提示及“更新用量”按钮；打开用量时仍读取
 原生数据并跟随原生通知更新，断线、提交中及错误状态继续显示。
 
@@ -192,17 +204,166 @@ node web/service.mjs stop
 - 私有配置、密码、证书及环境：`~/.config/codex-console-web/`。
 - 独立原生数据/桌面配置/工作目录：`~/.local/state/codex-console-web/integration/`；
   网页偏好及上传继续保留在其 `web/` 子目录。
-- 代码位于托管工作树 `/home/desktop/.codex/worktrees/native-web-client/codex-console`。
+- 代码位于 `main` 工作目录 `/home/desktop/Documents/Codex/codex-console`。
 - 按所有者要求停止并禁用旧 Xpra 服务 `codex-console.service`，释放 15443；
   其中的原桌面及后端进程已结束，独立原生后端继续为网页客户端提供服务。
 
 公网入口已通过直连 HTTPS 登录、外来 Host/Origin 拒绝、原生模型读取、SSE 快照恢复和退出验证。
-密码、私钥、原生数据及上传文件继续保留在原私有位置。
+密码、原生数据及上传文件继续保留在原私有位置。
 
 规范 Host/Origin 为 `https://117.72.158.35:15443`。私有配置使用
-`cert-public-117.72.158.35.pem`，证书 SAN 匹配公网 IP；该证书为自签名，访问设备需信任/导入
-当前证书。检查禁用代理变量并直连公网 IP，外部设备仍需人工验收。
-公网 IP 或主机名变化时，同时更新配置入口和匹配证书；其他 Host/Origin 继续拒绝。
+`~/.config/codex-console-web/` 下原有的 `cert-public-117.72.158.35.pem` 和
+`key.pem`。自签名证书的 SAN 匹配该 IP，访问设备需信任/导入该证书。
+2026-10-15，因客户端链路上携带域名 SNI 的 TLS 握手停滞，按所有者要求恢复 IP 访问。
+恢复后，客户端在正常核验证书的情况下约 0.14 秒返回页面，登录、原生模型读取、SSE
+和退出均通过；域名链路受干扰的具体来源尚未确认。域名证书和私有的
+`config.domain-before-ip-*.json` 配置备份保留在仓库外。检查不经过代理，显式信任
+IP 证书，外部设备仍需人工验收。公网 IP 变化时，同时更新入口和匹配证书；
+其他 Host/Origin 继续拒绝。
+
+更新此工作目录后，以 `desktop` 用户只重启 `codex-console-native-web.service`，
+并在登录前核对入口及每个浏览器模块：
+
+```bash
+git pull --ff-only origin main
+systemctl --user restart codex-console-native-web.service
+curl --noproxy '*' --cacert "$HOME/.config/codex-console-web/cert-public-117.72.158.35.pem" \
+  -I https://117.72.158.35:15443/transport.js
+```
+
+模块须在没有登录 Cookie 时返回 200 和 `Content-Type: text/javascript`。旧进程可能
+保留旧的资产路由，却从磁盘读取新页面，导致模块收到 401 JSON，整个应用无法挂载。
+`tests/web/static-assets.test.mjs` 覆盖全部浏览器模块和样式的公开 GET/HEAD，线上
+Web 探针也检查所有模块。更新时保留已有未提交改动和私有配置。服务器 HTML 不包含
+内联脚本或 style 元素；修改 CSP 前应先定位浏览器注入内容的来源，继续保留严格策略。
+页面显式声明 PNG 图标 `/favicon.ico`，公开 GET/HEAD 复用现有的
+`assets/codex-console-icon.png`，不要求先登录。
+
+## 绑定域名
+
+使用已有的 Cloudflare 托管域名 `meolord.com`，子域名选用 `console.meolord.com`。
+2026-10-15 查询到主域名的公开 NS 为 `everton.ns.cloudflare.com` 和
+`paislee.ns.cloudflare.com`，所选子域名最初返回 NXDOMAIN。所有者已添加灰云 A 记录，
+公开 DNS 已确认 `console.meolord.com` 解析为 `117.72.158.35`，没有 AAAA 记录。
+此前已验证域名绑定，地址为 `https://console.meolord.com:15443`，Let's Encrypt
+证书通过所有者手动添加 TXT 记录完成验证。
+应用当前使用上方恢复后的 IP 入口，以下步骤供将来按需切回域名时使用。
+
+已在 `~/.config/.wrangler/config/default.toml` 找到并成功刷新现有 Wrangler 登录。
+这份授权可以读取 active 状态的 `meolord.com`，但 DNS 记录 API 返回 HTTP 403，
+Cloudflare 错误码为 10000。授权包含 `zone:read`，没有 DNS 编辑 scope。由所有者
+手动操作 DNS，以下手动证书流程无需 DNS API Token。所有凭据继续保存在仓库外。
+
+在 Cloudflare 的 [DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
+确认名称未被占用后，添加以下记录：
+
+| 字段 | 值 |
+| --- | --- |
+| 类型 | A |
+| 名称 | console |
+| IPv4 地址 | 117.72.158.35 |
+| 代理状态 | 仅 DNS（灰云） |
+| TTL | 自动 |
+
+Cloudflare 的普通代理不支持
+[15443 端口](https://developers.cloudflare.com/fundamentals/reference/network-ports/)。
+灰云模式直接连接服务器，需要保留入站 TCP 15443 的访问。证书使用 DNS-01 验证，
+无需开放 80 或 443。以下命令从项目目录以 `desktop` 用户执行，使用 acme.sh 3.1.6
+和本机已有的 Bash、OpenSSL、curl，无需 sudo。工具脚本及私有 ACME 数据保存在仓库外。
+
+1. 下载固定版本的上游脚本，使用[手动 DNS 验证](https://github.com/acmesh-official/acme.sh/wiki/dns-manual-mode)
+   申请证书。
+
+   ```bash
+   domain=console.meolord.com
+   acme_home="$HOME/.local/lib/codex-console-acme"
+   acme="$HOME/.config/codex-console-web/acme-manual"
+   umask 077
+   install -d -m 700 "$acme_home" "$acme" &&
+   curl --fail --location --silent --show-error \
+     https://raw.githubusercontent.com/acmesh-official/acme.sh/3.1.6/acme.sh \
+     --output "$acme_home/acme.sh" &&
+   bash -n "$acme_home/acme.sh" &&
+   bash "$acme_home/acme.sh" --issue --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt --dns --keylength ec-256 -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   初次申请会输出验证值并以状态码 3 退出，等待手动配置 DNS。
+   在 `meolord.com` 区域添加 TXT 记录：
+
+   | 字段 | 值 |
+   | --- | --- |
+   | 类型 | TXT |
+   | 名称 | _acme-challenge.console |
+   | 内容 | acme.sh 本次输出的完整验证值 |
+   | TTL | 自动 |
+
+   等公开 DNS 能查到完全一致的 TXT 值后，执行以下命令继续：
+
+   ```bash
+   bash "$acme_home/acme.sh" --renew --ecc --home "$acme_home" --config-home "$acme" \
+     --server letsencrypt -d "$domain" \
+     --yes-I-know-dns-manual-mode-enough-go-ahead-please
+   ```
+
+   每次申请使用新验证值，不复用旧值；只有签发成功后才进行第 2 步。
+   验证成功后可以删除这条 TXT 记录。
+
+2. 将证书和私钥复制到仓库外、仅所有者可读的目录。新入口验证通过前保留原 IP
+   证书和私钥，便于恢复。
+
+   ```bash
+   domain_tls="$HOME/.config/codex-console-web/domain-tls"
+   install -d -m 700 "$domain_tls" &&
+   install -m 600 "$acme/${domain}_ecc/fullchain.cer" "$domain_tls/fullchain.pem" &&
+   install -m 600 "$acme/${domain}_ecc/$domain.key" "$domain_tls/privkey.pem"
+   ```
+
+3. 编辑 `~/.config/codex-console-web/config.json`，只修改以下四个字段，保留其余
+   所有字段，特别是凭据和原生路径：
+
+   ```json
+   {
+     "origin": "https://console.meolord.com:15443",
+     "port": 15443,
+     "tlsCert": "/home/desktop/.config/codex-console-web/domain-tls/fullchain.pem",
+     "tlsKey": "/home/desktop/.config/codex-console-web/domain-tls/privkey.pem"
+   }
+   ```
+
+4. 先校验配置，成功后才执行重启和 curl 检查，**只重启网页服务**。
+
+   ```bash
+   if node --input-type=module <<'JS'
+   import { readFile } from 'node:fs/promises';
+   import { validateConfig } from './web/service.mjs';
+   const path = process.env.HOME + '/.config/codex-console-web/config.json';
+   await validateConfig(JSON.parse(await readFile(path, 'utf8')), path);
+   console.log('Configuration and certificate validated.');
+   JS
+   then
+     systemctl --user restart codex-console-native-web.service &&
+     curl --noproxy '*' --fail --show-error --head \
+       "https://$domain:15443/"
+   fi
+   ```
+
+   应在正常验证证书的情况下得到 HTTP 200，然后通过域名入口重新登录；不要跳过
+   TLS 校验。修改后原 IP URL 的 Host 不再被接受。验证失败时，恢复原先的
+   `origin`、`tlsCert` 和 `tlsKey`，再重启网页服务。
+
+如果已经部署 Isola 插件包，需将 `VITE_CODEX_CONSOLE_BACKEND_URL` 改为新来源后
+重新构建并发布；旧构建仍会请求原 IP 入口。参见 [HTTPS 用户访问](#https-用户访问)。
+
+证书到期前，重新执行第 1 步，手动发布本次新的 TXT 值；续期成功后重新执行第 2 步
+并重启网页服务。手动 DNS 验证续期时仍需要所有者操作，本机没有安装自动续期任务。
+当前证书于 2027-01-13 到期。
+
+2026-10-15 实际验收通过公开 CA 信任、全部 14 个浏览器资源、未登录 401、外来
+Host/Origin 403、登录/退出、原生模型读取和 SSE 初始 status/resync。
+只重启网页服务，原生后端 PID 保持不变，没有请求推理。未来续期和外部设备访问
+尚未验证。签发成功后可删除临时的 `_acme-challenge.console` TXT 记录，保留 A 记录。
 
 ## 重启与回退
 
@@ -448,6 +609,13 @@ SDK 桥接由整个文档共享，在离开文档时关闭；组件卸载撤销�
 独立网页仍自动挂载并保留原有 `api` 导出。SSE 出错时继续使用 EventSource 原有
 重连行为，离开页面才关闭流。
 
+登录只通过 `POST /api/login` 的 JSON 请求体发送访问密码。HTML 表单显式指定固定的
+POST 地址，密码输入框不带 `name`；脚本被拦截或加载失败时，原生表单不会把密码写入
+URL 或请求体，空表单会被仅接受 JSON 的接口拒绝。含 `password` 参数的旧入口链接
+在加载页面前重定向到清理后的同一路径，插件也会替换当前历史项，同时保留设备、会话、
+侧边聊天和片段导航。URL 中的密码不参与认证。这无法删除已有浏览器历史或外部日志
+中的副本；曾经暴露的访问密码需要轮换。
+
 提交密码后立即清空输入框，并在进入工作区之前通过有凭据的 `/api/status` 核对 Cookie。
 若仍返回 401，登录页显示“无法保持登录会话，可能被浏览器 Cookie 策略阻止。”，
 不自动重复登录或发送消息。浏览器 Cookie 策略仍可能阻止跨站会话；构建归档通过
@@ -539,7 +707,7 @@ Isola 与本后端分别登录；Isola 用户不会自动获得独立原生数�
 唯一依赖固定为 `markdown-it` 15.0.2，禁用原始 HTML、限制链接协议，不自动加载外部图片。
 文本立即流式显示，安全 HTML 合并为最多每 100 毫秒更新一次。
 
-原生审批、权限、问题及 MCP 表单/链接请求在聊天滚动区域内显示为卡片。问题卡片显示
+原生审批、权限、问题及 MCP 表单/链接请求在输入框上方显示为卡片。问题卡片显示
 选项及说明，原生允许时可填写其他回答；秘密输入使用密码框。只有原生表单明确提供默认值
 才预选。MCP 表单支持基本字段、带标题的单选/多选及原生 `form`、`openai/form`、
 `openaiForm` 模式，提交前检查必填项及数值范围。授权卡片显示命令、目录和请求的权限，
@@ -548,6 +716,20 @@ Isola 与本后端分别登录；Isola 用户不会自动获得独立原生数�
 从卡片接受，仍可拒绝或取消。响应保留原始请求 ID 及所属会话，禁止重复回答；失败保留
 输入，原生解决请求或重连后移除失效卡片，流式更新不重置表单。表单中的 `apiKey`、
 `password` 等字段名作为字段定义保留，其他原生凭据仍从浏览器事件中过滤。
+
+原生 `agentMessage` 返回 `delivery: "async"` 和结构化 `questions` 时，也会显示为保留状态的
+问题卡片，替代后备的普通文字及项目符号列表。每题提供编号选项和自由输入；首个推荐选项
+沿用 Codex 默认预选，但必须明确点击发送才提交。回答保留原生问题 ID 和回复格式，复用
+已有消息／引导通道，保留主输入框的草稿及附件。关闭／跳过仅隐藏当前页面的卡片，不授予
+任何权限。原生实时记录及重开历史都识别逐题回答和旧版整条问题消息的回答。
+待确认回答的 UUID、内容和结果与当前主机／会话草稿一起保存在会话存储中；结果未知时，
+刷新后仍锁定卡片，等待原生历史确认。已接收的回答在历史同步前保持已解决状态。
+普通回复及项目符号列表不会被推断成可操作卡片。
+
+编号选项的原生单选控件覆盖整行，编号、文字和留白都可直接点击，键盘切换仍使用
+浏览器原生行为。运行 `node tests/web/question-card-browser.mjs`，打开回环地址，
+在桌面及窄屏检查点击命中区域，并在后台更新期间测试选择与发送；夹具不连接所有者会话。
+
 中文输入法确认、Shift+Enter 及手机 Enter 不发送草稿；桌面 Enter 发送，
 所有设备均可使用发送按钮。
 

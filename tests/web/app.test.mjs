@@ -23,6 +23,22 @@ function pluginFixture(t, respond) {
 }
 const settle = async () => { for (let i = 0; i < 15; i++) await delay(0); };
 
+test('plugin entry removes password queries without losing navigation or history state', async t => {
+  const unauthorized = { ok: false, status: 401, json: async () => ({ error: { message: 'Signed out' } }) };
+  const { dom, calls } = pluginFixture(t, () => unauthorized);
+  dom.location.href = 'https://plugin.example.test/dist/index.html?password=fixture-secret&host=remote&thread=t&password=second-secret&side=1#anchor';
+  history.state = { hostState: true };
+  let savedState;
+  history.replaceState = (state, _title, url) => { savedState = state; dom.location.href = String(url); };
+  const { mountApp } = await import('../../web/public/app.js?clean-login-url');
+  const app = mountApp({ backendOrigin: 'https://codex.example.test' }); t.after(() => app.dispose());
+  assert.equal(dom.location.href, 'https://plugin.example.test/dist/index.html?host=remote&thread=t&side=1#anchor');
+  assert.deepEqual(savedState, { hostState: true });
+  assert.equal(dom.get('password').value, '');
+  await settle();
+  assert.equal(calls.some(path => path.includes('password') || path.endsWith('/api/login')), false);
+});
+
 test('app_unmount_cleans_streams_and_menu', async t => {
   const { dom, streams, calls, viewport } = pluginFixture(t);
   const { mountApp } = await import('../../web/public/app.js?plugin-lifecycle');

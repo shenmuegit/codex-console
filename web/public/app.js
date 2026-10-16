@@ -11,6 +11,9 @@ export function mountApp({ backendOrigin, registerMenu } = {}) {
   const transport = createTransport(backendOrigin), abort = new AbortController();
   const $ = selector => document.querySelector(selector);
   const page = new URL(location.href), selectedHost = page.searchParams.get('host') ?? 'local';
+  if (page.searchParams.has('password')) {
+    page.searchParams.delete('password'); history.replaceState(history.state, '', page.href);
+  }
   document.body.dataset.sideChat = String(page.searchParams.get('side') === '1');
   let events, chat, connections, automations, unregisterMenu, leaving = false, initialization = 0, loggingIn = false;
   const hostPath = path => {

@@ -73,7 +73,8 @@ nav { display: grid; gap: 2px; }
 .work-layout[data-sidebar-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
 .work-layout[data-sidebar-collapsed="true"] .sidebar { display: none; }
 .work-layout[data-sidebar-collapsed="true"] .sidebar-open { display: inline-flex; }
-.chat-feed { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(24px, calc((100% - var(--content-width)) / 2)) 28px; overscroll-behavior: contain; }
+.chat-feed { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(24px, calc((100% - var(--content-width)) / 2)) 28px; overscroll-behavior: contain; caret-color: transparent; }
+.chat-feed :is(input, textarea, [contenteditable]:not([contenteditable="false"])) { caret-color: auto; }
 #messages { width: 100%; }
 .thinking-status { width: fit-content; padding: 12px 0; color: var(--muted); font-size: 14px; line-height: 1.6; background: currentColor linear-gradient(to left, currentColor, var(--surface) 50%, currentColor); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-position: -100% top; background-repeat: no-repeat; background-size: 50% 200%; animation: codex-thinking-shimmer 3s .6s infinite; }
 @keyframes codex-thinking-shimmer { 0% { background-position: -100% top; } 70%, 100% { background-position: 250% top; } }
@@ -180,7 +181,8 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .context-track { opacity: .2; }
 #context-ring { stroke-dasharray: 0 100; transform: rotate(-90deg); transform-origin: center; }
 .chat-error { width: min(100%, var(--content-width)); margin: 0 auto; padding: 4px 24px; font-size: 12px; }
-#native-requests { width: 100%; }
+#native-requests { flex: 0 0 auto; width: min(100%, calc(var(--content-width) + 48px)); margin: 0 auto; padding: 0 24px; max-height: 45dvh; overflow-y: auto; scrollbar-width: none; }
+#native-requests::-webkit-scrollbar { display: none; }
 .native-form { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 8px; background: var(--surface); overflow-wrap: anywhere; }
 .native-form fieldset { min-width: 0; border: 0; padding: 8px 0; margin: 0; display: grid; gap: 8px; }
 .native-form legend { padding: 0; font-weight: 600; }
@@ -196,6 +198,21 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .request-option small { margin-top: 3px; color: var(--muted); }
 .request-actions { flex-wrap: wrap; }
 .request-link { display: inline-block; margin: 12px 0; color: var(--link); }
+.async-question-card { border-radius: 22px; padding: 16px; }
+.question-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.question-heading > span::before { content: '?'; display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 8px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
+.async-question-card legend { margin-bottom: 10px; }
+.async-question-card .request-option { position: relative; align-items: center; min-height: 42px; padding: 8px 12px 8px 44px; border: 0; border-radius: 12px; }
+.async-question-card .request-option input { position: absolute; inset: 0; z-index: 1; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.async-question-card .request-option:has(input:checked) { background: var(--hover); }
+.async-question-card .request-option:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.async-question-card .question-number { position: absolute; left: 10px; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--surface); }
+.question-arrow { margin-left: auto; color: var(--muted); visibility: hidden; }
+.request-option:has(input:checked) .question-arrow { visibility: visible; }
+.question-custom input { border: 0; background: transparent; min-height: 42px; }
+.async-question-card .request-actions { justify-content: flex-end; margin-top: 4px; }
+.async-question-card .request-actions button { border: 1px solid var(--border); border-radius: 18px; padding: 6px 12px; }
+@media (max-width: 760px) { #native-requests { padding-inline: 12px; } .question-custom input { font-size: 16px; } }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 #attachments { display: flex; flex-wrap: wrap; gap: 8px; max-height: 190px; overflow-y: auto; }
 .attachment { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; max-width: 100%; margin-bottom: 8px; }
@@ -212,6 +229,7 @@ body[data-side-chat="true"] .sidebar, body[data-side-chat="true"] .sidebar-open 
 .message-files { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
 .message-files a { display: block; overflow-wrap: anywhere; font-size: 12px; }
 .chat-image { max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: 10px; display: block; cursor: zoom-in; }
+.message-user .chat-image { max-width: 320px; min-width: 0; }
 #image-viewer { width: min(1100px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 40px 12px 12px; overflow: hidden; }
 #image-viewer-image { display: block; width: 100%; max-height: calc(100dvh - 88px); object-fit: contain; }
 #close-image-viewer { position: absolute; top: 4px; right: 8px; }

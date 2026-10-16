@@ -2,6 +2,74 @@ const element = (tag, text, className) => {
   const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node;
 };
 const formModes = ['form', 'openai/form', 'openaiForm'];
+export function asyncQuestions(item) {
+  if (item.type !== 'agentMessage' || typeof item.id !== 'string' || !item.id || item.delivery !== 'async' || !Array.isArray(item.questions) || !item.questions.length ||
+      item.questions.some(q => typeof q?.title !== 'string' || !q.title.trim() || q.options != null && (!Array.isArray(q.options) || !q.options.length || q.options.some(option => typeof option !== 'string' || !option.trim())))) return [];
+  return item.questions.map((q, index) => ({ ...q, sourceId: item.id, id: JSON.stringify(['request_user_input_async', item.id, index]) }));
+}
+
+export function questionReplies(text) {
+  if (typeof text !== 'string') return [];
+  text = text.trim();
+  if (text.startsWith('# Context from my IDE setup:\n')) {
+    const marker = '\n## My request for Codex:\n', index = text.lastIndexOf(marker);
+    if (index < 0) return [];
+    text = text.slice(index + marker.length).trim();
+  }
+  const start = '<send_user_message_question_reply>', end = '</send_user_message_question_reply>';
+  if (!text.startsWith(start) || !text.endsWith(end)) return [];
+  try {
+    const value = JSON.parse(text.slice(start.length, -end.length)), replies = Array.isArray(value) ? value : [value];
+    return replies.length && replies.every(reply => reply && ['questionItemId', 'question', 'answer'].every(key => typeof reply[key] === 'string')) ? replies : [];
+  } catch { return []; }
+}
+
+export function createAsyncQuestionCard({ state, question, onSend, onDismiss, signal }) {
+  const form = element('form', null, 'native-form async-question-card'), header = element('div', null, 'question-heading');
+  const close = element('button', '×', 'icon-button'); close.type = 'button'; close.setAttribute('aria-label', '关闭问题');
+  header.append(element('span', '问题', 'muted'), close); form.append(header);
+  form.setAttribute('aria-label', question.title);
+  const group = element('fieldset'), title = element('legend', question.title); group.append(title); form.append(group);
+  const name = crypto.randomUUID(), options = question.options ?? [];
+  const inputs = options.map((value, index) => {
+    const input = option(group, name, value, value); input.checked = index === 0;
+    input.parentNode.append(element('span', String(index + 1), 'question-number'), element('span', '→', 'question-arrow'));
+    return input;
+  });
+  const label = element('label', null, 'question-custom'), input = element('input'); input.type = 'text'; input.maxLength = 8192;
+  input.placeholder = options.length ? '或自行撰写回复' : '撰写回复'; input.setAttribute('aria-label', '自定义回答'); label.append(input); form.append(label);
+  const status = element('p', '', 'error'), actions = element('div', null, 'toolbar request-actions'); status.setAttribute('role', 'status');
+  const skip = element('button', '跳过'), send = element('button', '发送', 'primary'); skip.type = 'button'; send.type = 'submit'; actions.append(skip, send); form.append(status, actions);
+  const pending = state.pendingAnswers?.find(record => record.replies.some(reply => reply.questionItemId === question.id));
+  if (pending) {
+    const answer = pending.replies.find(reply => reply.questionItemId === question.id).answer;
+    for (const option of inputs) option.checked = option.value === answer;
+    if (!options.includes(answer)) input.value = answer;
+    form.dataset.sending = 'true'; skip.disabled = close.disabled = true;
+    status.textContent = '回答发送状态待核对，请先查看原生会话，避免重复发送。';
+  }
+  const answer = () => input.value.trim() ? input.value : inputs.find(option => option.checked)?.value;
+  const refresh = () => { send.disabled = Boolean(form.dataset.sending) || !answer()?.trim(); };
+  input.addEventListener('input', () => { for (const option of inputs) option.checked = false; refresh(); }, { signal });
+  for (const option of inputs) option.addEventListener('change', () => { input.value = ''; refresh(); }, { signal });
+  const dismiss = () => { if (!form.dataset.sending) onDismiss(question.id); };
+  close.addEventListener('click', dismiss, { signal }); skip.addEventListener('click', dismiss, { signal });
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); if (event.isComposing || form.dataset.composing || form.dataset.sending || !answer()?.trim()) return;
+    if (!state.ready || !state.online || state.deleting) { status.textContent = '请等待会话重新连接后再回答。'; return; }
+    form.dataset.sending = 'true'; refresh(); skip.disabled = close.disabled = true; status.textContent = '正在发送…';
+    try { await onSend([{ questionItemId: question.id, question: question.title, answer: answer() }]); }
+    catch (error) {
+      const unknown = error.outcome === 'unknown' || !error.status;
+      status.textContent = unknown ? '回答发送状态待核对，请先查看原生会话，避免重复发送。' : error.message;
+      if (!unknown) { delete form.dataset.sending; skip.disabled = close.disabled = false; refresh(); }
+    }
+  }, { signal });
+  form.addEventListener('compositionstart', () => { form.dataset.composing = 'true'; }, { signal });
+  form.addEventListener('compositionend', () => { delete form.dataset.composing; }, { signal });
+  refresh(); return form;
+}
+
 function decisionLabel(decision) {
   const labels = { accept: '允许一次', acceptForSession: '允许此会话', decline: '拒绝', cancel: '取消并停止' };
   if (typeof decision === 'string') return Object.hasOwn(labels, decision) ? labels[decision] : undefined;
