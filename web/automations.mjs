@@ -38,7 +38,8 @@ export function createNativeAutomations({ home, onChange } = {}) {
       const root = join(home, 'sqlite');
       if (safeDirectory(root)) {
         runtimeWatcher = watch(root, { persistent: false }, (_event, name) => {
-          if (/^codex(?:-dev)?\.db(?:-(?:wal|shm|journal))?$/.test(String(name))) changed();
+          // SQLite readers update -shm too; watching it makes list reads trigger another refresh.
+          if (/^codex(?:-dev)?\.db(?:-(?:wal|journal))?$/.test(String(name))) changed();
         });
         runtimeWatcher.on('error', () => { runtimeWatcher?.close(); runtimeWatcher = null; });
       }

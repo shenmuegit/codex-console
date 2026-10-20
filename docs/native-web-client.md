@@ -222,8 +222,11 @@ scheduler and sends no model turn when saving a task. Full prompts load only whe
 editing. Writes preserve unknown native fields and reject stale versions so another
 client's changes are not overwritten. Deleting preserves conversation history and
 task memory. Only local tasks are managed; remote devices and cloud-owned tasks
-are not modified. Local task-file changes refresh the open panel over SSE while
-preserving edits. Replies in original conversations use the passive native history
+are not modified. Local task-file and runtime database changes refresh the open panel over SSE while
+preserving edits. SQLite shared-memory (`-shm`) changes are ignored because even
+read-only queries update that file; list reads cannot cause a continuous refresh loop.
+Database, WAL and rollback-journal changes still update the next/last execution times.
+Replies in original conversations use the passive native history
 synchronization described below, including when another process owns the writer.
 Production acceptance created a disposable one-time task, opened its conversation
 in the original desktop, and received its native reply over authenticated HTTPS/SSE.

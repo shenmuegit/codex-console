@@ -360,3 +360,23 @@ test('native runtime database updates notify listeners without watching conversa
   await writeFile(join(f.home, 'sqlite', 'thread_history.sqlite'), 'unrelated');
   await delay(250); assert.equal(changes, unchanged);
 });
+
+for (const name of ['codex.db', 'codex-dev.db']) test(`reading ${name} in WAL mode does not trigger a refresh loop`, async t => {
+  let changes = 0;
+  const f = await fixture(t, { onChange() { changes++; } });
+  await nativeFile(f); const db = database(f.home, name);
+  execFileSync('python3', ['-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("PRAGMA journal_mode=WAL"); c.close()', db]);
+  await f.store.list(); await delay(250);
+  const before = changes;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    assert.equal((await f.store.list()).items[0].nextRunAt, 1800000000000);
+    assert.equal((await f.store.read('native-task')).item.lastRunAt, 1700000000020);
+    await delay(250);
+    assert.equal(changes, before, 'Read-only SQLite shared-memory updates must not notify the browser');
+  }
+  execFileSync('python3', ['-c', 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("UPDATE automations SET next_run_at=1800000000999, last_run_at=1700000000999 WHERE id=\'native-task\'"); c.commit(); c.close()', db]);
+  for (let attempt = 0; attempt < 30 && changes === before; attempt++) await delay(50);
+  assert.ok(changes > before, 'Committed runtime updates must still notify the browser');
+  const { item } = await f.store.read('native-task');
+  assert.equal(item.nextRunAt, 1800000000999); assert.equal(item.lastRunAt, 1700000000999);
+});
