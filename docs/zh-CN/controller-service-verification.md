@@ -17,7 +17,7 @@ TLS 身份和原生后台/home，修改 Web 源码目录、可选控制端配置
 控制/事件及附件写入/读取已通过，两个真实官方实例的并发控制及隔离也已通过。
 恢复检查记录见下文。公开文档未确立第三方控制端 SDK；
 当前协议是特定版本的观察实现。软件 vTPM 是实验，不代表物理硬件保护；
-尚未配置重启启动。不能依据夹具宣称总体完成。
+现已配置开机启动，恢复记录见下文，机器重启仍未验证。不能依据夹具宣称总体完成。
 
 ## 当前部署（2026-10-12）
 
@@ -174,3 +174,49 @@ home 和独立空工作目录。原生 `remoteControl/enable` 与
 停止隔离运行实例，并删除复制的凭据文件。03:03 UTC，所有者 API 确认登记
 仍为 ready，已配对设备只剩在线 Windows 桌面客户端，临时 CLI 主机已移除。
 原生后台与 Web 保持运行，桌面 GUI 保持停止状态。
+
+## TPM 缺失导致设备连接禁用（2026-10-22）
+
+经所有者登录及证书校验的 HTTPS 控制端状态返回 200，内容为
+`phase: unavailable`、`enrolled: false`、`enrollmentPreserved: true` 和
+`errorCode: DEVICE_KEY_UNAVAILABLE`；设备清单返回
+409/CONTROLLER_NOT_ENROLLED。私人注册记录和原生密钥封装文件仍在。
+Web 日志显示 `/dev/tpmrm0` 无法打开，系统中没有运行中的 `swtpm`、TPM
+设备或已加载的 `tpm_vtpm_proxy` 模块。原有实验性 vTPM 没有开机服务。
+授权按钮禁用是为了保护已有注册身份，配对则需要能正常使用的密钥。
+
+恢复必须使用原 vTPM 的加密持久状态和原加密密钥。首次初始化脚本会拒绝
+已有状态，不能用它重新初始化替代身份。
+[内核代理文档](https://cdn.kernel.org/doc/html/latest/security/tpm/tpm_vtpm_proxy.html)
+说明如何创建设备并将文件描述符传给模拟器；
+[swtpm 0.7.1 手册](https://github.com/stefanberger/swtpm/blob/v0.7.1/man/man8/swtpm.pod)
+说明持久状态、加密及降低进程权限的选项。
+
+私有恢复安装脚本、启动脚本和 systemd unit 保存在仓库外。它们要求已有
+非空持久状态及 32 字节加密密钥，拒绝替换运行中的 TPM 进程或设备，启动前
+备份原状态，将运行组件安装为 root 所有，并启用开机服务。原控制端注册
+记录和密钥封装文件予以保留。在 root 终端执行已审阅的私有安装脚本，或由
+可使用 sudo 的管理员执行：
+
+```bash
+sudo /bin/bash /absolute/private/path/install-recovery.sh
+```
+
+随后检查服务 active、`/dev/tpmrm0` 仅应用用户可访问、原密钥能签名、HTTPS
+控制端状态为 ready、设备清单成功；在设备弹窗刷新清单，确认配对按钮可用。
+
+安装脚本已通过 root 执行。系统服务 `codex-console-controller-vtpm.service`
+为 active、enabled；`/dev/tpm0` 和 `/dev/tpmrm0` 权限为 600，属于应用用户。
+原注册记录和密钥封装文件的校验和与恢复前一致，原公钥读取和新签名验证
+均通过。Web 与原生后台 PID 保持不变。
+
+经证书校验的 HTTPS 控制端接口随后返回 200、`enrolled: true`、`phase: ready`，
+设备清单返回 200，保留一个已有配对设备。用这些实机响应挂载实际连接界面，
+确认配对按钮启用、首次授权区域隐藏。用截图旧连接码进行一次配对，已到达
+官方接口并返回 410 Gone（对外为 502/REMOTE_REQUEST_FAILED）；未重试，
+需要被控客户端提供新码。已有配对设备当时未在线，因此本次恢复尚不能证明
+远端客户端已实际连通。
+
+Shell 及内嵌 Python 语法、状态保留断言、非 root 拒绝、备份顺序和 systemd
+unit 检查均通过，控制端、HTTP 和连接界面回归检查通过 49/49。机器重启和
+浏览器实际交互仍未验证；软件 vTPM 仍属实验。

@@ -23,8 +23,9 @@ have passed. Real remote control/events and attachment write/read have passed;
 two real official runtimes have also passed concurrent control and isolation.
 Recovery checks are recorded below. Public documentation does not establish a supported third-party
 controller SDK; the observed protocol is version-specific. Software vTPM is an
-experiment and does not prove physical hardware protection. Reboot startup is
-not configured. Do not claim overall completion from fixtures.
+experiment and does not prove physical hardware protection. Boot startup is now
+configured as recorded below; machine reboot remains unverified. Do not claim
+overall completion from fixtures.
 
 ## Current deployment (2026-10-12)
 
@@ -217,3 +218,59 @@ environment ID; remote control was disabled, its isolated runtime stopped and
 its copied credential file removed. At 03:03 UTC, the owner API confirmed ready
 enrollment, one paired online Windows desktop and no temporary CLI host. The
 native backend and Web remained active; the desktop GUI remained inactive.
+
+## Disabled device connection with a missing TPM (2026-10-22)
+
+The authenticated, certificate-verified HTTPS controller status returned 200
+with `phase: unavailable`, `enrolled: false`, `enrollmentPreserved: true`, and
+`errorCode: DEVICE_KEY_UNAVAILABLE`. The host inventory returned
+409/CONTROLLER_NOT_ENROLLED. The saved enrollment and native wrapped-key record
+were still present. The Web journal reported failure to open `/dev/tpmrm0`;
+there was no running `swtpm`, TPM device, or loaded `tpm_vtpm_proxy` module.
+The previous experimental vTPM had no boot service. The disabled authorization
+button protects the existing enrollment, and pairing requires a usable key.
+
+Recovery must restore the original encrypted vTPM persistent state with its
+original encryption key. The initial provisioning script refuses existing
+state and must not be reused to initialize a replacement. The
+[kernel proxy documentation](https://cdn.kernel.org/doc/html/latest/security/tpm/tpm_vtpm_proxy.html)
+describes creating the device and passing its descriptor to the emulator; the
+[swtpm 0.7.1 manual](https://github.com/stefanberger/swtpm/blob/v0.7.1/man/man8/swtpm.pod)
+documents the persistent state, encryption and privilege-drop options.
+
+A private recovery installer, launcher and systemd unit remain outside the
+repository. They require the existing nonempty persistent state and 32-byte
+encryption key, refuse an existing TPM process/device, back up state before
+starting it, install root-owned runtime copies, and enable a boot service.
+They preserve the controller enrollment and wrapped-key files. Run the reviewed
+private installer from a root shell, or use a sudo-enabled administrator account:
+
+```bash
+sudo /bin/bash /absolute/private/path/install-recovery.sh
+```
+
+Then verify the service is active, `/dev/tpmrm0` is accessible only to the
+application user, the original key can sign, HTTPS controller status is ready,
+and host inventory succeeds. In the device dialog, refresh the device list and
+confirm pairing is enabled.
+
+The installer was executed as root. The system service
+`codex-console-controller-vtpm.service` is active and enabled; `/dev/tpm0` and
+`/dev/tpmrm0` have mode 600 and belong to the application user. The original
+enrollment and wrapped-key file checksums matched their pre-recovery values.
+Reading the original public key and verifying a fresh signature both passed.
+The Web and native backend PIDs remained unchanged.
+
+Certificate-verified HTTPS then returned 200 with `enrolled: true`,
+`phase: ready`; host inventory returned 200 with one existing paired device.
+Mounting the real connection UI with these live responses enabled the pairing
+button and hid first-time authorization. A single pairing attempt using the
+old screenshot's code reached the official service and returned 410 Gone
+(exposed as 502/REMOTE_REQUEST_FAILED). It was not retried; a fresh code from
+the controlled client is required. The existing paired device was offline, so
+this recovery does not establish a live remote client connection.
+
+Shell syntax, embedded Python syntax, state-preservation assertions, non-root
+refusal, backup ordering and systemd unit validation passed. The controller,
+HTTP and connection UI regressions passed 49/49. Machine reboot and rendered
+browser interaction remain unverified; software vTPM remains experimental.
